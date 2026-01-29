@@ -105,6 +105,28 @@ python -m vllm.entrypoints.openai.api_server \
 - ⚠️ LLM fallback for role assignment not fully implemented
 - ❌ Fine-tuning pipeline not yet built
 
+## WhisperX Infrastructure
+
+### EC2 Worker (whisperx-worker-1)
+- **Instance:** g5.2xlarge (1x A10G GPU, 24GB VRAM)
+- **IP:** 18.209.171.46
+- **SSH Key:** whisperx-key
+
+```bash
+# Run pipeline on worker (from local machine)
+python scripts/run_on_ec2.py --video-id VIDEO_ID
+
+# Run batch of videos from selected_videos.txt
+python scripts/run_on_ec2.py --execute --limit 5
+
+# SSH directly to worker
+ssh -i ~/.ssh/whisperx-key.pem ubuntu@18.209.171.46
+```
+
+### Docker Image
+- **ECR:** `864981718771.dkr.ecr.us-east-1.amazonaws.com/whisperx-pipeline:latest`
+- **Build:** `docker build -t whisperx-pipeline docker/whisperx/`
+
 ## SFT Data Format
 
 **Input (WhisperX spk_turns.json):**
@@ -213,6 +235,19 @@ Individual agents can be invoked directly:
 - Search non-Python files (JSON, YAML, Markdown, configs)
 - Fuzzy/partial name search when exact symbol unknown
 - Find files by naming pattern
+
+**IMPORTANT: For Python code exploration, prefer LSP over Bash/Grep:**
+
+| Task | Don't Use | Use Instead |
+|------|-----------|-------------|
+| Find where `CallBoundary` is defined | `grep -r "class CallBoundary"` | LSP `goToDefinition` |
+| Find all usages of `load_video_data()` | `grep -r "load_video_data"` | LSP `findReferences` |
+| List functions in a file | `grep "def "` or `cat` | LSP `documentSymbol` |
+| Trace what calls `process_video()` | `grep "process_video("` | LSP `incomingCalls` |
+| Trace what `process_video()` calls | Read file manually | LSP `outgoingCalls` |
+| Get function signature/types | Read file | LSP `hover` |
+
+LSP is faster, more accurate (ignores comments/strings), and understands Python semantics (inheritance, imports).
 
 ### AWS Operations
 - **AWS CLI** - Configured for scripts and automation

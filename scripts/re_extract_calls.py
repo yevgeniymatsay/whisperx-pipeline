@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Optional
 
 import boto3
+from botocore.exceptions import ClientError
 
 # Paths
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +43,9 @@ try:
 except ImportError:
     S3_BUCKET = "rezora-whisperx-us-east-1-864981718771"
     AWS_REGION = "us-east-1"
+
+# Default S3 prefix for boundary store
+DEFAULT_BOUNDARIES_PREFIX = "labeling/corrected_boundaries/v1/"
 
 
 @dataclass
@@ -75,9 +79,99 @@ def load_corrected_boundaries(video_id: Optional[str] = None) -> list[CallBounda
 
 
 def get_corrected_video_ids() -> set[str]:
-    """Get set of video IDs that have corrected boundaries."""
+    """Get set of video IDs that have corrected boundaries (from local CSV)."""
     boundaries = load_corrected_boundaries()
     return set(b.video_id for b in boundaries)
+
+
+def load_boundaries_s3(
+    s3_client,
+    bucket: str,
+    prefix: str = DEFAULT_BOUNDARIES_PREFIX,
+    video_id: Optional[str] = None,
+) -> list[CallBoundary]:
+    """Load corrected boundaries from S3, optionally filtered by video_id.
+
+    Args:
+        s3_client: Boto3 S3 client
+        bucket: S3 bucket name
+        prefix: S3 key prefix for boundary store
+        video_id: Optional video ID to filter by
+
+    Returns:
+        List of CallBoundary objects.
+    """
+    boundaries = []
+
+    if video_id:
+        # Load single video's boundaries
+        key = f"{prefix}{video_id}.json"
+        try:
+            response = s3_client.get_object(Bucket=bucket, Key=key)
+            doc = json.loads(response["Body"].read())
+
+            for b in doc.get("boundaries", []):
+                boundaries.append(CallBoundary(
+                    video_id=video_id,
+                    call_index=b.get("call_index", 0),
+                    start_s=b["start_s"],
+                    end_s=b["end_s"],
+                    corrected_at=b.get("corrected_at", ""),
+                ))
+        except ClientError as e:
+            if e.response["Error"]["Code"] != "NoSuchKey":
+                print(f"Error loading boundaries from S3 for {video_id}: {e}")
+        except Exception as e:
+            print(f"Error loading boundaries from S3 for {video_id}: {e}")
+    else:
+        # Load all videos' boundaries
+        paginator = s3_client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                if not key.endswith(".json"):
+                    continue
+
+                vid = key[len(prefix) : -5]  # Remove prefix and .json
+                if not vid:
+                    continue
+
+                try:
+                    response = s3_client.get_object(Bucket=bucket, Key=key)
+                    doc = json.loads(response["Body"].read())
+
+                    for b in doc.get("boundaries", []):
+                        boundaries.append(CallBoundary(
+                            video_id=vid,
+                            call_index=b.get("call_index", 0),
+                            start_s=b["start_s"],
+                            end_s=b["end_s"],
+                            corrected_at=b.get("corrected_at", ""),
+                        ))
+                except Exception as e:
+                    print(f"Error loading boundaries for {vid}: {e}")
+
+    return boundaries
+
+
+def get_corrected_video_ids_s3(
+    s3_client,
+    bucket: str,
+    prefix: str = DEFAULT_BOUNDARIES_PREFIX,
+) -> set[str]:
+    """Get set of video IDs that have corrected boundaries (from S3)."""
+    video_ids = set()
+    paginator = s3_client.get_paginator("list_objects_v2")
+
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if key.endswith(".json"):
+                video_id = key[len(prefix) : -5]
+                if video_id:
+                    video_ids.add(video_id)
+
+    return video_ids
 
 
 def extract_audio_segment(
@@ -263,22 +357,46 @@ def main():
         action="store_true",
         help="Show what would be done without doing it"
     )
+    parser.add_argument(
+        "--from-s3",
+        action="store_true",
+        help="Load boundaries from S3 store instead of local CSV"
+    )
+    parser.add_argument(
+        "--boundaries-prefix",
+        type=str,
+        default=DEFAULT_BOUNDARIES_PREFIX,
+        help=f"S3 prefix for boundary store (default: {DEFAULT_BOUNDARIES_PREFIX})"
+    )
     args = parser.parse_args()
 
-    # Get corrected video IDs
-    if args.video_id:
-        video_ids = {args.video_id}
-        all_boundaries = load_corrected_boundaries(args.video_id)
-        if not all_boundaries:
-            print(f"No corrected boundaries found for video: {args.video_id}")
-            return
+    s3 = boto3.client("s3", region_name=AWS_REGION)
+
+    # Get corrected video IDs (from S3 or local CSV)
+    if args.from_s3:
+        print(f"Loading boundaries from S3: s3://{args.bucket}/{args.boundaries_prefix}")
+        if args.video_id:
+            video_ids = {args.video_id}
+            all_boundaries = load_boundaries_s3(s3, args.bucket, args.boundaries_prefix, args.video_id)
+        else:
+            video_ids = get_corrected_video_ids_s3(s3, args.bucket, args.boundaries_prefix)
+            all_boundaries = load_boundaries_s3(s3, args.bucket, args.boundaries_prefix)
     else:
-        video_ids = get_corrected_video_ids()
-        if not video_ids:
+        print(f"Loading boundaries from: {BOUNDARIES_FILE}")
+        if args.video_id:
+            video_ids = {args.video_id}
+            all_boundaries = load_corrected_boundaries(args.video_id)
+        else:
+            video_ids = get_corrected_video_ids()
+            all_boundaries = load_corrected_boundaries()
+
+    if not all_boundaries:
+        if args.video_id:
+            print(f"No corrected boundaries found for video: {args.video_id}")
+        else:
             print("No videos with corrected boundaries found.")
             print("Use the speaker-labeler app to correct call boundaries first.")
-            return
-        all_boundaries = load_corrected_boundaries()
+        return
 
     print(f"Found {len(video_ids)} videos with corrected boundaries")
     print(f"Total corrected calls: {len(all_boundaries)}")
@@ -293,8 +411,6 @@ def main():
     # Sort boundaries within each video by call_index
     for vid in by_video:
         by_video[vid].sort(key=lambda x: x.call_index)
-
-    s3 = boto3.client("s3", region_name=AWS_REGION)
 
     total_extracted = 0
     total_errors = 0

@@ -333,8 +333,37 @@ export function BoundaryEditor() {
     setCorrectedBoundaries((prev) => prev.filter((b) => b.id !== id));
   }, []);
 
+  // Check if corrected boundaries match auto boundaries (no real edits made)
+  const boundariesMatchAuto = useCallback(() => {
+    if (correctedBoundaries.length !== autoBoundaries.length) return false;
+
+    const sortedCorrected = [...correctedBoundaries].sort((a, b) => a.start_s - b.start_s);
+    const sortedAuto = [...autoBoundaries].sort((a, b) => a.start_s - b.start_s);
+
+    // Check if all boundaries match within 0.1s tolerance
+    for (let i = 0; i < sortedCorrected.length; i++) {
+      const diff_start = Math.abs(sortedCorrected[i].start_s - sortedAuto[i].start_s);
+      const diff_end = Math.abs(sortedCorrected[i].end_s - sortedAuto[i].end_s);
+      if (diff_start > 0.1 || diff_end > 0.1) {
+        return false;
+      }
+    }
+    return true;
+  }, [correctedBoundaries, autoBoundaries]);
+
   const handleSave = useCallback(async () => {
     if (!selectedVideoId) return;
+
+    // Warn if boundaries match auto-detected (user may have forgotten to edit)
+    if (boundariesMatchAuto()) {
+      const confirmed = confirm(
+        'These boundaries match the auto-detected ones.\n\n' +
+        'Are you sure you want to save without any manual corrections?\n\n' +
+        '(This is typically a mistake - you may have clicked "Copy from Auto" without editing)'
+      );
+      if (!confirmed) return;
+    }
+
     setSaving(true);
     try {
       const boundariesData = correctedBoundaries.map((b) => ({

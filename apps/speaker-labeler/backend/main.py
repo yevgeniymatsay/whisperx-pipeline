@@ -1,6 +1,6 @@
 """Speaker Labeler API."""
 from typing import Dict, List, Any, Optional
-from fastapi import FastAPI, HTTPException, Header, Response
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -8,6 +8,7 @@ from pydantic import BaseModel
 import s3_client
 import labels
 import boundaries
+from boundary_store import get_boundary_store
 
 app = FastAPI(title="Speaker Labeler")
 
@@ -211,7 +212,8 @@ class BoundaryRequest(BaseModel):
 def list_videos():
     """List all videos with their call counts and correction status."""
     videos = s3_client.list_videos()
-    corrected_ids = boundaries.get_corrected_video_ids()
+    store = get_boundary_store()
+    corrected_ids = set(store.list_videos())
 
     result = []
     for v in videos:
@@ -229,8 +231,9 @@ def get_video_boundaries(video_id: str):
     # Get auto-detected boundaries from existing calls
     auto_boundaries = s3_client.get_auto_detected_boundaries(video_id)
 
-    # Get corrected boundaries if any
-    corrected = boundaries.load_corrected_boundaries(video_id)
+    # Get corrected boundaries from S3
+    store = get_boundary_store()
+    corrected = store.load(video_id)
     corrected_list = boundaries.boundaries_to_dict(corrected)
 
     return {
@@ -243,13 +246,14 @@ def get_video_boundaries(video_id: str):
 
 @app.post("/api/videos/{video_id}/boundaries")
 def save_video_boundaries(video_id: str, request: BoundaryRequest):
-    """Save corrected boundaries for a video."""
+    """Save corrected boundaries for a video to S3."""
     # Validate boundaries first
     is_valid, errors = boundaries.validate_boundaries(request.boundaries)
     if not is_valid:
         raise HTTPException(status_code=400, detail={"errors": errors})
 
-    boundaries.save_corrected_boundaries(video_id, request.boundaries)
+    store = get_boundary_store()
+    store.save(video_id, request.boundaries)
     return {"success": True, "count": len(request.boundaries)}
 
 
@@ -266,7 +270,8 @@ def get_video_audio_url(video_id: str):
 def get_videos_progress():
     """Get overall labeling progress statistics."""
     videos = s3_client.list_videos()
-    corrected_ids = boundaries.get_corrected_video_ids()
+    store = get_boundary_store()
+    corrected_ids = store.list_videos()
 
     return {
         "total_videos": len(videos),
@@ -280,7 +285,8 @@ def get_videos_progress():
 def get_next_unlabeled_video():
     """Get the next video without corrections."""
     videos = s3_client.list_videos()
-    corrected_ids = boundaries.get_corrected_video_ids()
+    store = get_boundary_store()
+    corrected_ids = set(store.list_videos())
 
     for v in videos:
         if v["video_id"] not in corrected_ids:
@@ -292,13 +298,15 @@ def get_next_unlabeled_video():
 @app.get("/api/export/labels")
 def export_labels():
     """Export all corrected boundaries in ML training format (labels.json)."""
-    return boundaries.export_labels_json()
+    store = get_boundary_store()
+    return store.export_labels_json()
 
 
 @app.get("/api/export/video/{video_id}/labels.json")
 def export_video_labels(video_id: str):
     """Export labels.json for a specific video."""
-    video_boundaries = boundaries.load_corrected_boundaries(video_id)
+    store = get_boundary_store()
+    video_boundaries = store.load(video_id)
 
     if not video_boundaries:
         raise HTTPException(status_code=404, detail="No corrected boundaries found for video")
@@ -306,8 +314,8 @@ def export_video_labels(video_id: str):
     return {
         "video_id": video_id,
         "calls": [
-            {"start": b.start_s, "end": b.end_s}
-            for b in sorted(video_boundaries, key=lambda x: x.start_s)
+            {"start": b["start_s"], "end": b["end_s"]}
+            for b in sorted(video_boundaries, key=lambda x: x["start_s"])
         ]
     }
 
