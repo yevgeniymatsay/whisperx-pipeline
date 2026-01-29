@@ -147,16 +147,16 @@ class S3BoundaryStore:
             video_id: YouTube video ID
 
         Returns:
-            True if deleted, False if video had no boundaries.
+            True if deleted (S3 delete_object is idempotent - succeeds even if object doesn't exist).
+
+        Raises:
+            ClientError: If S3 delete operation fails (e.g., AccessDenied).
         """
-        try:
-            self.s3.delete_object(
-                Bucket=self.bucket,
-                Key=self._key(video_id),
-            )
-            return True
-        except ClientError:
-            return False
+        self.s3.delete_object(
+            Bucket=self.bucket,
+            Key=self._key(video_id),
+        )
+        return True
 
     def export_labels_json(self) -> List[Dict[str, Any]]:
         """Export all boundaries in ML training format (labels.json).
