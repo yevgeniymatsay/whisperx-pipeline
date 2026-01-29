@@ -6,8 +6,12 @@ import {
   getVideoBoundaries,
   saveVideoBoundaries,
   getVideoAudioUrl,
+  getVideosProgress,
+  getNextUnlabeled,
+  exportLabels,
   type VideoInfo,
   type AutoBoundary,
+  type VideosProgress,
 } from '../api';
 
 interface Boundary {
@@ -30,18 +34,56 @@ export function BoundaryEditor() {
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showAuto, setShowAuto] = useState(true);
+  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(50); // pixels per second
+  const [progress, setProgress] = useState<VideosProgress | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const initialBoundariesRef = useRef<string>('');
 
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<ReturnType<typeof RegionsPlugin.create> | null>(null);
 
-  // Load videos list
+  // Load videos list and progress
   useEffect(() => {
-    getVideos()
-      .then(setVideos)
+    Promise.all([getVideos(), getVideosProgress()])
+      .then(([videosData, progressData]) => {
+        setVideos(videosData);
+        setProgress(progressData);
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
+
+  // Refresh progress when videos change
+  const refreshProgress = useCallback(() => {
+    getVideosProgress().then(setProgress).catch(console.error);
+  }, []);
+
+  // Track unsaved changes
+  useEffect(() => {
+    const current = JSON.stringify(correctedBoundaries.map(b => ({ s: b.start_s, e: b.end_s })));
+    setHasUnsavedChanges(current !== initialBoundariesRef.current);
+  }, [correctedBoundaries]);
+
+  // Store initial state when boundaries are loaded
+  useEffect(() => {
+    initialBoundariesRef.current = JSON.stringify(correctedBoundaries.map(b => ({ s: b.start_s, e: b.end_s })));
+    setHasUnsavedChanges(false);
+  }, [selectedVideoId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Warn on page unload
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   // Load video boundaries when selected
   useEffect(() => {
@@ -109,6 +151,26 @@ export function BoundaryEditor() {
     ws.on('play', () => setIsPlaying(true));
     ws.on('pause', () => setIsPlaying(false));
 
+    // Handle region clicks for selection
+    regions.on('region-clicked', (region, e) => {
+      e.stopPropagation();
+      // Only select corrected (editable) regions
+      if (region.id.startsWith('corrected-')) {
+        setSelectedRegionId(region.id);
+      }
+    });
+
+    // Handle region updates from drag/resize
+    regions.on('region-updated', (region) => {
+      if (region.id.startsWith('corrected-')) {
+        setCorrectedBoundaries((prev) =>
+          prev.map((b) =>
+            b.id === region.id ? { ...b, start_s: region.start, end_s: region.end } : b
+          )
+        );
+      }
+    });
+
     wavesurferRef.current = ws;
 
     return () => {
@@ -137,27 +199,82 @@ export function BoundaryEditor() {
       });
     }
 
-    // Add corrected boundaries (green)
+    // Add corrected boundaries (green, brighter if selected)
     correctedBoundaries.forEach((b) => {
+      const isSelected = b.id === selectedRegionId;
       regionsRef.current?.addRegion({
         id: b.id,
         start: b.start_s,
         end: b.end_s,
-        color: 'rgba(34, 197, 94, 0.3)',
+        color: isSelected ? 'rgba(34, 197, 94, 0.5)' : 'rgba(34, 197, 94, 0.3)',
         drag: true,
         resize: true,
       });
     });
-  }, [autoBoundaries, correctedBoundaries, showAuto]);
+  }, [autoBoundaries, correctedBoundaries, showAuto, selectedRegionId]);
+
+  // Apply zoom when level changes
+  useEffect(() => {
+    if (wavesurferRef.current) {
+      wavesurferRef.current.zoom(zoomLevel);
+    }
+  }, [zoomLevel]);
 
   const togglePlay = useCallback(() => {
     wavesurferRef.current?.playPause();
   }, []);
 
-  const formatTime = (seconds: number) => {
+  const skipForward = useCallback(() => {
+    if (!wavesurferRef.current) return;
+    const newTime = Math.min(
+      wavesurferRef.current.getCurrentTime() + 5,
+      wavesurferRef.current.getDuration()
+    );
+    wavesurferRef.current.setTime(newTime);
+  }, []);
+
+  const skipBackward = useCallback(() => {
+    if (!wavesurferRef.current) return;
+    const newTime = Math.max(wavesurferRef.current.getCurrentTime() - 5, 0);
+    wavesurferRef.current.setTime(newTime);
+  }, []);
+
+  const handleZoomIn = useCallback(() => {
+    setZoomLevel((prev) => Math.min(prev * 1.5, 500));
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setZoomLevel((prev) => Math.max(prev / 1.5, 10));
+  }, []);
+
+  // Nudge selected region edge
+  const nudgeSelectedRegion = useCallback((edge: 'start' | 'end', delta: number) => {
+    if (!selectedRegionId) return;
+    setCorrectedBoundaries((prev) =>
+      prev.map((b) => {
+        if (b.id !== selectedRegionId) return b;
+        if (edge === 'start') {
+          const newStart = Math.max(0, b.start_s + delta);
+          return { ...b, start_s: Math.min(newStart, b.end_s - 0.1) };
+        } else {
+          const newEnd = Math.min(duration, b.end_s + delta);
+          return { ...b, end_s: Math.max(newEnd, b.start_s + 0.1) };
+        }
+      })
+    );
+  }, [selectedRegionId, duration]);
+
+  const deleteSelectedBoundary = useCallback(() => {
+    if (!selectedRegionId) return;
+    setCorrectedBoundaries((prev) => prev.filter((b) => b.id !== selectedRegionId));
+    setSelectedRegionId(null);
+  }, [selectedRegionId]);
+
+  const formatTimeMs = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    const ms = Math.floor((seconds % 1) * 100);
+    return `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
   };
 
   const addBoundaryAtPlayhead = useCallback(() => {
@@ -220,11 +337,11 @@ export function BoundaryEditor() {
     if (!selectedVideoId) return;
     setSaving(true);
     try {
-      const boundaries = correctedBoundaries.map((b) => ({
+      const boundariesData = correctedBoundaries.map((b) => ({
         start_s: b.start_s,
         end_s: b.end_s,
       }));
-      await saveVideoBoundaries(selectedVideoId, boundaries);
+      await saveVideoBoundaries(selectedVideoId, boundariesData);
       // Update video list to show correction status
       setVideos((prev) =>
         prev.map((v) =>
@@ -232,24 +349,207 @@ export function BoundaryEditor() {
         )
       );
       alert('Boundaries saved!');
-    } catch (error) {
+      initialBoundariesRef.current = JSON.stringify(boundariesData.map(b => ({ s: b.start_s, e: b.end_s })));
+      setHasUnsavedChanges(false);
+      refreshProgress();
+    } catch (error: unknown) {
       console.error('Save failed:', error);
+      // Check if it's a validation error
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { data?: { detail?: { errors?: string[] } } } };
+        const errors = axiosError.response?.data?.detail?.errors;
+        if (errors && Array.isArray(errors)) {
+          alert('Validation errors:\n' + errors.join('\n'));
+          return;
+        }
+      }
       alert('Failed to save boundaries');
     } finally {
       setSaving(false);
     }
-  }, [selectedVideoId, correctedBoundaries]);
+  }, [selectedVideoId, correctedBoundaries, refreshProgress]);
+
+  // Find gaps (unlabeled regions) in the video
+  const findGaps = useCallback(() => {
+    if (duration === 0) return [];
+
+    interface Gap {
+      start_s: number;
+      end_s: number;
+      duration_s: number;
+    }
+
+    if (correctedBoundaries.length === 0) {
+      return [{ start_s: 0, end_s: duration, duration_s: duration }];
+    }
+
+    const sorted = [...correctedBoundaries].sort((a, b) => a.start_s - b.start_s);
+    const gaps: Gap[] = [];
+
+    // Gap before first boundary
+    if (sorted[0].start_s > 5) {
+      gaps.push({ start_s: 0, end_s: sorted[0].start_s, duration_s: sorted[0].start_s });
+    }
+
+    // Gaps between boundaries
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const gapStart = sorted[i].end_s;
+      const gapEnd = sorted[i + 1].start_s;
+      const gapDuration = gapEnd - gapStart;
+      if (gapDuration > 5) {
+        gaps.push({ start_s: gapStart, end_s: gapEnd, duration_s: gapDuration });
+      }
+    }
+
+    // Gap after last boundary
+    const last = sorted[sorted.length - 1];
+    if (duration - last.end_s > 5) {
+      gaps.push({ start_s: last.end_s, end_s: duration, duration_s: duration - last.end_s });
+    }
+
+    return gaps;
+  }, [correctedBoundaries, duration]);
+
+  const jumpToNextGap = useCallback(() => {
+    const gaps = findGaps();
+    if (gaps.length === 0) {
+      alert('No unlabeled gaps found!');
+      return;
+    }
+
+    const currentPos = wavesurferRef.current?.getCurrentTime() ?? 0;
+
+    // Find next gap after current position
+    const nextGap = gaps.find(g => g.start_s > currentPos + 1);
+    if (nextGap) {
+      wavesurferRef.current?.setTime(nextGap.start_s);
+    } else {
+      // Wrap around to first gap
+      wavesurferRef.current?.setTime(gaps[0].start_s);
+    }
+  }, [findGaps]);
+
+  const goToNextUnlabeled = useCallback(async () => {
+    if (hasUnsavedChanges) {
+      if (!confirm('You have unsaved changes. Discard and switch videos?')) {
+        return;
+      }
+    }
+    try {
+      const result = await getNextUnlabeled();
+      if (result.found && result.video_id) {
+        setSelectedVideoId(result.video_id);
+      } else {
+        alert('All videos have been labeled!');
+      }
+    } catch (error) {
+      console.error('Failed to get next unlabeled:', error);
+    }
+  }, [hasUnsavedChanges]);
+
+  const handleExportLabels = useCallback(async () => {
+    try {
+      const labels = await exportLabels();
+      const blob = new Blob([JSON.stringify(labels, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'labels.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Failed to export labels');
+    }
+  }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      switch (e.key) {
+        case ' ':
+          e.preventDefault();
+          togglePlay();
+          break;
+        case 'b':
+        case 'B':
+          e.preventDefault();
+          addBoundaryAtPlayhead();
+          break;
+        case 'd':
+        case 'D':
+        case 'Delete':
+        case 'Backspace':
+          if (selectedRegionId) {
+            e.preventDefault();
+            deleteSelectedBoundary();
+          }
+          break;
+        case '[':
+          e.preventDefault();
+          skipBackward();
+          break;
+        case ']':
+          e.preventDefault();
+          skipForward();
+          break;
+        case '+':
+        case '=':
+          e.preventDefault();
+          handleZoomIn();
+          break;
+        case '-':
+        case '_':
+          e.preventDefault();
+          handleZoomOut();
+          break;
+        case 'ArrowLeft':
+          if (selectedRegionId) {
+            e.preventDefault();
+            const delta = e.shiftKey ? -1.0 : -0.1;
+            nudgeSelectedRegion(e.altKey ? 'end' : 'start', delta);
+          }
+          break;
+        case 'ArrowRight':
+          if (selectedRegionId) {
+            e.preventDefault();
+            const delta = e.shiftKey ? 1.0 : 0.1;
+            nudgeSelectedRegion(e.altKey ? 'end' : 'start', delta);
+          }
+          break;
+        case 'Escape':
+          setSelectedRegionId(null);
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [togglePlay, addBoundaryAtPlayhead, deleteSelectedBoundary, skipBackward, skipForward, handleZoomIn, handleZoomOut, nudgeSelectedRegion, selectedRegionId]);
 
   // Navigate to next/prev video
   const currentVideoIndex = videos.findIndex((v) => v.video_id === selectedVideoId);
+
+  const handleVideoSelect = useCallback((videoId: string) => {
+    if (hasUnsavedChanges) {
+      if (!confirm('You have unsaved changes. Discard and switch videos?')) {
+        return;
+      }
+    }
+    setSelectedVideoId(videoId);
+  }, [hasUnsavedChanges]);
+
   const goToNextVideo = () => {
     if (currentVideoIndex < videos.length - 1) {
-      setSelectedVideoId(videos[currentVideoIndex + 1].video_id);
+      handleVideoSelect(videos[currentVideoIndex + 1].video_id);
     }
   };
   const goToPrevVideo = () => {
     if (currentVideoIndex > 0) {
-      setSelectedVideoId(videos[currentVideoIndex - 1].video_id);
+      handleVideoSelect(videos[currentVideoIndex - 1].video_id);
     }
   };
 
@@ -264,18 +564,50 @@ export function BoundaryEditor() {
   return (
     <div className="flex-1 flex">
       {/* Video list sidebar */}
-      <div className="w-64 bg-white border-r border-gray-200 overflow-y-auto">
+      <div className="w-64 bg-white border-r border-gray-200 overflow-y-auto flex flex-col">
+        {/* Progress section */}
+        <div className="p-4 border-b border-gray-200 bg-green-50">
+          <h2 className="font-semibold text-gray-800">Progress</h2>
+          {progress && (
+            <div className="mt-2 text-sm">
+              <div className="flex justify-between">
+                <span>Labeled:</span>
+                <span className="font-semibold">{progress.labeled_videos} / {progress.total_videos}</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                <div
+                  className="bg-green-500 h-2 rounded-full transition-all"
+                  style={{ width: `${progress.completion_percentage}%` }}
+                />
+              </div>
+              <div className="text-center mt-1 text-green-700 font-medium">
+                {progress.completion_percentage}% complete
+              </div>
+            </div>
+          )}
+          <div className="mt-3 space-y-2">
+            <button
+              onClick={goToNextUnlabeled}
+              className="w-full px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+            >
+              Next Unlabeled Video
+            </button>
+            <button
+              onClick={handleExportLabels}
+              className="w-full px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+            >
+              Export labels.json
+            </button>
+          </div>
+        </div>
         <div className="p-4 border-b border-gray-200">
           <h2 className="font-semibold text-gray-800">Videos ({videos.length})</h2>
-          <div className="text-sm text-gray-500 mt-1">
-            {videos.filter((v) => v.has_corrections).length} corrected
-          </div>
         </div>
         <div className="divide-y divide-gray-100">
           {videos.map((video) => (
             <button
               key={video.video_id}
-              onClick={() => setSelectedVideoId(video.video_id)}
+              onClick={() => handleVideoSelect(video.video_id)}
               className={`w-full text-left p-3 hover:bg-gray-50 ${
                 selectedVideoId === video.video_id ? 'bg-indigo-50 border-l-4 border-indigo-500' : ''
               }`}
@@ -330,6 +662,20 @@ export function BoundaryEditor() {
               </div>
             </div>
 
+            {/* Labeling guidance */}
+            <details className="bg-blue-50 border-b border-blue-100">
+              <summary className="px-4 py-2 cursor-pointer text-blue-800 font-medium hover:bg-blue-100">
+                Labeling Instructions (click to expand)
+              </summary>
+              <div className="px-4 py-3 text-sm text-blue-700 space-y-2">
+                <p><strong>IN_CALL starts at:</strong> First ring, dial tone, "calling..." UI sound, or first remote voice</p>
+                <p><strong>IN_CALL ends at:</strong> Hangup sound, last remote voice, or call ends and host returns to narration</p>
+                <p className="pt-2 border-t border-blue-200">
+                  <strong>Tip:</strong> If host says "Alright, next call..." but no actual call audio yet, it's still OUT_OF_CALL until dialing/ringing begins.
+                </p>
+              </div>
+            </details>
+
             {/* Waveform */}
             <div className="p-4 bg-white border-b border-gray-200">
               <div className="mb-2 flex items-center justify-between">
@@ -347,17 +693,52 @@ export function BoundaryEditor() {
                   Show auto boundaries
                 </label>
               </div>
-              <div ref={containerRef} className="bg-gray-100 rounded-lg" />
+              <div ref={containerRef} className="bg-gray-100 rounded-lg overflow-x-auto" />
               <div className="mt-4 flex items-center gap-4">
+                <button
+                  onClick={skipBackward}
+                  className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                  title="Skip backward 5s ([)"
+                >
+                  -5s
+                </button>
                 <button
                   onClick={togglePlay}
                   className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                  title="Play/Pause (Space)"
                 >
                   {isPlaying ? '⏸ Pause' : '▶ Play'}
                 </button>
-                <span className="font-mono text-gray-600">
-                  {formatTime(currentTime)} / {formatTime(duration)}
+                <button
+                  onClick={skipForward}
+                  className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                  title="Skip forward 5s (])"
+                >
+                  +5s
+                </button>
+                <span className="font-mono text-lg text-gray-800 bg-gray-100 px-3 py-1 rounded">
+                  {formatTimeMs(currentTime)} / {formatTimeMs(duration)}
                 </span>
+                <div className="flex-1" />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleZoomOut}
+                    className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                    title="Zoom out (-)"
+                  >
+                    -
+                  </button>
+                  <span className="text-sm text-gray-600 w-20 text-center">
+                    {Math.round(zoomLevel)}px/s
+                  </span>
+                  <button
+                    onClick={handleZoomIn}
+                    className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                    title="Zoom in (+)"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -381,20 +762,75 @@ export function BoundaryEditor() {
               >
                 Clear All Corrected
               </button>
+              <button
+                onClick={jumpToNextGap}
+                className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600"
+                title="Jump to next unlabeled gap (>5s)"
+              >
+                Jump to Gap
+              </button>
               <div className="flex-1" />
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                className={`px-6 py-2 text-white rounded-lg disabled:opacity-50 ${
+                  hasUnsavedChanges
+                    ? 'bg-orange-500 hover:bg-orange-600'
+                    : 'bg-indigo-600 hover:bg-indigo-700'
+                }`}
               >
-                {saving ? 'Saving...' : 'Save Corrected Boundaries'}
+                {saving ? 'Saving...' : hasUnsavedChanges ? 'Save Changes *' : 'Save Corrected Boundaries'}
               </button>
             </div>
+
+            {/* Keyboard hints */}
+            <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 text-xs text-blue-700">
+              <span className="font-medium">Shortcuts:</span>{' '}
+              <kbd className="px-1 bg-blue-100 rounded">Space</kbd> Play/Pause{' '}
+              <kbd className="px-1 bg-blue-100 rounded">B</kbd> Add boundary{' '}
+              <kbd className="px-1 bg-blue-100 rounded">[ ]</kbd> Skip 5s{' '}
+              <kbd className="px-1 bg-blue-100 rounded">+ -</kbd> Zoom{' '}
+              {selectedRegionId && (
+                <>
+                  <span className="ml-2 text-green-700">|</span>{' '}
+                  <kbd className="px-1 bg-green-100 rounded">←→</kbd> Nudge start{' '}
+                  <kbd className="px-1 bg-green-100 rounded">Alt+←→</kbd> Nudge end{' '}
+                  <kbd className="px-1 bg-green-100 rounded">Shift</kbd> ±1s{' '}
+                  <kbd className="px-1 bg-green-100 rounded">D</kbd> Delete{' '}
+                  <kbd className="px-1 bg-green-100 rounded">Esc</kbd> Deselect
+                </>
+              )}
+            </div>
+
+            {/* Gap indicators */}
+            {findGaps().length > 0 && (
+              <div className="px-4 py-2 bg-yellow-50 border-b border-yellow-100">
+                <div className="text-sm font-medium text-yellow-800 mb-2">
+                  Unlabeled Gaps ({findGaps().length})
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {findGaps().map((gap, i) => (
+                    <button
+                      key={`gap-${i}`}
+                      onClick={() => wavesurferRef.current?.setTime(gap.start_s)}
+                      className="px-2 py-1 text-xs bg-yellow-200 text-yellow-800 rounded hover:bg-yellow-300"
+                    >
+                      {formatTimeMs(gap.start_s)} ({Math.round(gap.duration_s)}s)
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Boundary list */}
             <div className="flex-1 p-4 overflow-y-auto">
               <h3 className="font-semibold text-gray-800 mb-3">
                 Corrected Boundaries ({correctedBoundaries.length})
+                {selectedRegionId && (
+                  <span className="ml-2 text-sm font-normal text-green-600">
+                    (selected: {correctedBoundaries.findIndex(b => b.id === selectedRegionId) + 1})
+                  </span>
+                )}
               </h3>
               {correctedBoundaries.length === 0 ? (
                 <div className="text-gray-500 text-center py-8">
@@ -406,18 +842,24 @@ export function BoundaryEditor() {
                   {correctedBoundaries.map((boundary, index) => (
                     <div
                       key={boundary.id}
-                      className="bg-white rounded-lg p-3 border border-gray-200 flex items-center gap-4"
+                      onClick={() => setSelectedRegionId(boundary.id)}
+                      className={`rounded-lg p-3 border flex items-center gap-4 cursor-pointer transition-colors ${
+                        selectedRegionId === boundary.id
+                          ? 'bg-green-50 border-green-400 ring-2 ring-green-200'
+                          : 'bg-white border-gray-200 hover:bg-gray-50'
+                      }`}
                     >
                       <span className="font-semibold text-gray-700">Call {index + 1}</span>
                       <span className="font-mono text-sm text-gray-600">
-                        {formatTime(boundary.start_s)} - {formatTime(boundary.end_s)}
+                        {formatTimeMs(boundary.start_s)} - {formatTimeMs(boundary.end_s)}
                       </span>
                       <span className="text-sm text-gray-500">
-                        ({Math.round(boundary.end_s - boundary.start_s)}s)
+                        ({(boundary.end_s - boundary.start_s).toFixed(1)}s)
                       </span>
                       <div className="flex-1" />
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           wavesurferRef.current?.setTime(boundary.start_s);
                           wavesurferRef.current?.play();
                         }}
@@ -426,7 +868,10 @@ export function BoundaryEditor() {
                         ▶ Preview
                       </button>
                       <button
-                        onClick={() => deleteBoundary(boundary.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteBoundary(boundary.id);
+                        }}
                         className="px-3 py-1 text-red-600 hover:bg-red-50 rounded"
                       >
                         Delete

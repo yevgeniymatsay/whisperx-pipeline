@@ -88,3 +88,67 @@ def boundaries_to_dict(boundaries: List[CallBoundary]) -> List[Dict[str, Any]]:
         }
         for b in boundaries
     ]
+
+
+def export_labels_json() -> List[Dict[str, Any]]:
+    """Export all corrected boundaries in ML training format (labels.json).
+
+    Returns format:
+    [
+        {"video_id": "abc", "calls": [{"start": 12.3, "end": 45.6}, ...]},
+        ...
+    ]
+    """
+    all_boundaries = load_corrected_boundaries()
+
+    # Group by video_id
+    by_video: Dict[str, List[CallBoundary]] = {}
+    for b in all_boundaries:
+        if b.video_id not in by_video:
+            by_video[b.video_id] = []
+        by_video[b.video_id].append(b)
+
+    # Convert to export format
+    result = []
+    for video_id, boundaries in sorted(by_video.items()):
+        calls = [
+            {"start": b.start_s, "end": b.end_s}
+            for b in sorted(boundaries, key=lambda x: x.start_s)
+        ]
+        result.append({
+            "video_id": video_id,
+            "calls": calls,
+        })
+
+    return result
+
+
+def validate_boundaries(boundaries: List[Dict[str, float]]) -> tuple:
+    """Validate boundaries for overlaps and invalid ranges.
+
+    Returns: (is_valid: bool, errors: List[str])
+    """
+    errors = []
+
+    # Sort by start time
+    sorted_boundaries = sorted(boundaries, key=lambda x: x["start_s"])
+
+    for i, b in enumerate(sorted_boundaries):
+        # Check valid range
+        if b["start_s"] >= b["end_s"]:
+            errors.append(f"Boundary {i+1}: start >= end ({b['start_s']:.2f} >= {b['end_s']:.2f})")
+
+        # Check minimum duration (1 second)
+        if b["end_s"] - b["start_s"] < 1.0:
+            errors.append(f"Boundary {i+1}: duration too short ({b['end_s'] - b['start_s']:.2f}s < 1s)")
+
+        # Check for overlaps with next boundary
+        if i < len(sorted_boundaries) - 1:
+            next_b = sorted_boundaries[i + 1]
+            if b["end_s"] > next_b["start_s"]:
+                errors.append(
+                    f"Boundaries {i+1} and {i+2} overlap: "
+                    f"{b['end_s']:.2f} > {next_b['start_s']:.2f}"
+                )
+
+    return len(errors) == 0, errors

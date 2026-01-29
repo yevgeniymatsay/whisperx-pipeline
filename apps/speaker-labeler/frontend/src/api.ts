@@ -93,4 +93,30 @@ export const getVideoAudioUrl = (videoId: string) =>
   // Use streaming endpoint to bypass CORS issues with S3 presigned URLs
   `http://localhost:8000/api/videos/${videoId}/audio`;
 
+// Progress and export API
+export interface VideosProgress {
+  total_videos: number;
+  labeled_videos: number;
+  remaining_videos: number;
+  completion_percentage: number;
+}
+
+export interface NextUnlabeled {
+  video_id?: string;
+  found: boolean;
+  message?: string;
+}
+
+export interface LabelExport {
+  video_id: string;
+  calls: { start: number; end: number }[];
+}
+
+export const getVideosProgress = () =>
+  api.get<VideosProgress>('/api/videos/progress').then(r => r.data);
+export const getNextUnlabeled = () =>
+  api.get<NextUnlabeled>('/api/videos/next-unlabeled').then(r => r.data);
+export const exportLabels = () =>
+  api.get<LabelExport[]>('/api/export/labels').then(r => r.data);
+
 export default api;

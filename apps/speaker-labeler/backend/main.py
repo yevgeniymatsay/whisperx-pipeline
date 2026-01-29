@@ -244,6 +244,11 @@ def get_video_boundaries(video_id: str):
 @app.post("/api/videos/{video_id}/boundaries")
 def save_video_boundaries(video_id: str, request: BoundaryRequest):
     """Save corrected boundaries for a video."""
+    # Validate boundaries first
+    is_valid, errors = boundaries.validate_boundaries(request.boundaries)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail={"errors": errors})
+
     boundaries.save_corrected_boundaries(video_id, request.boundaries)
     return {"success": True, "count": len(request.boundaries)}
 
@@ -255,6 +260,56 @@ def get_video_audio_url(video_id: str):
     if not url:
         raise HTTPException(status_code=404, detail="Audio file not found")
     return {"url": url}
+
+
+@app.get("/api/videos/progress")
+def get_videos_progress():
+    """Get overall labeling progress statistics."""
+    videos = s3_client.list_videos()
+    corrected_ids = boundaries.get_corrected_video_ids()
+
+    return {
+        "total_videos": len(videos),
+        "labeled_videos": len(corrected_ids),
+        "remaining_videos": len(videos) - len(corrected_ids),
+        "completion_percentage": round(len(corrected_ids) / len(videos) * 100, 1) if videos else 0,
+    }
+
+
+@app.get("/api/videos/next-unlabeled")
+def get_next_unlabeled_video():
+    """Get the next video without corrections."""
+    videos = s3_client.list_videos()
+    corrected_ids = boundaries.get_corrected_video_ids()
+
+    for v in videos:
+        if v["video_id"] not in corrected_ids:
+            return {"video_id": v["video_id"], "found": True}
+
+    return {"found": False, "message": "All videos labeled"}
+
+
+@app.get("/api/export/labels")
+def export_labels():
+    """Export all corrected boundaries in ML training format (labels.json)."""
+    return boundaries.export_labels_json()
+
+
+@app.get("/api/export/video/{video_id}/labels.json")
+def export_video_labels(video_id: str):
+    """Export labels.json for a specific video."""
+    video_boundaries = boundaries.load_corrected_boundaries(video_id)
+
+    if not video_boundaries:
+        raise HTTPException(status_code=404, detail="No corrected boundaries found for video")
+
+    return {
+        "video_id": video_id,
+        "calls": [
+            {"start": b.start_s, "end": b.end_s}
+            for b in sorted(video_boundaries, key=lambda x: x.start_s)
+        ]
+    }
 
 
 @app.get("/api/videos/{video_id}/audio")
