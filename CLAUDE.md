@@ -55,6 +55,7 @@ runs/{video_id}/{run_id}/       # Pipeline output
   calls/{call_id}/              # spk_turns.json, call_metadata.json
 latest/{video_id}.json          # Pointer to latest run
 genrm/{accepted,review,rejected,role_fallback}/  # Routed SFT data
+labeling/corrected_boundaries/v1/{video_id}.json  # Human-corrected call boundaries
 ```
 
 **Model Bucket:** `rezora-data-pipeline-864981718771`
@@ -166,6 +167,8 @@ Two UIs at http://localhost:5173:
 - **60s feature window:** Role classifier only uses first 60s of call
 - **GenRM principle order:** Messages must have "principle" role FIRST
 - **v1 vs v2:** Always use v2 modules (`role_predictor_v2.py`)
+- **BoundaryEditor "Copy from Auto" trap:** Clicking this then Save creates fake "corrections" - verify timestamps before treating as human-labeled
+- **Empty boundaries:** Saving empty boundaries must delete S3 object, not create empty file (breaks "next unlabeled" navigation)
 
 ## Environment Variables
 ```bash
@@ -220,36 +223,20 @@ Individual agents can be invoked directly:
 - **Pyright LSP** - Automatic type checking on Python files (errors appear after edits)
 - Fix type errors and unused variable warnings before committing
 
-### Code Navigation (LSP vs Search)
+### Code Navigation
 
-**Use LSP for semantic code navigation:**
-- `goToDefinition` - Find where a class/function is defined (avoids false positives in docs)
-- `findReferences` - Find all usages of a symbol across the codebase
-- `documentSymbol` - List all classes, methods, variables in a file with hierarchy
-- `incomingCalls` - Find what functions call a given function
-- `outgoingCalls` - Trace what a function calls (e.g., 37 calls from `process_video`)
-- `hover` - Get type info and docstrings
-
-**Use Grep/Glob for text search:**
-- Search for text patterns, error messages, strings, comments
-- Search non-Python files (JSON, YAML, Markdown, configs)
-- Fuzzy/partial name search when exact symbol unknown
-- Find files by naming pattern
-
-**IMPORTANT: For Python code exploration, prefer LSP over Bash/Grep:**
-
-| Task | Don't Use | Use Instead |
-|------|-----------|-------------|
-| Find where `CallBoundary` is defined | `grep -r "class CallBoundary"` | LSP `goToDefinition` |
-| Find all usages of `load_video_data()` | `grep -r "load_video_data"` | LSP `findReferences` |
-| List functions in a file | `grep "def "` or `cat` | LSP `documentSymbol` |
-| Trace what calls `process_video()` | `grep "process_video("` | LSP `incomingCalls` |
-| Trace what `process_video()` calls | Read file manually | LSP `outgoingCalls` |
-| Get function signature/types | Read file | LSP `hover` |
-
-LSP is faster, more accurate (ignores comments/strings), and understands Python semantics (inheritance, imports).
+**Use LSP** for code navigation - definitions, references, call hierarchies, type info. Supported: Python, TypeScript, Java.
 
 ### AWS Operations
 - **AWS CLI** - Configured for scripts and automation
 - **AWS MCP** - Natural language AWS queries for interactive exploration
 - Use CLI for scripts/CI, MCP for debugging and exploration
+
+### GitHub PR Workflow
+```bash
+# Get Codex review suggestions (including line comments)
+gh api repos/yevgeniymatsay/whisperx-pipeline/pulls/{PR_NUMBER}/comments
+
+# Create PR with @codex tag for automated review
+gh pr create --title "..." --body "...@codex"
+```

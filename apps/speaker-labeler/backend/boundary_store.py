@@ -66,10 +66,17 @@ class S3BoundaryStore:
         Boundaries are sorted by start_s and assigned sequential call_index values.
         Each boundary gets a corrected_at timestamp if not already present.
 
+        If boundaries is empty, deletes any existing file to restore "unlabeled" status.
+
         Args:
             video_id: YouTube video ID
             boundaries: List of dicts with start_s and end_s (and optionally call_index, corrected_at)
         """
+        # If no boundaries, delete existing file to restore "unlabeled" status
+        if not boundaries:
+            self.delete(video_id)
+            return
+
         now = datetime.now(timezone.utc).isoformat()
 
         # Sort by start time and assign call_index
