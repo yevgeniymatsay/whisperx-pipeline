@@ -1,0 +1,18 @@
+[project]
+name = "whisperx-pipeline"
+version = "1.0.0"
+description = "WhisperX transcription pipeline with speaker labeling and GenRM judging"
+requires-python = ">=3.11"
+
+[project.scripts]
+whisperx-cli = "pipeline.cli:main"
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+include = ["pipeline", "scripts", "tests"]
+exclude = ["**/node_modules", "**/__pycache__"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

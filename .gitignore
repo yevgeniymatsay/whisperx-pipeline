@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+
+# Data (keep structure, ignore contents)
+data/*
+!data/.gitkeep
+
+# Artifacts (keep structure, ignore contents)
+artifacts/*
+!artifacts/.gitkeep
+!artifacts/s3_audit/
+
+# Local state files
+*.csv
+*.json
+!package.json
+!tsconfig.json
+!*.config.json
+
+# Logs
+*.log

@@ -1,0 +1,7 @@
+# Note: torch is provided by base image, do NOT specify here
+# Pin whisperx to avoid resolver thrash and ensure reproducible builds
+whisperx==3.7.6
+soundfile>=0.12.0
+boto3>=1.28.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
