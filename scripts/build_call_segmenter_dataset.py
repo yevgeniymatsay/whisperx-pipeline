@@ -82,6 +82,7 @@ class VideoData:
     segments: List[DiarizationSegment]
     call_boundaries: List[CallBoundary]
     timeline_end: float
+    mp3_duration_s: Optional[float] = None  # From ffprobe, for drift detection
     host_result: Optional[HostDetectionResult] = None
 
 
@@ -267,11 +268,16 @@ def get_mp3_key_for_video(s3_client, video_id: str) -> Optional[str]:
 
 
 def get_mp3_duration_s(s3_client, mp3_key: str) -> Optional[float]:
-    """Get MP3 duration using HEAD request and ffprobe if available.
+    """Get MP3 duration using ffprobe.
+
+    Downloads MP3 to temp file and runs ffprobe to get duration.
+    This is industry standard for audio pipelines.
 
     Returns None if duration cannot be determined.
     """
-    # Try to get duration from S3 metadata (if stored)
+    import tempfile
+
+    # First try S3 metadata (fast path if stored)
     try:
         head = s3_client.head_object(Bucket=S3_BUCKET, Key=mp3_key)
         if "x-amz-meta-duration-s" in head.get("Metadata", {}):
@@ -279,9 +285,35 @@ def get_mp3_duration_s(s3_client, mp3_key: str) -> Optional[float]:
     except Exception:
         pass
 
-    # We can't easily get duration without downloading - return None
-    # The caller can use chunk end times as approximation
-    return None
+    # Download and use ffprobe
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=True) as tmp:
+            logger.debug(f"Downloading {mp3_key} for duration detection...")
+            s3_client.download_file(S3_BUCKET, mp3_key, tmp.name)
+
+            result = subprocess.run(
+                [
+                    "ffprobe", "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    tmp.name
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            duration = float(result.stdout.strip())
+            logger.debug(f"MP3 duration for {mp3_key}: {duration:.2f}s")
+            return duration
+    except FileNotFoundError:
+        logger.warning("ffprobe not found - timebase drift detection disabled")
+        return None
+    except subprocess.CalledProcessError as e:
+        logger.warning(f"ffprobe failed for {mp3_key}: {e.stderr}")
+        return None
+    except Exception as e:
+        logger.warning(f"Could not get MP3 duration for {mp3_key}: {e}")
+        return None
 
 
 # =============================================================================
@@ -394,6 +426,9 @@ def load_video_data(
         mp3_key = f"audio/pretraining/unknown - {video_id}.mp3"
     creator_id = extract_creator_id(mp3_key)
 
+    # Get MP3 duration for timebase drift detection
+    mp3_duration_s = get_mp3_duration_s(s3_client, mp3_key) if mp3_key else None
+
     # Step 3: Load and order chunks
     chunk_ids = list_chunks(s3_client, video_id, run_id)
     if not chunk_ids:
@@ -437,6 +472,7 @@ def load_video_data(
         segments=all_segments,
         call_boundaries=call_boundaries,
         timeline_end=timeline_end,
+        mp3_duration_s=mp3_duration_s,
     )
 
 
@@ -502,6 +538,22 @@ def process_video(
 
     df = pd.DataFrame(rows)
 
+    # Handle edge case: no windows generated (video shorter than window size)
+    if df.empty:
+        logger.warning(
+            f"No windows generated for {video_data.video_id} "
+            f"(timeline_end={video_data.timeline_end:.2f}s, win_s={config.win_s}s)"
+        )
+        # Create DataFrame with expected columns to prevent KeyError
+        expected_columns = [
+            "t_start", "t_end", "t_mid", "y", "ignore", "dist_to_boundary_s",
+            "speech_frac", "host_speech_frac", "nonhost_speech_frac",
+            "num_active_speakers", "nonhost_active", "speaker_switches_10s",
+            "unique_nonhost_speakers_30s", "nonhost_turns_30s", "avg_nonhost_turn_len_30s",
+            "video_id", "run_id", "creator_id", "mp3_key", "chunk_content_type"
+        ]
+        df = pd.DataFrame(columns=expected_columns)
+
     # Add chunk_content_type (for debugging - leaky!)
     # Find which chunk each window's t_mid falls into
     chunk_content_types = []
@@ -531,6 +583,12 @@ def process_video(
     total_count = len(df)
     ignored_count = (df["ignore"] == 1).sum()
 
+    # Compute timebase drift (difference between chunk timeline and MP3 duration)
+    if video_data.mp3_duration_s is not None:
+        timebase_drift = abs(video_data.timeline_end - video_data.mp3_duration_s)
+    else:
+        timebase_drift = None
+
     report = VideoReport(
         video_id=video_data.video_id,
         run_id=video_data.run_id,
@@ -543,7 +601,7 @@ def process_video(
         host_speakers=[s.speaker_id for s in host_result.top_speakers],
         host_confidence=host_result.host_confidence,
         is_host_ambiguous=host_result.is_ambiguous,
-        timebase_drift_s=None,  # Computed later if mp3 duration available
+        timebase_drift_s=timebase_drift,
         chunk_count=len(video_data.chunks),
         chunk_gaps=chunk_gaps,
         call_sanity=call_sanity,
