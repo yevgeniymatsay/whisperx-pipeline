@@ -175,3 +175,46 @@ pytest tests/                           # All tests
 pytest tests/whisperx_pipeline/ -v      # Verbose
 pytest --cov=pipeline --cov-report=html # Coverage
 ```
+
+## Development Workflow (Claude Code)
+
+### Committing Changes
+After completing code changes:
+- `/commit` - Create commits with auto-generated messages matching repo style
+- `/commit-push-pr` - Commit, push, and create PR in one step
+- `/clean_gone` - Clean up stale local branches (deleted from remote)
+
+### Feature Development
+For new features or substantial changes:
+- `/feature-dev [description]` - Launch guided 7-phase workflow
+- Phases: Discovery → Exploration → Questions → Design → Implementation → Review → Summary
+
+Individual agents can be invoked directly:
+- **code-explorer** - "Launch code-explorer to trace how [feature] works"
+- **code-architect** - "Launch code-architect to design [component]"
+- **code-reviewer** - "Launch code-reviewer to check my recent changes"
+
+### Code Quality
+- **Pyright LSP** - Automatic type checking on Python files (errors appear after edits)
+- Fix type errors and unused variable warnings before committing
+
+### Code Navigation (LSP vs Search)
+
+**Use LSP for semantic code navigation:**
+- `goToDefinition` - Find where a class/function is defined (avoids false positives in docs)
+- `findReferences` - Find all usages of a symbol across the codebase
+- `documentSymbol` - List all classes, methods, variables in a file with hierarchy
+- `incomingCalls` - Find what functions call a given function
+- `outgoingCalls` - Trace what a function calls (e.g., 37 calls from `process_video`)
+- `hover` - Get type info and docstrings
+
+**Use Grep/Glob for text search:**
+- Search for text patterns, error messages, strings, comments
+- Search non-Python files (JSON, YAML, Markdown, configs)
+- Fuzzy/partial name search when exact symbol unknown
+- Find files by naming pattern
+
+### AWS Operations
+- **AWS CLI** - Configured for scripts and automation
+- **AWS MCP** - Natural language AWS queries for interactive exploration
+- Use CLI for scripts/CI, MCP for debugging and exploration
