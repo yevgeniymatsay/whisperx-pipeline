@@ -27,8 +27,10 @@ const SKIP_INTERVALS = [
   { seconds: -60, label: '-60s' },
   { seconds: -25, label: '-25s' },
   { seconds: -5, label: '-5s' },
+  { seconds: -1, label: '-1s' },
   { seconds: -0.25, label: '-0.25s' },
   { seconds: 0.25, label: '+0.25s' },
+  { seconds: 1, label: '+1s' },
   { seconds: 5, label: '+5s' },
   { seconds: 25, label: '+25s' },
   { seconds: 60, label: '+60s' },
@@ -837,7 +839,7 @@ export function BoundaryEditor() {
               {/* Playback controls - compact row */}
               <div className="mt-4 flex items-center gap-1.5 flex-wrap">
                 {/* Left skip buttons (backward) */}
-                {SKIP_INTERVALS.slice(0, 5).map(({ seconds, label }) => (
+                {SKIP_INTERVALS.slice(0, 6).map(({ seconds, label }) => (
                   <button
                     key={label}
                     onClick={() => skip(seconds)}
@@ -858,7 +860,7 @@ export function BoundaryEditor() {
                 </button>
 
                 {/* Right skip buttons (forward) */}
-                {SKIP_INTERVALS.slice(5).map(({ seconds, label }) => (
+                {SKIP_INTERVALS.slice(6).map(({ seconds, label }) => (
                   <button
                     key={label}
                     onClick={() => skip(seconds)}
