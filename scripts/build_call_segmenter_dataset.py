@@ -367,6 +367,57 @@ def load_labels_csv(path: Path) -> Dict[str, List[CallBoundary]]:
     return labels
 
 
+def load_labels_s3(
+    s3_client,
+    bucket: str,
+    prefix: str = "labeling/corrected_boundaries/v1/",
+) -> Dict[str, List[CallBoundary]]:
+    """Load labels from S3 boundary store.
+
+    Each video's boundaries are stored as {prefix}{video_id}.json in S3.
+
+    Args:
+        s3_client: Boto3 S3 client
+        bucket: S3 bucket name
+        prefix: S3 key prefix for boundaries
+
+    Returns:
+        Dict mapping video_id to list of CallBoundary objects.
+    """
+    labels: Dict[str, List[CallBoundary]] = {}
+    paginator = s3_client.get_paginator("list_objects_v2")
+
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if not key.endswith(".json"):
+                continue
+
+            # Extract video_id from key
+            video_id = key[len(prefix) : -5]  # Remove prefix and .json
+            if not video_id:
+                continue
+
+            try:
+                response = s3_client.get_object(Bucket=bucket, Key=key)
+                doc = json.loads(response["Body"].read())
+
+                boundaries = []
+                for b in doc.get("boundaries", []):
+                    boundaries.append(CallBoundary(
+                        start=b["start_s"],
+                        end=b["end_s"],
+                    ))
+
+                # Sort by start time
+                boundaries.sort(key=lambda x: x.start)
+                labels[video_id] = boundaries
+            except Exception as e:
+                logger.warning(f"Error loading boundaries for {video_id}: {e}")
+
+    return labels
+
+
 def load_labels(path: Path) -> Dict[str, List[CallBoundary]]:
     """Load labels from either JSON or CSV format."""
     if path.suffix == ".json":
@@ -764,8 +815,18 @@ def main():
     parser.add_argument(
         "--labels",
         type=Path,
-        required=True,
-        help="Path to labels file (labels.json or corrected_boundaries.csv)",
+        help="Path to local labels file (labels.json or corrected_boundaries.csv)",
+    )
+    parser.add_argument(
+        "--labels-s3",
+        action="store_true",
+        help="Load labels from S3 boundary store instead of local file",
+    )
+    parser.add_argument(
+        "--labels-s3-prefix",
+        type=str,
+        default="labeling/corrected_boundaries/v1/",
+        help="S3 prefix for boundary store (used with --labels-s3)",
     )
     parser.add_argument(
         "--output-dir",
@@ -807,8 +868,18 @@ def main():
     )
 
     # Step 1: Load labels
-    logger.info(f"Loading labels from {args.labels}")
-    labels = load_labels(args.labels)
+    s3 = boto3.client("s3", region_name=AWS_REGION)
+
+    if args.labels_s3:
+        logger.info(f"Loading labels from S3: s3://{S3_BUCKET}/{args.labels_s3_prefix}")
+        labels = load_labels_s3(s3, S3_BUCKET, args.labels_s3_prefix)
+    elif args.labels:
+        logger.info(f"Loading labels from {args.labels}")
+        labels = load_labels(args.labels)
+    else:
+        logger.error("Must specify either --labels or --labels-s3")
+        sys.exit(1)
+
     logger.info(f"Loaded labels for {len(labels)} videos")
 
     # Validate labels

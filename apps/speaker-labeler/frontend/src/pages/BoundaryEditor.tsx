@@ -120,9 +120,7 @@ export function BoundaryEditor() {
     const regions = RegionsPlugin.create();
     regionsRef.current = regions;
 
-    // Create audio element first - this handles streaming better than fetch
-    const audio = new Audio(audioUrl);
-
+    // Create WaveSurfer without URL first (avoids StrictMode abort race)
     const ws = WaveSurfer.create({
       container: containerRef.current,
       waveColor: '#6366F1',
@@ -132,16 +130,55 @@ export function BoundaryEditor() {
       barWidth: 2,
       barGap: 1,
       plugins: [regions],
-      media: audio,
     });
 
-    // Handle audio metadata loaded
-    audio.addEventListener('loadedmetadata', () => {
-      setDuration(audio.duration);
-    });
+    // AbortController to cancel in-flight requests on cleanup
+    const abortController = new AbortController();
+
+    // Fetch audio using streaming reader (response.blob() fails with large streaming responses)
+    const loadAudio = async () => {
+      try {
+        const response = await fetch(audioUrl, { signal: abortController.signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.body) throw new Error('No response body');
+
+        // Read chunks manually - works around browser streaming issues
+        const reader = response.body.getReader();
+        const chunks: Uint8Array[] = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (abortController.signal.aborted) {
+            reader.cancel();
+            return;
+          }
+          chunks.push(value);
+        }
+
+        if (abortController.signal.aborted) return;
+
+        const blob = new Blob(chunks, { type: 'audio/mpeg' });
+        await ws.loadBlob(blob);
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        console.error('Failed to load audio:', err);
+      }
+    };
+
+    // Start loading immediately (AbortController handles cleanup)
+    loadAudio();
 
     ws.on('ready', () => {
       setDuration(ws.getDuration());
+    });
+
+    ws.on('error', (err) => {
+      console.error('WaveSurfer error:', {
+        name: err?.name,
+        message: err?.message,
+        stack: err?.stack?.split('\n').slice(0, 5).join('\n')
+      });
     });
 
     ws.on('timeupdate', () => {
@@ -174,6 +211,7 @@ export function BoundaryEditor() {
     wavesurferRef.current = ws;
 
     return () => {
+      abortController.abort();
       ws.destroy();
     };
   }, [audioUrl]);
@@ -333,8 +371,37 @@ export function BoundaryEditor() {
     setCorrectedBoundaries((prev) => prev.filter((b) => b.id !== id));
   }, []);
 
+  // Check if corrected boundaries match auto boundaries (no real edits made)
+  const boundariesMatchAuto = useCallback(() => {
+    if (correctedBoundaries.length !== autoBoundaries.length) return false;
+
+    const sortedCorrected = [...correctedBoundaries].sort((a, b) => a.start_s - b.start_s);
+    const sortedAuto = [...autoBoundaries].sort((a, b) => a.start_s - b.start_s);
+
+    // Check if all boundaries match within 0.1s tolerance
+    for (let i = 0; i < sortedCorrected.length; i++) {
+      const diff_start = Math.abs(sortedCorrected[i].start_s - sortedAuto[i].start_s);
+      const diff_end = Math.abs(sortedCorrected[i].end_s - sortedAuto[i].end_s);
+      if (diff_start > 0.1 || diff_end > 0.1) {
+        return false;
+      }
+    }
+    return true;
+  }, [correctedBoundaries, autoBoundaries]);
+
   const handleSave = useCallback(async () => {
     if (!selectedVideoId) return;
+
+    // Warn if boundaries match auto-detected (user may have forgotten to edit)
+    if (boundariesMatchAuto()) {
+      const confirmed = confirm(
+        'These boundaries match the auto-detected ones.\n\n' +
+        'Are you sure you want to save without any manual corrections?\n\n' +
+        '(This is typically a mistake - you may have clicked "Copy from Auto" without editing)'
+      );
+      if (!confirmed) return;
+    }
+
     setSaving(true);
     try {
       const boundariesData = correctedBoundaries.map((b) => ({
