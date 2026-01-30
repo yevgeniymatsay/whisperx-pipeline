@@ -21,6 +21,23 @@ interface Boundary {
   type: 'auto' | 'corrected';
 }
 
+// Skip interval configuration for time navigation buttons
+const SKIP_INTERVALS = [
+  { seconds: -300, label: '-5m' },
+  { seconds: -60, label: '-60s' },
+  { seconds: -25, label: '-25s' },
+  { seconds: -5, label: '-5s' },
+  { seconds: -0.25, label: '-0.25s' },
+  { seconds: 0.25, label: '+0.25s' },
+  { seconds: 5, label: '+5s' },
+  { seconds: 25, label: '+25s' },
+  { seconds: 60, label: '+60s' },
+  { seconds: 300, label: '+5m' },
+];
+
+// Playback speed options
+const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
 export function BoundaryEditor() {
   const [videos, setVideos] = useState<VideoInfo[]>([]);
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
@@ -33,6 +50,7 @@ export function BoundaryEditor() {
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
   const [showAuto, setShowAuto] = useState(true);
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(50); // pixels per second
@@ -171,6 +189,8 @@ export function BoundaryEditor() {
 
     ws.on('ready', () => {
       setDuration(ws.getDuration());
+      // Sync playback rate when WaveSurfer is ready (maintains rate when switching videos)
+      ws.setPlaybackRate(playbackRate);
     });
 
     ws.on('error', (err) => {
@@ -262,20 +282,18 @@ export function BoundaryEditor() {
     wavesurferRef.current?.playPause();
   }, []);
 
-  const skipForward = useCallback(() => {
+  // Unified skip function - positive for forward, negative for backward
+  const skip = useCallback((seconds: number) => {
     if (!wavesurferRef.current) return;
-    const newTime = Math.min(
-      wavesurferRef.current.getCurrentTime() + 5,
-      wavesurferRef.current.getDuration()
-    );
+    const current = wavesurferRef.current.getCurrentTime();
+    const duration = wavesurferRef.current.getDuration();
+    const newTime = Math.max(0, Math.min(current + seconds, duration));
     wavesurferRef.current.setTime(newTime);
   }, []);
 
-  const skipBackward = useCallback(() => {
-    if (!wavesurferRef.current) return;
-    const newTime = Math.max(wavesurferRef.current.getCurrentTime() - 5, 0);
-    wavesurferRef.current.setTime(newTime);
-  }, []);
+  // Keyboard shortcut wrappers (keep 5s for [ ] keys)
+  const skipForward = useCallback(() => skip(5), [skip]);
+  const skipBackward = useCallback(() => skip(-5), [skip]);
 
   const handleZoomIn = useCallback(() => {
     setZoomLevel((prev) => Math.min(prev * 1.5, 500));
@@ -283,6 +301,13 @@ export function BoundaryEditor() {
 
   const handleZoomOut = useCallback(() => {
     setZoomLevel((prev) => Math.max(prev / 1.5, 10));
+  }, []);
+
+  const handlePlaybackRateChange = useCallback((rate: number) => {
+    setPlaybackRate(rate);
+    if (wavesurferRef.current) {
+      wavesurferRef.current.setPlaybackRate(rate);
+    }
   }, []);
 
   // Nudge selected region edge
@@ -320,37 +345,81 @@ export function BoundaryEditor() {
     const time = wavesurferRef.current.getCurrentTime();
     const dur = wavesurferRef.current.getDuration();
 
-    // Find if we're inside an existing corrected boundary
-    const existingIdx = correctedBoundaries.findIndex(
-      (b) => time >= b.start_s && time <= b.end_s
-    );
+    // Use functional update to avoid stale closure issues
+    setCorrectedBoundaries((prev) => {
+      // Find if we're inside an existing corrected boundary
+      const existingIdx = prev.findIndex(
+        (b) => time >= b.start_s && time <= b.end_s
+      );
 
-    if (existingIdx >= 0) {
-      // Split the existing boundary at playhead
-      const existing = correctedBoundaries[existingIdx];
-      const newBoundaries = [...correctedBoundaries];
-      newBoundaries[existingIdx] = { ...existing, end_s: time };
-      newBoundaries.splice(existingIdx + 1, 0, {
-        id: `corrected-${Date.now()}`,
-        start_s: time,
-        end_s: existing.end_s,
-        type: 'corrected',
-      });
-      setCorrectedBoundaries(newBoundaries);
-    } else {
-      // Add new boundary from playhead to end (or next boundary)
-      const nextBoundary = correctedBoundaries.find((b) => b.start_s > time);
-      const endTime = nextBoundary ? nextBoundary.start_s : dur;
+      if (existingIdx >= 0) {
+        // Split the existing boundary at playhead
+        const existing = prev[existingIdx];
+        const newBoundaries = [...prev];
+        newBoundaries[existingIdx] = { ...existing, end_s: time };
+        newBoundaries.splice(existingIdx + 1, 0, {
+          id: `corrected-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          start_s: time,
+          end_s: existing.end_s,
+          type: 'corrected',
+        });
+        return newBoundaries;
+      } else {
+        // Add new boundary from playhead to end (or next boundary)
+        const nextBoundary = prev.find((b) => b.start_s > time);
+        const endTime = nextBoundary ? nextBoundary.start_s : dur;
 
-      const newBoundary: Boundary = {
-        id: `corrected-${Date.now()}`,
-        start_s: time,
-        end_s: endTime,
-        type: 'corrected',
-      };
-      setCorrectedBoundaries((prev) => [...prev, newBoundary].sort((a, b) => a.start_s - b.start_s));
-    }
-  }, [correctedBoundaries]);
+        const newBoundary: Boundary = {
+          id: `corrected-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          start_s: time,
+          end_s: endTime,
+          type: 'corrected',
+        };
+        return [...prev, newBoundary].sort((a, b) => a.start_s - b.start_s);
+      }
+    });
+  }, []); // No dependency on correctedBoundaries - functional update reads fresh state
+
+  const addBoundaryEndingAtPlayhead = useCallback(() => {
+    if (!wavesurferRef.current) return;
+    const time = wavesurferRef.current.getCurrentTime();
+
+    // Use functional update to avoid stale closure issues
+    setCorrectedBoundaries((prev) => {
+      // Find if we're inside an existing corrected boundary
+      const existingIdx = prev.findIndex(
+        (b) => time >= b.start_s && time <= b.end_s
+      );
+
+      if (existingIdx >= 0) {
+        // Split the existing boundary at playhead (same as B)
+        const existing = prev[existingIdx];
+        const newBoundaries = [...prev];
+        newBoundaries[existingIdx] = { ...existing, end_s: time };
+        newBoundaries.splice(existingIdx + 1, 0, {
+          id: `corrected-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          start_s: time,
+          end_s: existing.end_s,
+          type: 'corrected',
+        });
+        return newBoundaries;
+      } else {
+        // Add new boundary from previous boundary end (or 0) to playhead
+        const prevBoundary = [...prev]
+          .filter((b) => b.end_s <= time)
+          .sort((a, b) => b.end_s - a.end_s)[0];
+        const startTime = prevBoundary ? prevBoundary.end_s : 0;
+
+        const newBoundary: Boundary = {
+          id: `corrected-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          start_s: startTime,
+          end_s: time,
+          type: 'corrected',
+        };
+        return [...prev, newBoundary].sort((a, b) => a.start_s - b.start_s);
+      }
+    });
+  }, []); // No dependency - functional update reads fresh state
 
   const clearAllCorrected = useCallback(() => {
     setCorrectedBoundaries([]);
@@ -544,7 +613,11 @@ export function BoundaryEditor() {
         case 'b':
         case 'B':
           e.preventDefault();
-          addBoundaryAtPlayhead();
+          if (e.shiftKey) {
+            addBoundaryEndingAtPlayhead();
+          } else {
+            addBoundaryAtPlayhead();
+          }
           break;
         case 'd':
         case 'D':
@@ -595,7 +668,7 @@ export function BoundaryEditor() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [togglePlay, addBoundaryAtPlayhead, deleteSelectedBoundary, skipBackward, skipForward, handleZoomIn, handleZoomOut, nudgeSelectedRegion, selectedRegionId]);
+  }, [togglePlay, addBoundaryAtPlayhead, addBoundaryEndingAtPlayhead, deleteSelectedBoundary, skipBackward, skipForward, handleZoomIn, handleZoomOut, nudgeSelectedRegion, selectedRegionId]);
 
   // Navigate to next/prev video
   const currentVideoIndex = videos.findIndex((v) => v.video_id === selectedVideoId);
@@ -761,46 +834,80 @@ export function BoundaryEditor() {
                 </label>
               </div>
               <div ref={containerRef} className="bg-gray-100 rounded-lg overflow-x-auto" />
-              <div className="mt-4 flex items-center gap-4">
-                <button
-                  onClick={skipBackward}
-                  className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-                  title="Skip backward 5s ([)"
-                >
-                  -5s
-                </button>
+              {/* Playback controls - compact row */}
+              <div className="mt-4 flex items-center gap-1.5 flex-wrap">
+                {/* Left skip buttons (backward) */}
+                {SKIP_INTERVALS.slice(0, 5).map(({ seconds, label }) => (
+                  <button
+                    key={label}
+                    onClick={() => skip(seconds)}
+                    className="px-2 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
+                    title={`Skip ${label}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+
+                {/* Play button - prominent */}
                 <button
                   onClick={togglePlay}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium mx-1"
                   title="Play/Pause (Space)"
                 >
-                  {isPlaying ? '⏸ Pause' : '▶ Play'}
+                  {isPlaying ? '⏸' : '▶'}
                 </button>
-                <button
-                  onClick={skipForward}
-                  className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-                  title="Skip forward 5s (])"
-                >
-                  +5s
-                </button>
-                <span className="font-mono text-lg text-gray-800 bg-gray-100 px-3 py-1 rounded">
+
+                {/* Right skip buttons (forward) */}
+                {SKIP_INTERVALS.slice(5).map(({ seconds, label }) => (
+                  <button
+                    key={label}
+                    onClick={() => skip(seconds)}
+                    className="px-2 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
+                    title={`Skip ${label}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+
+                {/* Time display */}
+                <span className="font-mono text-sm text-gray-800 bg-gray-100 px-2 py-1 rounded ml-2">
                   {formatTimeMs(currentTime)} / {formatTimeMs(duration)}
                 </span>
+
+                {/* Spacer */}
                 <div className="flex-1" />
-                <div className="flex items-center gap-2">
+
+                {/* Playback speed control */}
+                <div className="flex items-center gap-1">
+                  <span className="text-sm text-gray-600">Speed:</span>
+                  <select
+                    value={playbackRate}
+                    onChange={(e) => handlePlaybackRateChange(Number(e.target.value))}
+                    className="px-2 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm cursor-pointer border-0"
+                  >
+                    {PLAYBACK_RATES.map((rate) => (
+                      <option key={rate} value={rate}>
+                        {rate}x
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Zoom controls */}
+                <div className="flex items-center gap-1 ml-2">
                   <button
                     onClick={handleZoomOut}
-                    className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                    className="px-2 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
                     title="Zoom out (-)"
                   >
                     -
                   </button>
-                  <span className="text-sm text-gray-600 w-20 text-center">
+                  <span className="text-xs text-gray-600 w-14 text-center">
                     {Math.round(zoomLevel)}px/s
                   </span>
                   <button
                     onClick={handleZoomIn}
-                    className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                    className="px-2 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
                     title="Zoom in (+)"
                   >
                     +
@@ -814,8 +921,16 @@ export function BoundaryEditor() {
               <button
                 onClick={addBoundaryAtPlayhead}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                title="Add boundary starting at playhead (B)"
               >
-                + Add Boundary at Playhead
+                + Start at Playhead
+              </button>
+              <button
+                onClick={addBoundaryEndingAtPlayhead}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                title="Add boundary ending at playhead (Shift+B)"
+              >
+                + End at Playhead
               </button>
               <button
                 onClick={initFromAuto}
@@ -854,7 +969,8 @@ export function BoundaryEditor() {
             <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 text-xs text-blue-700">
               <span className="font-medium">Shortcuts:</span>{' '}
               <kbd className="px-1 bg-blue-100 rounded">Space</kbd> Play/Pause{' '}
-              <kbd className="px-1 bg-blue-100 rounded">B</kbd> Add boundary{' '}
+              <kbd className="px-1 bg-blue-100 rounded">B</kbd> Start boundary{' '}
+              <kbd className="px-1 bg-blue-100 rounded">Shift+B</kbd> End boundary{' '}
               <kbd className="px-1 bg-blue-100 rounded">[ ]</kbd> Skip 5s{' '}
               <kbd className="px-1 bg-blue-100 rounded">+ -</kbd> Zoom{' '}
               {selectedRegionId && (
