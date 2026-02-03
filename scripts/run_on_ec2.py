@@ -114,7 +114,7 @@ export HF_TOKEN='{hf_token}' && \\
 export PYTHONPATH="$HOME:$PYTHONPATH" && \\
 export TORCH_HOME="$HOME/.cache/torch" && \\
 export HF_HOME="$HOME/.cache/huggingface" && \\
-python3 -m whisperx_pipeline.cli --video-id='{video_id}' --audio-key='{audio_key_escaped}'
+python3 -m pipeline.cli --video-id='{video_id}' --audio-key='{audio_key_escaped}' --no-db
 """
 
     ssh_cmd = [
@@ -174,6 +174,11 @@ def main():
         help="Run only this specific video ID",
     )
     parser.add_argument(
+        "--video-list",
+        type=Path,
+        help="Path to file with video IDs (one per line)",
+    )
+    parser.add_argument(
         "--skip-processed",
         action="store_true",
         help="Skip videos that already have output in runs/",
@@ -183,6 +188,12 @@ def main():
     # Load video IDs
     if args.video_id:
         video_ids = [args.video_id]
+    elif args.video_list:
+        if not args.video_list.exists():
+            print(f"Error: {args.video_list} not found")
+            sys.exit(1)
+        with open(args.video_list) as f:
+            video_ids = [line.strip() for line in f if line.strip()]
     else:
         video_ids = load_selected_videos()
 

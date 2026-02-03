@@ -1,20 +1,17 @@
 # scripts/whisperx_pipeline/pipeline.py
 """Main WhisperX pipeline orchestrator."""
-import json
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 import boto3
 
 from .config import PipelineConfig, S3_BUCKET
 from .audio_preprocess import convert_to_wav, load_audio
-from .vad_chunker import VADChunker, Chunk
+from .vad_chunker import VADChunker
 from .transcriber import WhisperXTranscriber
-from .quality_metrics import compute_quality_metrics, compute_narrator_ratio
-from .call_splitter import CallSplitter
-from .turn_builder import TurnBuilder
-from .chunk_writer import ChunkWriter, CallWriter
+from .quality_metrics import compute_quality_metrics
+from .chunk_writer import ChunkWriter
 from . import db
 
 
@@ -103,13 +100,14 @@ class WhisperXPipeline:
             transcriber = WhisperXTranscriber(self.config.whisperx)
             writer = ChunkWriter(str(tmpdir / "output"), self.config)
 
-            all_words = []
             for chunk in chunks:
                 try:
                     chunk_audio = audio[int(chunk.start_s * 16000):int(chunk.end_s * 16000)]
                     words, dia_segs = transcriber.transcribe(
                         chunk_audio,
-                        chunk_time_offset_s=chunk.start_s
+                        chunk_time_offset_s=chunk.start_s,
+                        min_speakers=self.config.whisperx.min_speakers,
+                        max_speakers=self.config.whisperx.max_speakers,
                     )
 
                     # Quality metrics
@@ -135,13 +133,6 @@ class WhisperXPipeline:
                         duration_s=chunk.duration_s
                     )
 
-                    # Collect words for call splitting
-                    if content_type == "call_like":
-                        all_words.extend([
-                            {"spk": w.spk, "t0_abs": w.t0_abs, "t1_abs": w.t1_abs, "text": w.text, "text_norm": w.text_norm}
-                            for w in words
-                        ])
-
                     manifest["chunks"]["ok"] += 1
 
                 except Exception as e:
@@ -149,56 +140,6 @@ class WhisperXPipeline:
                     import traceback
                     print(f"ERROR processing chunk {chunk.chunk_id}: {e}")
                     print(traceback.format_exc())
-
-            # CRITICAL: Sort merged words by absolute time before splitting
-            # Chunks may overlap or be processed out of order
-            all_words.sort(key=lambda w: (w["t0_abs"], w["t1_abs"]))
-
-            # Call splitting
-            splitter = CallSplitter(self.config.split_calls, video_id)
-            boundaries = splitter.find_boundaries(all_words)
-            call_word_lists = splitter.split_words(all_words, boundaries)
-
-            # Build turns and write call artifacts
-            turn_builder = TurnBuilder()
-            call_writer = CallWriter(str(tmpdir / "output"), self.config)
-            manifest["calls"]["total"] = len(boundaries)
-
-            for boundary, call_words in zip(boundaries, call_word_lists):
-                turns = turn_builder.build_turns(call_words)
-
-                # Write call artifacts to calls/<call_id>/
-                call_writer.write_call(
-                    video_id=video_id,
-                    call_id=boundary.call_id,
-                    call_start_abs=boundary.start_abs,
-                    call_end_abs=boundary.end_abs,
-                    words=call_words,
-                    spk_turns=turns,
-                    boundary_confidence=boundary.boundary_confidence,
-                    start_evidence=boundary.start_evidence,
-                    end_evidence=boundary.end_evidence
-                )
-                manifest["calls"]["ok"] += 1
-
-                # Register call in DynamoDB
-                if track_in_db:
-                    try:
-                        # Count unique speakers in turns
-                        speakers = set(t.spk for t in turns)
-                        s3_key = f"{run_prefix}/calls/{boundary.call_id}/spk_turns.json"
-
-                        db.register_call(
-                            call_id=boundary.call_id,
-                            video_id=video_id,
-                            run_id=run_id,
-                            s3_key=s3_key,
-                            turn_count=len(turns),
-                            speaker_count=len(speakers),
-                            conversation_type=conversation_type,
-                        )
-                    except Exception as e:
-                        print(f"WARNING: Failed to register call {boundary.call_id} in DB: {e}")
 
             # Upload to S3
             self._upload_outputs(tmpdir / "output", run_prefix)
@@ -239,11 +180,9 @@ class WhisperXPipeline:
             "whisperx": {
                 "model": self.config.whisperx.model,
                 "batch_size": self.config.whisperx.batch_size,
-                "compute_type": self.config.whisperx.compute_type
-            },
-            "split_calls": {
-                "silence_threshold_s": self.config.split_calls.silence_threshold_s,
-                "fuzzy_match_threshold": self.config.split_calls.fuzzy_match_threshold
+                "compute_type": self.config.whisperx.compute_type,
+                "min_speakers": self.config.whisperx.min_speakers,
+                "max_speakers": self.config.whisperx.max_speakers,
             }
         }
 

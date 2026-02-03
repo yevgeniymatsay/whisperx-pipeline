@@ -90,6 +90,7 @@ def main():
     parser.add_argument("--run-id", help="Run ID (auto-generated if not provided)")
     parser.add_argument("--audio-key", help="S3 key for audio (default: audio/{video_id}.mp3)")
     parser.add_argument("--smoke-test", action="store_true", help="Run quick validation of GPU/models")
+    parser.add_argument("--no-db", action="store_true", help="Skip DynamoDB tracking")
 
     args = parser.parse_args()
 
@@ -109,7 +110,8 @@ def main():
     manifest = pipeline.process_video(
         video_id=args.video_id,
         audio_s3_key=audio_key,
-        run_id=args.run_id
+        run_id=args.run_id,
+        track_in_db=not args.no_db,
     )
 
     print(f"Completed: {manifest['job_status']}")
