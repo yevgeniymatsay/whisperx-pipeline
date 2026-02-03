@@ -47,7 +47,7 @@ S3_BUCKET = "rezora-whisperx-us-east-1-864981718771"
 AUDIO_PREFIX = "audio/pretraining/"
 
 # EC2 config
-EC2_HOST = "ubuntu@18.209.171.46"
+EC2_HOST = "ubuntu@13.217.101.70"
 SSH_KEY = Path.home() / ".ssh" / "whisperx-key-east1.pem"
 
 # AWS Secrets Manager

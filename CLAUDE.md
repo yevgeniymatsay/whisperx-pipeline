@@ -110,7 +110,7 @@ python -m vllm.entrypoints.openai.api_server \
 
 ### EC2 Worker (whisperx-worker-1)
 - **Instance:** g5.2xlarge (1x A10G GPU, 24GB VRAM)
-- **IP:** 18.209.171.46
+- **IP:** 13.217.101.70
 - **SSH Key:** whisperx-key
 
 ```bash
@@ -121,7 +121,7 @@ python scripts/run_on_ec2.py --video-id VIDEO_ID
 python scripts/run_on_ec2.py --execute --limit 5
 
 # SSH directly to worker
-ssh -i ~/.ssh/whisperx-key.pem ubuntu@18.209.171.46
+ssh -i ~/.ssh/whisperx-key.pem ubuntu@13.217.101.70
 ```
 
 ### Docker Image
