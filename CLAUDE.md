@@ -112,6 +112,7 @@ python -m vllm.entrypoints.openai.api_server \
 - **Instance:** g5.2xlarge (1x A10G GPU, 24GB VRAM)
 - **IP:** 13.217.101.70
 - **SSH Key:** whisperx-key
+- **Note:** IP can change on stop/start; verify with `aws ec2 describe-instances --filters "Name=tag:Name,Values=whisperx-worker-1"`
 
 ```bash
 # Run pipeline on worker (from local machine)
@@ -122,6 +123,9 @@ python scripts/run_on_ec2.py --execute --limit 5
 
 # SSH directly to worker
 ssh -i ~/.ssh/whisperx-key.pem ubuntu@13.217.101.70
+
+# Deploy code changes (repo is private, can't git clone)
+rsync -avz --delete -e "ssh -i ~/.ssh/whisperx-key-east1.pem" pipeline/ ubuntu@13.217.101.70:~/whisperx_pipeline/
 ```
 
 ### Docker Image
@@ -162,6 +166,8 @@ Two UIs at http://localhost:5173:
 
 ## Key Gotchas
 - **PyTorch 2.6+ breaks pyannote:** `cli.py` monkey-patches `torch.load` - must happen BEFORE imports
+- **EC2 module path:** Files at `~/whisperx_pipeline/` but CLI expects `pipeline.cli`; ensure symlink exists: `ln -sfn ~/whisperx_pipeline ~/pipeline`
+- **VAD is the filtering point:** Silero VAD threshold (0.5) determines what gets transcribed; audio below threshold is never sent to WhisperX
 - **HF_TOKEN required:** Diarization fails without HuggingFace token
 - **Immutable chunks:** Never regenerate chunks within same run_id
 - **60s feature window:** Role classifier only uses first 60s of call
@@ -188,15 +194,12 @@ VLLM_BASE_URL=http://localhost:8000/v1
 ```
 MP3 → ffmpeg 16kHz WAV → Silero VAD chunks (30-600s)
     → WhisperX + pyannote → words.json + diarization
-    → Call splitting (2.5s silence + greeting patterns)
-    → Turn building → Role classification (3-class)
-    → GenRM judge → Route to accepted/review/rejected
-    → Multi-turn SFT data for fine-tuning
+    → Upload to S3 (XGBoost predicts call boundaries from chunks)
 ```
 
 ## Testing
 ```bash
-pytest tests/                           # All tests
+pytest tests/ -p no:asyncio             # All tests (disable asyncio plugin to avoid conflicts)
 pytest tests/whisperx_pipeline/ -v      # Verbose
 pytest --cov=pipeline --cov-report=html # Coverage
 ```
