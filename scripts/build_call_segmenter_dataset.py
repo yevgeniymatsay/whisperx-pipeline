@@ -38,15 +38,15 @@ import boto3
 from sklearn.feature_extraction.text import HashingVectorizer
 
 from scipy import sparse
-from scipy import signal
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pipeline.config import S3_BUCKET, AWS_REGION
-from pipeline.audio_preprocess import decode_audio_to_float32
+from pipeline.audio_preprocess import decode_audio_stream_to_float32
 from pipeline.transcriber import DiarizationSegment
 from pipeline.call_segmenter.features import merge_adjacent_segments, compute_window_features
+from pipeline.call_segmenter.audio_features import AudioFeatureConfig, compute_audio_features_for_windows
 from pipeline.call_segmenter.window_generator import WindowConfig, CallBoundary, assign_labels, generate_window_times
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -97,6 +97,8 @@ class DatasetConfig:
     text_n_features: int = 2**12
     text_ngram_min: int = 2
     text_ngram_max: int = 5
+    text_context_s: float = 0.0
+    text_max_chars: int = 300
 
     # Audio-derived features (computed from the source MP3; role-agnostic)
     include_audio_features: bool = True
@@ -190,117 +192,49 @@ def union_speech_duration_in_range(
 class WindowTextExtractor:
     """Streaming extractor of window text from a sorted word list."""
 
-    def __init__(self, words: List[dict]):
+    def __init__(self, words: List[dict], *, context_s: float = 0.0, max_chars: int = 300):
         self.words = sorted(words, key=lambda w: w.get("t0_abs", 0.0))
         self.i = 0
+        self.context_s = float(context_s)
+        self.max_chars = int(max_chars)
 
     def text_for_window(self, t_start: float, t_end: float) -> str:
+        span_start = float(t_start) - self.context_s
+        span_end = float(t_end) + self.context_s
         # Advance start pointer to the first word that might overlap this window.
-        while self.i < len(self.words) and float(self.words[self.i].get("t1_abs", 0.0)) <= t_start:
+        while self.i < len(self.words) and float(self.words[self.i].get("t1_abs", 0.0)) <= span_start:
             self.i += 1
 
         tokens: List[str] = []
         j = self.i
-        while j < len(self.words) and float(self.words[j].get("t0_abs", 0.0)) < t_end:
+        while j < len(self.words) and float(self.words[j].get("t0_abs", 0.0)) < span_end:
             tok = self.words[j].get("text_norm") or self.words[j].get("text") or ""
             tok = str(tok).strip()
             if tok:
                 tokens.append(tok)
             j += 1
 
-        return " ".join(tokens)
+        text = " ".join(tokens)
+        if self.max_chars and len(text) > self.max_chars:
+            text = text[: self.max_chars]
+        return text
 
 
-# =============================================================================
-# Audio Features (phone-band / high-frequency energy)
-# =============================================================================
+def load_mp3_audio_16k_from_s3(
+    s3_client, mp3_key: str, *, max_duration_s: Optional[float] = None, sr_hz: int = 16000
+) -> np.ndarray:
+    """Download MP3 from S3 and decode it to mono float32 PCM.
 
-
-@dataclass
-class AudioEnergyContext:
-    """Precomputed prefix sums for fast per-window band-energy features."""
-
-    sr_hz: int
-    n_samples: int
-    total_energy_prefix: np.ndarray  # shape [n_samples + 1]
-    phone_energy_prefix: np.ndarray  # shape [n_samples + 1]
-    hf_energy_prefix: np.ndarray  # shape [n_samples + 1]
-
-    def _idx(self, t_s: float) -> int:
-        # Windows are aligned to win/hop (0.5s, 1.0s), so rounding is stable.
-        return int(round(float(t_s) * self.sr_hz))
-
-    def features_for_window(self, t_start: float, t_end: float) -> Tuple[float, float, float]:
-        """Return (rms_energy, phone_band_frac, hf_energy_frac) for [t_start, t_end]."""
-        i0 = max(0, min(self.n_samples, self._idx(t_start)))
-        i1 = max(0, min(self.n_samples, self._idx(t_end)))
-        if i1 <= i0:
-            return 0.0, 0.0, 0.0
-
-        total_e = float(self.total_energy_prefix[i1] - self.total_energy_prefix[i0])
-        phone_e = float(self.phone_energy_prefix[i1] - self.phone_energy_prefix[i0])
-        hf_e = float(self.hf_energy_prefix[i1] - self.hf_energy_prefix[i0])
-
-        n = i1 - i0
-        rms = math.sqrt(max(total_e / max(n, 1), 0.0))
-
-        if total_e > 0.0:
-            phone_frac = phone_e / total_e
-            hf_frac = hf_e / total_e
-        else:
-            phone_frac = 0.0
-            hf_frac = 0.0
-
-        # Filtering can introduce tiny numerical overshoots; clamp to sane range.
-        phone_frac = float(min(1.0, max(0.0, phone_frac)))
-        hf_frac = float(min(1.0, max(0.0, hf_frac)))
-
-        return float(rms), phone_frac, hf_frac
-
-
-def load_mp3_audio_16k_from_s3(s3_client, mp3_key: str) -> np.ndarray:
-    """Download MP3 from S3 and load it as 16kHz mono float32."""
-    with tempfile.TemporaryDirectory() as td:
-        mp3_path = Path(td) / "audio.mp3"
-        s3_client.download_file(S3_BUCKET, mp3_key, str(mp3_path))
-        audio = decode_audio_to_float32(str(mp3_path), sr_hz=16000)
-    return audio.astype(np.float32, copy=False)
-
-
-def build_audio_energy_context(audio: np.ndarray, config: DatasetConfig) -> AudioEnergyContext:
-    """Build AudioEnergyContext for fast per-window audio features."""
-    if audio.ndim != 1:
-        audio = np.asarray(audio).reshape(-1)
-
-    sr = int(config.audio_sr_hz)
-    order = int(config.audio_filter_order)
-    phone_low = float(config.audio_phone_low_hz)
-    phone_high = float(config.audio_phone_high_hz)
-    hf_low = float(config.audio_hf_low_hz)
-
-    x = audio.astype(np.float32, copy=False)
-    n = int(x.shape[0])
-
-    # Total energy prefix (float64 accumulator for stability).
-    total_energy_prefix = np.concatenate([[0.0], np.cumsum(x * x, dtype=np.float64)])
-
-    # Phone band (rough PSTN band). Use SOS for numerical stability.
-    sos_phone = signal.butter(order, [phone_low, phone_high], btype="bandpass", fs=sr, output="sos")
-    x_phone = signal.sosfilt(sos_phone, x)
-    phone_energy_prefix = np.concatenate([[0.0], np.cumsum(x_phone * x_phone, dtype=np.float64)])
-
-    # High frequency band: presence of HF energy helps separate room narration/music from phone audio.
-    sos_hf = signal.butter(order, hf_low, btype="highpass", fs=sr, output="sos")
-    x_hf = signal.sosfilt(sos_hf, x)
-    hf_energy_prefix = np.concatenate([[0.0], np.cumsum(x_hf * x_hf, dtype=np.float64)])
-
-    return AudioEnergyContext(
-        sr_hz=sr,
-        n_samples=n,
-        total_energy_prefix=total_energy_prefix,
-        phone_energy_prefix=phone_energy_prefix,
-        hf_energy_prefix=hf_energy_prefix,
-    )
+    Args:
+        max_duration_s: if provided, truncate audio to this many seconds.
+    """
+    resp = s3_client.get_object(Bucket=S3_BUCKET, Key=mp3_key)
+    audio = decode_audio_stream_to_float32(
+        resp["Body"],
+        sr_hz=int(sr_hz),
+        max_duration_s=max_duration_s,
+    ).astype(np.float32, copy=False)
+    return audio
 
 
 # =============================================================================
@@ -634,15 +568,15 @@ def process_video(
     dropped_uncovered = 0
     total_windows = 0
 
-    text_extractor = WindowTextExtractor(video_data.words) if (config.include_text and vectorizer) else None
-    audio_ctx: Optional[AudioEnergyContext] = None
-
-    if config.include_audio_features:
-        try:
-            audio = load_mp3_audio_16k_from_s3(s3_client, video_data.mp3_key)
-            audio_ctx = build_audio_energy_context(audio, config)
-        except Exception as e:
-            errors.append(f"audio_features_failed: mp3_key={video_data.mp3_key} err={e}")
+    text_extractor = (
+        WindowTextExtractor(
+            video_data.words,
+            context_s=config.text_context_s,
+            max_chars=config.text_max_chars,
+        )
+        if (config.include_text and vectorizer)
+        else None
+    )
 
     for t_start, t_end, t_mid in generate_window_times(0.0, timeline_end, window_config):
         total_windows += 1
@@ -677,24 +611,55 @@ def process_video(
             "creator_id": video_data.creator_id,
             "mp3_key": video_data.mp3_key,
         }
-
-        if config.include_audio_features:
-            if audio_ctx is None:
-                # If audio features were requested but couldn't be computed, mark as error and stop.
-                errors.append("audio_features_missing: include_audio_features=True but audio_ctx is None")
-                break
-            rms_energy, phone_band_frac, hf_energy_frac = audio_ctx.features_for_window(t_start, t_end)
-            row.update({
-                "rms_energy": rms_energy,
-                "phone_band_frac": phone_band_frac,
-                "hf_energy_frac": hf_energy_frac,
-            })
         rows.append(row)
 
         if text_extractor is not None:
             window_texts.append(text_extractor.text_for_window(t_start, t_end))
 
     df = pd.DataFrame(rows)
+
+    # Add audio-derived features (computed once per video).
+    if config.include_audio_features and not df.empty:
+        try:
+            audio = load_mp3_audio_16k_from_s3(
+                s3_client,
+                video_data.mp3_key,
+                max_duration_s=timeline_end,
+                sr_hz=config.audio_sr_hz,
+            )
+            audio_cfg = AudioFeatureConfig(
+                enabled=True,
+                sr_hz=int(config.audio_sr_hz),
+                filter_order=int(config.audio_filter_order),
+                phone_low_hz=float(config.audio_phone_low_hz),
+                phone_high_hz=float(config.audio_phone_high_hz),
+                hf_low_hz=float(config.audio_hf_low_hz),
+            )
+            audio_cols = [
+                "rms_energy",
+                "log_rms",
+                "log_rms_z",
+                "zcr",
+                "low_band_frac",
+                "phone_band_frac",
+                "hf_energy_frac",
+                "mid_hf_band_frac",
+                "ultra_hf_frac",
+                "hi_ratio_3p5_7k",
+            ]
+            feats = compute_audio_features_for_windows(
+                audio=audio,
+                t_starts=df["t_start"].to_numpy(),
+                t_ends=df["t_end"].to_numpy(),
+                config=audio_cfg,
+                required_columns=audio_cols,
+            )
+            for c in audio_cols:
+                df[c] = feats[c]
+        except Exception as e:
+            errors.append(f"audio_features_failed: mp3_key={video_data.mp3_key} err={e}")
+            # Without audio features, the dataset would have missing feature columns; skip this video.
+            df = pd.DataFrame()
 
     if df.empty:
         warnings.append(f"no_emitted_windows: timeline_end={timeline_end:.3f}s")
@@ -786,8 +751,16 @@ def get_git_sha() -> str:
 
 
 def build_dataset_metadata(config: DatasetConfig) -> Dict:
+    audio_cfg = AudioFeatureConfig(
+        enabled=bool(config.include_audio_features),
+        sr_hz=int(config.audio_sr_hz),
+        filter_order=int(config.audio_filter_order),
+        phone_low_hz=float(config.audio_phone_low_hz),
+        phone_high_hz=float(config.audio_phone_high_hz),
+        hf_low_hz=float(config.audio_hf_low_hz),
+    )
     meta = {
-        "version": "v3",
+        "version": "v6",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "git_sha": get_git_sha(),
         "config": {
@@ -799,13 +772,7 @@ def build_dataset_metadata(config: DatasetConfig) -> Dict:
             "merge_gap_s": config.merge_gap_s,
             "processed_end_tolerance_s": config.processed_end_tolerance_s,
             "exclude_drift_above_s": config.exclude_drift_above_s,
-            "audio_features": {
-                "enabled": config.include_audio_features,
-                "sr_hz": config.audio_sr_hz,
-                "filter_order": config.audio_filter_order,
-                "phone_band_hz": [config.audio_phone_low_hz, config.audio_phone_high_hz],
-                "hf_low_hz": config.audio_hf_low_hz,
-            },
+            "audio_features": audio_cfg.to_meta(),
         },
         "non_feature_columns": [
             "row_id",
@@ -837,8 +804,15 @@ def build_dataset_metadata(config: DatasetConfig) -> Dict:
     if config.include_audio_features:
         meta["feature_columns"].extend([
             "rms_energy",
+            "log_rms",
+            "log_rms_z",
+            "zcr",
+            "low_band_frac",
             "phone_band_frac",
             "hf_energy_frac",
+            "mid_hf_band_frac",
+            "ultra_hf_frac",
+            "hi_ratio_3p5_7k",
         ])
 
     if config.include_text:
@@ -847,6 +821,8 @@ def build_dataset_metadata(config: DatasetConfig) -> Dict:
             "n_features": config.text_n_features,
             "ngram_range": [config.text_ngram_min, config.text_ngram_max],
             "analyzer": "char_wb",
+            "context_s": float(config.text_context_s),
+            "max_chars": int(config.text_max_chars),
         }
 
     return meta
@@ -962,6 +938,10 @@ def main() -> int:
     parser.add_argument("--text-n-features", type=int, default=2**12)
     parser.add_argument("--text-ngram-min", type=int, default=2)
     parser.add_argument("--text-ngram-max", type=int, default=5)
+    parser.add_argument("--text-context-s", type=float, default=0.0,
+                        help="Extract transcript text from [t_start-context, t_end+context] for each window")
+    parser.add_argument("--text-max-chars", type=int, default=300,
+                        help="Cap concatenated transcript snippet length (chars) per window")
     parser.add_argument("--dry-run", action="store_true", help="Load/process but do not write outputs")
 
     args = parser.parse_args()
@@ -976,6 +956,8 @@ def main() -> int:
         text_n_features=args.text_n_features,
         text_ngram_min=args.text_ngram_min,
         text_ngram_max=args.text_ngram_max,
+        text_context_s=args.text_context_s,
+        text_max_chars=args.text_max_chars,
         include_audio_features=not args.no_audio_features,
     )
 

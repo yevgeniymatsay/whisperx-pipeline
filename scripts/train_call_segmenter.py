@@ -172,6 +172,8 @@ def save_model_b(
             "n_features": text_features_meta.get("n_features", 4096),
             "ngram_range": text_features_meta.get("ngram_range", [2, 5]),
             "analyzer": text_features_meta.get("analyzer", "char_wb"),
+            "context_s": float(text_features_meta.get("context_s", 0.0)),
+            "max_chars": int(text_features_meta.get("max_chars", 300)),
         },
         "audio_features": audio_features_meta,
         "window_config": window_config,

@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import math
 import re
@@ -126,6 +127,8 @@ def save_cache(
     """Save extracted probabilities to cache file."""
     wc = meta["window_config"]
     th = meta["text_hashing"]
+    text_hash = json.dumps(th, sort_keys=True)
+    audio_hash = json.dumps(meta.get("audio_features", {}), sort_keys=True)
 
     np.savez(
         path,
@@ -141,6 +144,10 @@ def save_cache(
         n_features=th["n_features"],
         ngram_range=np.array(th["ngram_range"]),
         analyzer=th["analyzer"],
+        text_context_s=float(th.get("context_s", 0.0)),
+        text_max_chars=int(th.get("max_chars", 300)),
+        text_hash=text_hash,
+        audio_hash=audio_hash,
     )
 
 
@@ -167,6 +174,10 @@ def load_cache(
     cached_ignore_s = float(data["ignore_s"].item())
     cached_n_features = int(data["n_features"].item())
     cached_analyzer = data["analyzer"].item()
+    cached_text_context_s = float(data["text_context_s"].item()) if "text_context_s" in data.files else None
+    cached_text_max_chars = int(data["text_max_chars"].item()) if "text_max_chars" in data.files else None
+    cached_text_hash = data["text_hash"].item() if "text_hash" in data.files else None
+    cached_audio_hash = data["audio_hash"].item() if "audio_hash" in data.files else None
 
     # Handle ngram_range array
     ngram = data["ngram_range"]
@@ -193,6 +204,23 @@ def load_cache(
         raise ValueError(f"Cache ngram_range mismatch: {ngram_list} != {th['ngram_range']}")
     if cached_analyzer != th["analyzer"]:
         raise ValueError(f"Cache analyzer mismatch: {cached_analyzer} != {th['analyzer']}")
+    # Text context affects the hashed features -> probabilities. Validate or invalidate.
+    expected_text_context_s = float(th.get("context_s", 0.0))
+    expected_text_max_chars = int(th.get("max_chars", 300))
+    if cached_text_context_s is None or cached_text_max_chars is None:
+        raise ValueError("Cache missing text_context_s/text_max_chars")
+    if not math.isclose(cached_text_context_s, expected_text_context_s, rel_tol=1e-9, abs_tol=1e-9):
+        raise ValueError(f"Cache text_context_s mismatch: {cached_text_context_s} != {expected_text_context_s}")
+    if cached_text_max_chars != expected_text_max_chars:
+        raise ValueError(f"Cache text_max_chars mismatch: {cached_text_max_chars} != {expected_text_max_chars}")
+    expected_text_hash = json.dumps(th, sort_keys=True)
+    expected_audio_hash = json.dumps(meta.get("audio_features", {}), sort_keys=True)
+    if cached_text_hash is None or cached_audio_hash is None:
+        raise ValueError("Cache missing text_hash/audio_hash")
+    if cached_text_hash != expected_text_hash:
+        raise ValueError("Cache text_hash mismatch")
+    if cached_audio_hash != expected_audio_hash:
+        raise ValueError("Cache audio_hash mismatch")
 
     # Extract arrays
     t_mids = data["t_mids"]
@@ -215,6 +243,8 @@ def extract_video_probabilities(
     vectorizer: HashingVectorizer,
     window_config: WindowConfig,
     feature_columns: List[str],
+    text_context_s: float,
+    text_max_chars: int,
     audio_features_meta: Optional[Dict] = None,
 ) -> Optional[Tuple[str, np.ndarray, np.ndarray, Optional[float]]]:
     """Extract probabilities for a video using the trained model.
@@ -240,6 +270,8 @@ def extract_video_probabilities(
         window_config=window_config,
         feature_columns=feature_columns,
         vectorizer=vectorizer,
+        text_context_s=text_context_s,
+        text_max_chars=text_max_chars,
         s3_client=s3_client,
         mp3_key=mp3_key,
         chunk_coverage=chunk_coverage,
@@ -309,6 +341,8 @@ def cache_all_probabilities(
             vectorizer,
             window_config,
             feature_columns,
+            text_context_s=float(meta["text_hashing"].get("context_s", 0.0)),
+            text_max_chars=int(meta["text_hashing"].get("max_chars", 300)),
             audio_features_meta=meta.get("audio_features"),
         )
 

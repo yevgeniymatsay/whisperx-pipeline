@@ -162,3 +162,27 @@ Full labeled-set eval (45 videos; no-call FP==0):
 
 Notes:
 - Best overall balance so far: higher time-F1, higher seg IoU-F1, segment ratio ~1.0, and 0/10 no-call false positives.
+
+---
+
+## 2026-02-04: v6 acoustic feature expansion + per-video normalization
+
+### exp_v6a_neg5 (new cheap acoustic features + per-video normalization; text context = 0s)
+
+- Dataset: `data/call_segmenter/v6a`
+- Split meta: `data/call_segmenter/split_meta_v1_plus3_plus10nocall.json`
+- Model dir: `data/call_segmenter/models/exp_v6a_neg5`
+- Model git SHA: `b190a86eb512`
+- Training: `--neg-weight 5.0` (no-call-video-weight=1.0)
+- Sweep best (constrained):
+  - thr_on=0.70, thr_off=0.50, gap=30, gap_min_p=0.20, min_seg=10
+
+Full labeled-set eval (45 videos; no-call FP==0):
+- Predictions prefix: `call_segmenter/predictions/exp_v6a_neg5_20260204_202830_thr70_off50_gap30_p20_min10/`
+- TimeF1 (micro): 0.9227
+- SegF1 (IoU micro): 0.4684
+- Pred: 159, Truth: 157
+
+Notes:
+- Big jump in segment IoU-F1 vs exp_v5c_neg5 (~0.40 -> ~0.47) while keeping 0/10 no-call false positives.
+- Remaining failure mode is still imperfect call splitting on a handful of long/multi-call videos; next step is to widen text context (v6b).
