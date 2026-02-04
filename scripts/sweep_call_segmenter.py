@@ -91,6 +91,11 @@ class SweepResult:
     unmatched_truth: int
     total_pred: int
     total_truth: int
+    # Diagnostics for "no-call" videos (truth has 0 segments). Useful for hard-negative tuning.
+    no_call_videos: int = 0
+    no_call_fp_videos: int = 0
+    no_call_pred_segments: int = 0
+    no_call_pred_duration_s: float = 0.0
     score: float = 0.0  # Combined score for ranking
 
 
@@ -350,6 +355,10 @@ def evaluate_params_on_videos(
     total_pred_duration_s = 0.0
     total_truth_duration_s = 0.0
     total_iou_weighted = 0.0
+    no_call_videos = 0
+    no_call_fp_videos = 0
+    no_call_pred_segments = 0
+    no_call_pred_duration_s = 0.0
 
     for video_id in prob_cache:
         if video_id not in ground_truth:
@@ -383,6 +392,14 @@ def evaluate_params_on_videos(
         total_intersection_s += time_metrics.intersection_s
         total_pred_duration_s += time_metrics.pred_duration_s
         total_truth_duration_s += time_metrics.truth_duration_s
+
+        # Track "no-call" false positives separately. These can get washed out in micro averages.
+        if len(truth_segments) == 0:
+            no_call_videos += 1
+            no_call_pred_segments += len(pred_segments)
+            no_call_pred_duration_s += time_metrics.pred_duration_s
+            if len(pred_segments) > 0:
+                no_call_fp_videos += 1
 
         # Only compute boundary metrics if there are truth segments
         if len(truth_segments) > 0:
@@ -471,6 +488,10 @@ def evaluate_params_on_videos(
         unmatched_truth=total_unmatched_truth,
         total_pred=total_pred_segments,
         total_truth=total_truth_segments,
+        no_call_videos=no_call_videos,
+        no_call_fp_videos=no_call_fp_videos,
+        no_call_pred_segments=no_call_pred_segments,
+        no_call_pred_duration_s=float(no_call_pred_duration_s),
     )
 
 
@@ -557,6 +578,9 @@ def compute_scores(results: List[SweepResult]) -> None:
             - 0.02 * log_penalty
             - 0.0005 * r.unmatched_pred
             - 0.0005 * r.unmatched_truth
+            # Penalize false positives on no-call videos more aggressively than micro averages would.
+            - 0.03 * r.no_call_fp_videos
+            - 0.0002 * r.no_call_pred_duration_s
         )
 
 
@@ -580,11 +604,16 @@ def select_best_params(results: List[SweepResult]) -> Tuple[SweepResult, SweepRe
     # - time F1 gate prevents degenerate low-coverage solutions
     seg_ratio_min, seg_ratio_max = 0.9, 1.2
     time_f1_min = 0.85
+    no_call_fp_max = 0
 
     valid = [
         r
         for r in results
-        if (seg_ratio_min <= r.seg_ratio <= seg_ratio_max and r.f1 >= time_f1_min)
+        if (
+            seg_ratio_min <= r.seg_ratio <= seg_ratio_max
+            and r.f1 >= time_f1_min
+            and r.no_call_fp_videos <= no_call_fp_max
+        )
     ]
 
     if valid:
@@ -595,11 +624,15 @@ def select_best_params(results: List[SweepResult]) -> Tuple[SweepResult, SweepRe
     fallback = [
         r
         for r in results
-        if (0.8 <= r.seg_ratio <= 1.5 and r.f1 >= time_f1_min)
+        if (
+            0.8 <= r.seg_ratio <= 1.5
+            and r.f1 >= time_f1_min
+            and r.no_call_fp_videos <= no_call_fp_max
+        )
     ]
     if fallback:
         logger.warning(
-            "No params in [0.9, 1.2] seg_ratio with time-F1>=0.85, using [0.8, 1.5]"
+            "No params in [0.9, 1.2] seg_ratio with time-F1>=0.85 and no-call FP==0, using [0.8, 1.5]"
         )
         winner = max(fallback, key=lambda r: r.score)
         return winner, best_overall
@@ -607,28 +640,36 @@ def select_best_params(results: List[SweepResult]) -> Tuple[SweepResult, SweepRe
     fallback2 = [
         r
         for r in results
-        if (0.5 <= r.seg_ratio <= 2.0 and r.f1 >= time_f1_min)
+        if (
+            0.5 <= r.seg_ratio <= 2.0
+            and r.f1 >= time_f1_min
+            and r.no_call_fp_videos <= no_call_fp_max
+        )
     ]
     if fallback2:
         logger.warning(
-            "No params in [0.8, 1.5] seg_ratio with time-F1>=0.85, using [0.5, 2.0]"
+            "No params in [0.8, 1.5] seg_ratio with time-F1>=0.85 and no-call FP==0, using [0.5, 2.0]"
         )
         winner = max(fallback2, key=lambda r: r.score)
         return winner, best_overall
 
     # If we still have no valid params, relax the time-F1 gate but keep seg-ratio sanity.
-    fallback3 = [r for r in results if 0.8 <= r.seg_ratio <= 1.5]
+    fallback3 = [
+        r for r in results if (0.8 <= r.seg_ratio <= 1.5 and r.no_call_fp_videos <= no_call_fp_max)
+    ]
     if fallback3:
         logger.warning(
-            "No params meet time-F1>=0.85; using best in [0.8, 1.5] seg_ratio"
+            "No params meet time-F1>=0.85; using best in [0.8, 1.5] seg_ratio with no-call FP==0"
         )
         winner = max(fallback3, key=lambda r: r.score)
         return winner, best_overall
 
-    fallback4 = [r for r in results if 0.5 <= r.seg_ratio <= 2.0]
+    fallback4 = [
+        r for r in results if (0.5 <= r.seg_ratio <= 2.0 and r.no_call_fp_videos <= no_call_fp_max)
+    ]
     if fallback4:
         logger.warning(
-            "No params meet time-F1>=0.85; using best in [0.5, 2.0] seg_ratio"
+            "No params meet time-F1>=0.85; using best in [0.5, 2.0] seg_ratio with no-call FP==0"
         )
         winner = max(fallback4, key=lambda r: r.score)
         return winner, best_overall
@@ -649,11 +690,17 @@ def format_result_row(r: SweepResult) -> str:
     mae_e = f"{r.mae_end_s:.2f}s" if r.mae_end_s is not None else "N/A"
     iou = f"{r.mean_iou:.3f}" if r.mean_iou is not None else "N/A"
     seg_ratio_str = f"{r.seg_ratio:.2f}" if r.seg_ratio != float("inf") else "inf"
+    if r.no_call_videos > 0:
+        no_call_fp = f"{r.no_call_fp_videos}/{r.no_call_videos}"
+        no_call_dur = f"{r.no_call_pred_duration_s:.1f}s"
+    else:
+        no_call_fp = "-"
+        no_call_dur = "-"
 
     return (
         f"{r.threshold:>6.2f}  {r.threshold_off:>6.2f}  {r.gap_merge_s:>5.0f}  {r.gap_merge_min_p:>7.2f}  {r.min_seg_s:>6.0f}  "
         f"{r.f1:>7.4f}  {r.seg_f1:>7.4f}  {seg_ratio_str:>8}  {iou:>6}  {mae_s:>7}  {mae_e:>7}  "
-        f"{r.unmatched_pred:>8}  {r.unmatched_truth:>8}  {r.score:>7.4f}"
+        f"{r.unmatched_pred:>8}  {r.unmatched_truth:>8}  {no_call_fp:>8}  {no_call_dur:>9}  {r.score:>7.4f}"
     )
 
 
@@ -662,7 +709,11 @@ def print_sweep_results(results: List[SweepResult], top_n: int, title: str) -> N
     print(f"\n{'=' * 100}")
     print(f"{title}")
     print("=" * 100)
-    print(f"{'ThrOn':>6}  {'ThrOff':>6}  {'Gap':>5}  {'GapMinP':>7}  {'MinSeg':>6}  {'TimeF1':>7}  {'SegF1':>7}  {'SegRatio':>8}  {'IoU':>6}  {'MAE-S':>7}  {'MAE-E':>7}  {'UnmtchP':>8}  {'UnmtchT':>8}  {'Score':>7}")
+    print(
+        f"{'ThrOn':>6}  {'ThrOff':>6}  {'Gap':>5}  {'GapMinP':>7}  {'MinSeg':>6}  "
+        f"{'TimeF1':>7}  {'SegF1':>7}  {'SegRatio':>8}  {'IoU':>6}  {'MAE-S':>7}  {'MAE-E':>7}  "
+        f"{'UnmtchP':>8}  {'UnmtchT':>8}  {'NoCallFP':>8}  {'NoCallDur':>9}  {'Score':>7}"
+    )
     print("-" * 100)
 
     # Sort by score descending
@@ -698,6 +749,10 @@ def save_results_csv(results: List[SweepResult], output_path: Path) -> None:
             "unmatched_truth": r.unmatched_truth,
             "total_pred": r.total_pred,
             "total_truth": r.total_truth,
+            "no_call_videos": r.no_call_videos,
+            "no_call_fp_videos": r.no_call_fp_videos,
+            "no_call_pred_segments": r.no_call_pred_segments,
+            "no_call_pred_duration_s": r.no_call_pred_duration_s,
             "score": r.score,
         })
 
