@@ -262,7 +262,10 @@ def main() -> int:
             threshold_off_delta_values=[0.0, 0.10, 0.20],
             gap_merge_values=[0, 1, 2, 5, 10, 20, 30],
             gap_merge_min_p_values=[0, 0.2, 0.4, 0.6, 0.8],
+            gap_merge_stat_values=["max", "mean", "p90"],
             min_seg_values=[1, 3, 5, 10],
+            min_seg_short_values=[None],
+            keep_short_p_values=[None],
         )
         best_constrained, best_overall = sweep_call_segmenter.select_best_params(train_results)
 
@@ -287,7 +290,10 @@ def main() -> int:
             threshold_off=best_constrained.threshold_off,
             gap_merge_s=best_constrained.gap_merge_s,
             gap_merge_min_p=best_constrained.gap_merge_min_p,
+            gap_merge_stat=best_constrained.gap_merge_stat,
             min_seg_s=best_constrained.min_seg_s,
+            min_seg_short_s=best_constrained.min_seg_short_s,
+            keep_short_p=best_constrained.keep_short_p,
         )
 
         # Print a short sweep summary for convenience.
@@ -312,6 +318,7 @@ def main() -> int:
             f"thr{int(round(best_constrained.threshold*100)):02d}_"
             f"off{int(round(best_constrained.threshold_off*100)):02d}_"
             f"gap{int(round(best_constrained.gap_merge_s)):02d}_"
+            f"g{best_constrained.gap_merge_stat}_"
             f"p{int(round(best_constrained.gap_merge_min_p*100)):02d}_"
             f"min{int(round(best_constrained.min_seg_s)):02d}"
         )
@@ -333,8 +340,12 @@ def main() -> int:
                 str(best_constrained.threshold_off),
                 "--gap-merge-s",
                 str(best_constrained.gap_merge_s),
+                "--gap-merge-stat",
+                str(best_constrained.gap_merge_stat),
                 "--gap-merge-min-p",
                 str(best_constrained.gap_merge_min_p),
+                *(["--min-seg-short-s", str(best_constrained.min_seg_short_s)] if best_constrained.min_seg_short_s is not None else []),
+                *(["--keep-short-p", str(best_constrained.keep_short_p)] if best_constrained.keep_short_p is not None else []),
                 "--min-seg-s",
                 str(best_constrained.min_seg_s),
             ]

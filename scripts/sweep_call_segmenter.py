@@ -77,7 +77,10 @@ class SweepResult:
     threshold_off: float
     gap_merge_s: float
     gap_merge_min_p: float
+    gap_merge_stat: str
     min_seg_s: float
+    min_seg_short_s: Optional[float]
+    keep_short_p: Optional[float]
     f1: float  # time-level F1
     precision: float
     recall: float
@@ -376,7 +379,10 @@ def evaluate_params_on_videos(
     threshold_off: float,
     gap_merge_s: float,
     gap_merge_min_p: float,
+    gap_merge_stat: str,
     min_seg_s: float,
+    min_seg_short_s: Optional[float],
+    keep_short_p: Optional[float],
 ) -> Optional[SweepResult]:
     """Evaluate parameter combination on a set of videos."""
     # Collect all predictions and truths
@@ -411,6 +417,9 @@ def evaluate_params_on_videos(
             gap_merge_s=gap_merge_s,
             min_seg_s=min_seg_s,
             gap_merge_min_p=gap_merge_min_p,
+            gap_merge_stat=gap_merge_stat,
+            min_seg_short_s=min_seg_short_s,
+            keep_short_p=keep_short_p,
             mp3_duration_s=mp3_duration_s,
         )
 
@@ -507,7 +516,10 @@ def evaluate_params_on_videos(
         threshold_off=threshold_off,
         gap_merge_s=gap_merge_s,
         gap_merge_min_p=gap_merge_min_p,
+        gap_merge_stat=gap_merge_stat,
         min_seg_s=min_seg_s,
+        min_seg_short_s=min_seg_short_s,
+        keep_short_p=keep_short_p,
         f1=f1,
         precision=precision,
         recall=recall,
@@ -539,7 +551,10 @@ def run_parameter_sweep(
     threshold_off_delta_values: List[float],
     gap_merge_values: List[float],
     gap_merge_min_p_values: List[float],
+    gap_merge_stat_values: List[str],
     min_seg_values: List[float],
+    min_seg_short_values: List[Optional[float]],
+    keep_short_p_values: List[Optional[float]],
 ) -> List[SweepResult]:
     """Run sweep over all parameter combinations."""
     results: List[SweepResult] = []
@@ -556,12 +571,16 @@ def run_parameter_sweep(
         * len(threshold_off_delta_values)
         * len(gap_merge_values)
         * len(gap_merge_min_p_values)
+        * len(gap_merge_stat_values)
         * len(min_seg_values)
+        * len(min_seg_short_values)
+        * len(keep_short_p_values)
     )
     logger.info(
         f"Running sweep: {len(thresholds)} thresholds x {len(threshold_off_delta_values)} off-deltas x "
-        f"{len(gap_merge_values)} gaps x {len(gap_merge_min_p_values)} gap-min-p x "
-        f"{len(min_seg_values)} min_segs = {total_combos} combinations"
+        f"{len(gap_merge_values)} gaps x {len(gap_merge_min_p_values)} gap-min-p x {len(gap_merge_stat_values)} gap-stats x "
+        f"{len(min_seg_values)} min_segs x {len(min_seg_short_values)} min_short x {len(keep_short_p_values)} keep_p = "
+        f"{total_combos} combinations"
     )
 
     combo_idx = 0
@@ -570,24 +589,34 @@ def run_parameter_sweep(
             threshold_off = max(0.0, threshold - off_delta)
             for gap_merge_s in gap_merge_values:
                 for gap_merge_min_p in gap_merge_min_p_values:
-                    for min_seg_s in min_seg_values:
-                        combo_idx += 1
-                        if combo_idx % 200 == 0:
-                            logger.info(f"  Progress: {combo_idx}/{total_combos}")
+                    for gap_merge_stat in gap_merge_stat_values:
+                        for min_seg_s in min_seg_values:
+                            for min_seg_short_s in min_seg_short_values:
+                                for keep_short_p in keep_short_p_values:
+                                    # Enforce pairing: either both None, or both set
+                                    if (min_seg_short_s is None) ^ (keep_short_p is None):
+                                        continue
 
-                        result = evaluate_params_on_videos(
-                            prob_cache=prob_cache,
-                            ground_truth=ground_truth,
-                            win_s=win_s,
-                            threshold=threshold,
-                            threshold_off=threshold_off,
-                            gap_merge_s=gap_merge_s,
-                            gap_merge_min_p=gap_merge_min_p,
-                            min_seg_s=min_seg_s,
-                        )
+                                    combo_idx += 1
+                                    if combo_idx % 200 == 0:
+                                        logger.info(f"  Progress: {combo_idx}/{total_combos}")
 
-                        if result:
-                            results.append(result)
+                                    result = evaluate_params_on_videos(
+                                        prob_cache=prob_cache,
+                                        ground_truth=ground_truth,
+                                        win_s=win_s,
+                                        threshold=threshold,
+                                        threshold_off=threshold_off,
+                                        gap_merge_s=gap_merge_s,
+                                        gap_merge_min_p=gap_merge_min_p,
+                                        gap_merge_stat=gap_merge_stat,
+                                        min_seg_s=min_seg_s,
+                                        min_seg_short_s=min_seg_short_s,
+                                        keep_short_p=keep_short_p,
+                                    )
+
+                                    if result:
+                                        results.append(result)
 
     return results
 
@@ -724,6 +753,8 @@ def format_result_row(r: SweepResult) -> str:
     mae_e = f"{r.mae_end_s:.2f}s" if r.mae_end_s is not None else "N/A"
     iou = f"{r.mean_iou:.3f}" if r.mean_iou is not None else "N/A"
     seg_ratio_str = f"{r.seg_ratio:.2f}" if r.seg_ratio != float("inf") else "inf"
+    min_short = f"{r.min_seg_short_s:.0f}" if r.min_seg_short_s is not None else "-"
+    keep_p = f"{r.keep_short_p:.2f}" if r.keep_short_p is not None else "-"
     if r.no_call_videos > 0:
         no_call_fp = f"{r.no_call_fp_videos}/{r.no_call_videos}"
         no_call_dur = f"{r.no_call_pred_duration_s:.1f}s"
@@ -732,7 +763,8 @@ def format_result_row(r: SweepResult) -> str:
         no_call_dur = "-"
 
     return (
-        f"{r.threshold:>6.2f}  {r.threshold_off:>6.2f}  {r.gap_merge_s:>5.0f}  {r.gap_merge_min_p:>7.2f}  {r.min_seg_s:>6.0f}  "
+        f"{r.threshold:>6.2f}  {r.threshold_off:>6.2f}  {r.gap_merge_s:>5.0f}  {r.gap_merge_stat:>5}  {r.gap_merge_min_p:>7.2f}  "
+        f"{r.min_seg_s:>6.0f}  {min_short:>5}  {keep_p:>5}  "
         f"{r.f1:>7.4f}  {r.seg_f1:>7.4f}  {seg_ratio_str:>8}  {iou:>6}  {mae_s:>7}  {mae_e:>7}  "
         f"{r.unmatched_pred:>8}  {r.unmatched_truth:>8}  {no_call_fp:>8}  {no_call_dur:>9}  {r.score:>7.4f}"
     )
@@ -744,7 +776,7 @@ def print_sweep_results(results: List[SweepResult], top_n: int, title: str) -> N
     print(f"{title}")
     print("=" * 100)
     print(
-        f"{'ThrOn':>6}  {'ThrOff':>6}  {'Gap':>5}  {'GapMinP':>7}  {'MinSeg':>6}  "
+        f"{'ThrOn':>6}  {'ThrOff':>6}  {'Gap':>5}  {'GStat':>5}  {'GapMinP':>7}  {'MinSeg':>6}  {'MinSh':>5}  {'KeepP':>5}  "
         f"{'TimeF1':>7}  {'SegF1':>7}  {'SegRatio':>8}  {'IoU':>6}  {'MAE-S':>7}  {'MAE-E':>7}  "
         f"{'UnmtchP':>8}  {'UnmtchT':>8}  {'NoCallFP':>8}  {'NoCallDur':>9}  {'Score':>7}"
     )
@@ -768,7 +800,10 @@ def save_results_csv(results: List[SweepResult], output_path: Path) -> None:
             "threshold_off": r.threshold_off,
             "gap_merge_s": r.gap_merge_s,
             "gap_merge_min_p": r.gap_merge_min_p,
+            "gap_merge_stat": r.gap_merge_stat,
             "min_seg_s": r.min_seg_s,
+            "min_seg_short_s": r.min_seg_short_s,
+            "keep_short_p": r.keep_short_p,
             "time_f1": r.f1,
             "precision": r.precision,
             "recall": r.recall,
@@ -805,6 +840,21 @@ def parse_float_list(s: str) -> List[float]:
     return [float(x.strip()) for x in s.split(",")]
 
 
+def parse_str_list(s: str) -> List[str]:
+    """Parse comma-separated list of strings."""
+    return [x.strip() for x in s.split(",") if x.strip()]
+
+
+def parse_optional_float_list(s: str) -> List[Optional[float]]:
+    """Parse comma-separated list of floats, or return [None] if empty."""
+    if not s.strip():
+        return [None]
+    parts = [x.strip() for x in s.split(",") if x.strip()]
+    if any(p.lower() == "none" for p in parts):
+        raise ValueError("Use empty string to disable optional lists; 'none' is not supported")
+    return [float(p) for p in parts]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Parameter sweep for call segmenter post-processing",
@@ -825,9 +875,15 @@ def main() -> int:
                         help="Comma-separated gap merge values (seconds)")
     parser.add_argument("--gap-merge-min-p-values", type=str, default="0,0.2,0.4,0.6,0.8",
                         help="Comma-separated values for conditional gap merging. "
-                             "A gap only merges if max prob in the gap >= gap_merge_min_p (0 disables).")
+                             "A gap only merges if the chosen gap statistic >= gap_merge_min_p (0 disables).")
+    parser.add_argument("--gap-merge-stat-values", type=str, default="max,mean,p90",
+                        help="Comma-separated gap statistics to compare against gap-merge-min-p: max, mean, p90")
     parser.add_argument("--min-seg-values", type=str, default="1,3,5,10",
                         help="Comma-separated minimum segment values (seconds)")
+    parser.add_argument("--min-seg-short-values", type=str, default="",
+                        help="Optional: comma-separated short min durations (seconds) to keep high-confidence short segments; empty disables")
+    parser.add_argument("--keep-short-p-values", type=str, default="",
+                        help="Optional: comma-separated mean_p thresholds for keeping short segments; empty disables")
     parser.add_argument("--output-csv", type=Path, default=None,
                         help="Save full results to CSV")
     parser.add_argument("--top-n", type=int, default=20,
@@ -844,8 +900,36 @@ def main() -> int:
 
     gap_merge_values = parse_float_list(args.gap_merge_values)
     gap_merge_min_p_values = parse_float_list(args.gap_merge_min_p_values)
+    gap_merge_stat_values = [s.lower() for s in parse_str_list(args.gap_merge_stat_values)]
     min_seg_values = parse_float_list(args.min_seg_values)
     threshold_off_delta_values = parse_float_list(args.threshold_off_delta_values)
+
+    try:
+        min_seg_short_values = parse_optional_float_list(args.min_seg_short_values)
+        keep_short_p_values = parse_optional_float_list(args.keep_short_p_values)
+    except Exception as e:
+        logger.error(f"Failed to parse short-seg args: {e}")
+        return 1
+
+    # Validate gap stat values early
+    allowed_stats = {"max", "mean", "p90"}
+    bad_stats = [s for s in gap_merge_stat_values if s not in allowed_stats]
+    if bad_stats:
+        logger.error(f"Invalid --gap-merge-stat-values entries: {bad_stats}. Allowed: {sorted(allowed_stats)}")
+        return 1
+
+    # Optional short-seg sweeping: require both lists to be enabled together.
+    short_enabled = args.min_seg_short_values.strip() != "" or args.keep_short_p_values.strip() != ""
+    if short_enabled and not (args.min_seg_short_values.strip() != "" and args.keep_short_p_values.strip() != ""):
+        logger.error("--min-seg-short-values and --keep-short-p-values must be set together (or both omitted)")
+        return 1
+
+    # If enabled, include the disabled baseline (None/None) for comparison.
+    if short_enabled:
+        if min_seg_short_values != [None]:
+            min_seg_short_values = [None] + min_seg_short_values
+        if keep_short_p_values != [None]:
+            keep_short_p_values = [None] + keep_short_p_values
 
     # Load model and metadata
     try:
@@ -932,7 +1016,10 @@ def main() -> int:
         threshold_off_delta_values=threshold_off_delta_values,
         gap_merge_values=gap_merge_values,
         gap_merge_min_p_values=gap_merge_min_p_values,
+        gap_merge_stat_values=gap_merge_stat_values,
         min_seg_values=min_seg_values,
+        min_seg_short_values=min_seg_short_values,
+        keep_short_p_values=keep_short_p_values,
     )
 
     if not train_results:
@@ -950,12 +1037,14 @@ def main() -> int:
     print("=" * 100)
     print(
         f"BEST (constrained): thr_on={best_constrained.threshold:.2f}, thr_off={best_constrained.threshold_off:.2f}, "
-        f"gap={best_constrained.gap_merge_s:.0f}, gap_min_p={best_constrained.gap_merge_min_p:.2f}, min_seg={best_constrained.min_seg_s:.0f}, "
+        f"gap={best_constrained.gap_merge_s:.0f}, gap_min_p={best_constrained.gap_merge_min_p:.2f}, gap_stat={best_constrained.gap_merge_stat}, "
+        f"min_seg={best_constrained.min_seg_s:.0f}, min_short={best_constrained.min_seg_short_s}, keep_p={best_constrained.keep_short_p}, "
         f"time_f1={best_constrained.f1:.4f}, seg_f1={best_constrained.seg_f1:.4f}, seg_ratio={best_constrained.seg_ratio:.2f}"
     )
     print(
         f"BEST (overall):     thr_on={best_overall.threshold:.2f}, thr_off={best_overall.threshold_off:.2f}, "
-        f"gap={best_overall.gap_merge_s:.0f}, gap_min_p={best_overall.gap_merge_min_p:.2f}, min_seg={best_overall.min_seg_s:.0f}, "
+        f"gap={best_overall.gap_merge_s:.0f}, gap_min_p={best_overall.gap_merge_min_p:.2f}, gap_stat={best_overall.gap_merge_stat}, "
+        f"min_seg={best_overall.min_seg_s:.0f}, min_short={best_overall.min_seg_short_s}, keep_p={best_overall.keep_short_p}, "
         f"time_f1={best_overall.f1:.4f}, seg_f1={best_overall.seg_f1:.4f}, seg_ratio={best_overall.seg_ratio:.2f}"
     )
 
@@ -986,7 +1075,10 @@ def main() -> int:
                 threshold_off=best_constrained.threshold_off,
                 gap_merge_s=best_constrained.gap_merge_s,
                 gap_merge_min_p=best_constrained.gap_merge_min_p,
+                gap_merge_stat=best_constrained.gap_merge_stat,
                 min_seg_s=best_constrained.min_seg_s,
+                min_seg_short_s=best_constrained.min_seg_short_s,
+                keep_short_p=best_constrained.keep_short_p,
             )
 
             if eval_result:
@@ -997,8 +1089,9 @@ def main() -> int:
                 print("\n" + "=" * 100)
                 print(f"EVAL SET (best params: thr_on={best_constrained.threshold:.2f}, "
                       f"thr_off={best_constrained.threshold_off:.2f}, gap={best_constrained.gap_merge_s:.0f}, "
-                      f"gap_min_p={best_constrained.gap_merge_min_p:.2f}, "
-                      f"min_seg={best_constrained.min_seg_s:.0f})")
+                      f"gap_stat={best_constrained.gap_merge_stat}, gap_min_p={best_constrained.gap_merge_min_p:.2f}, "
+                      f"min_seg={best_constrained.min_seg_s:.0f}, "
+                      f"min_short={best_constrained.min_seg_short_s}, keep_p={best_constrained.keep_short_p})")
                 print("=" * 100)
                 iou_str = f"{eval_result.mean_iou:.3f}" if eval_result.mean_iou is not None else "N/A"
                 print(f"TimeF1: {eval_result.f1:.4f}  SegF1: {eval_result.seg_f1:.4f}  "
@@ -1028,7 +1121,11 @@ def main() -> int:
     print(f"      --threshold {best_constrained.threshold:.2f} \\")
     print(f"      --threshold-off {best_constrained.threshold_off:.2f} \\")
     print(f"      --gap-merge-s {best_constrained.gap_merge_s:.0f} \\")
+    print(f"      --gap-merge-stat {best_constrained.gap_merge_stat} \\")
     print(f"      --gap-merge-min-p {best_constrained.gap_merge_min_p:.2f} \\")
+    if best_constrained.min_seg_short_s is not None and best_constrained.keep_short_p is not None:
+        print(f"      --min-seg-short-s {best_constrained.min_seg_short_s:.0f} \\")
+        print(f"      --keep-short-p {best_constrained.keep_short_p:.2f} \\")
     print(f"      --min-seg-s {best_constrained.min_seg_s:.0f}")
     print()
     print("Then evaluate:")

@@ -70,7 +70,10 @@ class PredictionResult:
     threshold_off: Optional[float]
     gap_merge_s: float
     gap_merge_min_p: float
+    gap_merge_stat: str
     min_seg_s: float
+    min_seg_short_s: Optional[float]
+    keep_short_p: Optional[float]
     win_s: float
     hop_s: float
     mp3_duration_s: Optional[float]
@@ -493,6 +496,9 @@ def probabilities_to_segments(
     gap_merge_s: float,
     min_seg_s: float,
     gap_merge_min_p: float = 0.0,
+    gap_merge_stat: str = "max",
+    min_seg_short_s: Optional[float] = None,
+    keep_short_p: Optional[float] = None,
     mp3_duration_s: Optional[float] = None,
 ) -> List[PredictedSegment]:
     """Convert per-window probabilities to merged call segments.
@@ -503,8 +509,11 @@ def probabilities_to_segments(
         win_s: Window duration (for converting t_mid to segment bounds)
         threshold: Classification threshold
         gap_merge_s: Merge segments with gaps smaller than this
-        gap_merge_min_p: Only merge across a gap if max prob in the gap is >= this value (0 disables)
+        gap_merge_min_p: Only merge across a gap if the gap statistic is >= this value (0 disables)
+        gap_merge_stat: Statistic to use over the gap ("max", "mean", "p90")
         min_seg_s: Drop segments shorter than this
+        min_seg_short_s: Optional shorter min duration to keep high-confidence short segments
+        keep_short_p: If set alongside min_seg_short_s, keep short segments when mean_p >= keep_short_p
         mp3_duration_s: Clamp segments to this duration (if known)
 
     Returns:
@@ -526,6 +535,19 @@ def probabilities_to_segments(
     gap_merge_min_p = float(gap_merge_min_p)
     if gap_merge_min_p < 0.0 or gap_merge_min_p > 1.0:
         raise ValueError("gap_merge_min_p must be in [0, 1]")
+    gap_merge_stat = str(gap_merge_stat).lower()
+    if gap_merge_stat not in {"max", "mean", "p90"}:
+        raise ValueError("gap_merge_stat must be one of: max, mean, p90")
+
+    if (min_seg_short_s is None) ^ (keep_short_p is None):
+        raise ValueError("min_seg_short_s and keep_short_p must be set together (or both None)")
+    if min_seg_short_s is not None:
+        min_seg_short_s = float(min_seg_short_s)
+        keep_short_p = float(keep_short_p)
+        if min_seg_short_s < 0.0:
+            raise ValueError("min_seg_short_s must be >= 0")
+        if keep_short_p < 0.0 or keep_short_p > 1.0:
+            raise ValueError("keep_short_p must be in [0, 1]")
 
     active_mask = np.zeros_like(probs, dtype=bool)
     in_seg = False
@@ -571,8 +593,15 @@ def probabilities_to_segments(
         should_merge = gap_s <= gap_merge_s
         if should_merge and gap_merge_min_p > 0.0:
             gap_probs = probs[cur_ei + 1: next_si]
-            gap_max = float(gap_probs.max()) if gap_probs.size else 1.0
-            should_merge = gap_max >= gap_merge_min_p
+            if not gap_probs.size:
+                gap_val = 1.0
+            elif gap_merge_stat == "max":
+                gap_val = float(gap_probs.max())
+            elif gap_merge_stat == "mean":
+                gap_val = float(gap_probs.mean())
+            else:  # p90
+                gap_val = float(np.quantile(gap_probs, 0.9))
+            should_merge = gap_val >= gap_merge_min_p
 
         if should_merge:
             cur_ei = next_ei
@@ -593,9 +622,21 @@ def probabilities_to_segments(
             end_s = min(end_s, mp3_duration_s)
 
         duration = end_s - start_s
-        if duration >= min_seg_s:
-            # Use full span (including merged gaps) so deep dips reduce confidence.
-            mean_p = float(np.mean(probs[si:ei + 1])) if ei >= si else 0.0
+
+        # Use full span (including merged gaps) so deep dips reduce confidence.
+        mean_p = float(np.mean(probs[si:ei + 1])) if ei >= si else 0.0
+
+        keep = duration >= min_seg_s
+        if (
+            not keep
+            and min_seg_short_s is not None
+            and keep_short_p is not None
+            and duration >= min_seg_short_s
+            and mean_p >= keep_short_p
+        ):
+            keep = True
+
+        if keep:
             result.append(PredictedSegment(
                 start_s=round(start_s, 3),
                 end_s=round(end_s, 3),
@@ -622,7 +663,10 @@ def upload_prediction(s3_client, s3_prefix: str, result: PredictionResult) -> st
         "threshold_off": result.threshold_off,
         "gap_merge_s": result.gap_merge_s,
         "gap_merge_min_p": result.gap_merge_min_p,
+        "gap_merge_stat": result.gap_merge_stat,
         "min_seg_s": result.min_seg_s,
+        "min_seg_short_s": result.min_seg_short_s,
+        "keep_short_p": result.keep_short_p,
         "win_s": result.win_s,
         "hop_s": result.hop_s,
         "mp3_duration_s": result.mp3_duration_s,
@@ -678,9 +722,15 @@ def main() -> int:
     parser.add_argument("--gap-merge-s", type=float, default=1.0,
                         help="Merge segments with gaps smaller than this")
     parser.add_argument("--gap-merge-min-p", type=float, default=0.0,
-                        help="Only merge across gaps if max prob in the gap >= this value (0 disables)")
+                        help="Only merge across gaps if the gap statistic >= this value (0 disables)")
+    parser.add_argument("--gap-merge-stat", type=str, default="max", choices=["max", "mean", "p90"],
+                        help="Statistic over the gap to compare against --gap-merge-min-p")
     parser.add_argument("--min-seg-s", type=float, default=5.0,
                         help="Drop segments shorter than this")
+    parser.add_argument("--min-seg-short-s", type=float, default=None,
+                        help="Optional: keep short segments >= this duration when mean_p >= --keep-short-p")
+    parser.add_argument("--keep-short-p", type=float, default=None,
+                        help="If set alongside --min-seg-short-s, keep short segments when mean_p >= this value")
     parser.add_argument("--exclude-video-ids", type=str, default=None,
                         help="Comma-separated video IDs to skip")
     parser.add_argument("--dry-run", action="store_true",
@@ -713,6 +763,12 @@ def main() -> int:
     threshold_off = args.threshold_off
     if threshold_off is not None and threshold_off > threshold:
         logger.error(f"--threshold-off ({threshold_off}) must be <= --threshold ({threshold})")
+        return 1
+    if (args.min_seg_short_s is None) ^ (args.keep_short_p is None):
+        logger.error("--min-seg-short-s and --keep-short-p must be set together (or both omitted)")
+        return 1
+    if args.keep_short_p is not None and (args.keep_short_p < 0.0 or args.keep_short_p > 1.0):
+        logger.error("--keep-short-p must be in [0, 1]")
         return 1
 
     # Build window config
@@ -790,6 +846,9 @@ def main() -> int:
             gap_merge_s=args.gap_merge_s,
             gap_merge_min_p=args.gap_merge_min_p,
             min_seg_s=args.min_seg_s,
+            gap_merge_stat=args.gap_merge_stat,
+            min_seg_short_s=args.min_seg_short_s,
+            keep_short_p=args.keep_short_p,
             mp3_duration_s=mp3_duration_s,
         )
 
@@ -807,7 +866,10 @@ def main() -> int:
             threshold_off=threshold_off,
             gap_merge_s=args.gap_merge_s,
             gap_merge_min_p=args.gap_merge_min_p,
+            gap_merge_stat=args.gap_merge_stat,
             min_seg_s=args.min_seg_s,
+            min_seg_short_s=args.min_seg_short_s,
+            keep_short_p=args.keep_short_p,
             win_s=window_config.win_s,
             hop_s=window_config.hop_s,
             mp3_duration_s=mp3_duration_s,
