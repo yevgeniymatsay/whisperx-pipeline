@@ -209,6 +209,9 @@ def main() -> int:
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--neg-weight", type=float, default=None,
                         help="Weight multiplier for y==0 windows (default: pos/neg in train split)")
+    parser.add_argument("--no-call-video-weight", type=float, default=1.0,
+                        help="Extra multiplier applied to all windows from videos that contain 0 positive windows "
+                             "(i.e., 'no-call' negatives). Use <1.0 to keep hard negatives from dominating.")
     parser.add_argument("--boundary-weight", type=float, default=0.0,
                         help="Extra weight for windows near boundaries: 1 + w*exp(-|dist|/tau)")
     parser.add_argument("--boundary-tau", type=float, default=10.0,
@@ -265,6 +268,15 @@ def main() -> int:
 
     w_train = np.ones(len(train_df), dtype=np.float32)
     w_train[y_train == 0] *= neg_weight
+
+    # Optionally down-weight (or up-weight) entire "no-call" videos (videos with 0 positive windows).
+    if float(args.no_call_video_weight) != 1.0:
+        per_vid_pos = train_df.groupby("video_id")["y"].sum()
+        no_call_vids = set(per_vid_pos[per_vid_pos == 0].index.astype(str).tolist())
+        if no_call_vids:
+            mask = train_df["video_id"].astype(str).isin(no_call_vids).to_numpy()
+            w_train[mask] *= float(args.no_call_video_weight)
+            print(f"No-call videos in train split: {len(no_call_vids)} (weight={float(args.no_call_video_weight)})")
 
     if args.boundary_weight > 0.0 and "dist_to_boundary_s" in train_df.columns:
         dist = train_df["dist_to_boundary_s"].to_numpy(dtype=np.float32)
