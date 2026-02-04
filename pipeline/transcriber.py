@@ -83,8 +83,8 @@ class WhisperXTranscriber:
         self,
         audio: np.ndarray,
         chunk_time_offset_s: float = 0.0,
-        min_speakers: int = 2,
-        max_speakers: int = 3
+        min_speakers: int = 1,
+        max_speakers: int = 5
     ) -> Tuple[List[WordOutput], List[DiarizationSegment]]:
         """
         Transcribe audio chunk with diarization.

@@ -19,6 +19,7 @@ interface Boundary {
   start_s: number;
   end_s: number;
   type: 'auto' | 'corrected';
+  session_id?: number;
 }
 
 // Skip interval configuration for time navigation buttons
@@ -39,6 +40,36 @@ const SKIP_INTERVALS = [
 
 // Playback speed options
 const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+// Session colors for grouping split boundaries
+const SESSION_COLORS = [
+  { bg: 'rgba(34, 197, 94, 0.3)', selected: 'rgba(34, 197, 94, 0.5)' },   // green
+  { bg: 'rgba(59, 130, 246, 0.3)', selected: 'rgba(59, 130, 246, 0.5)' }, // blue
+  { bg: 'rgba(249, 115, 22, 0.3)', selected: 'rgba(249, 115, 22, 0.5)' }, // orange
+  { bg: 'rgba(168, 85, 247, 0.3)', selected: 'rgba(168, 85, 247, 0.5)' }, // purple
+  { bg: 'rgba(236, 72, 153, 0.3)', selected: 'rgba(236, 72, 153, 0.5)' }, // pink
+];
+
+// Get next session_id (max + 1)
+const getNextSessionId = (boundaries: Boundary[]): number => {
+  const ids = boundaries.map(b => b.session_id ?? -1);
+  return Math.max(...ids, -1) + 1;
+};
+
+// Get unique session IDs in order of first appearance (chronologically sorted)
+const getSessionOrder = (boundaries: Boundary[]): number[] => {
+  const sorted = [...boundaries].sort((a, b) => a.start_s - b.start_s);
+  const seen = new Set<number>();
+  const order: number[] = [];
+  for (const b of sorted) {
+    const sid = b.session_id ?? 0;
+    if (!seen.has(sid)) {
+      seen.add(sid);
+      order.push(sid);
+    }
+  }
+  return order;
+};
 
 export function BoundaryEditor() {
   const [videos, setVideos] = useState<VideoInfo[]>([]);
@@ -80,17 +111,11 @@ export function BoundaryEditor() {
     getVideosProgress().then(setProgress).catch(console.error);
   }, []);
 
-  // Track unsaved changes
+  // Track unsaved changes (include session_id)
   useEffect(() => {
-    const current = JSON.stringify(correctedBoundaries.map(b => ({ s: b.start_s, e: b.end_s })));
+    const current = JSON.stringify(correctedBoundaries.map(b => ({ s: b.start_s, e: b.end_s, sid: b.session_id })));
     setHasUnsavedChanges(current !== initialBoundariesRef.current);
   }, [correctedBoundaries]);
-
-  // Store initial state when boundaries are loaded
-  useEffect(() => {
-    initialBoundariesRef.current = JSON.stringify(correctedBoundaries.map(b => ({ s: b.start_s, e: b.end_s })));
-    setHasUnsavedChanges(false);
-  }, [selectedVideoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Warn on page unload
   useEffect(() => {
@@ -119,8 +144,14 @@ export function BoundaryEditor() {
           start_s: b.start_s,
           end_s: b.end_s,
           type: 'corrected' as const,
+          session_id: b.session_id ?? b.call_index ?? i,  // Backward compat
         }));
         setCorrectedBoundaries(corrected.length > 0 ? corrected : []);
+        // Set initial state for unsaved changes tracking
+        initialBoundariesRef.current = JSON.stringify(
+          corrected.map(b => ({ s: b.start_s, e: b.end_s, sid: b.session_id }))
+        );
+        setHasUnsavedChanges(false);
         // Use streaming endpoint (synchronous URL)
         setAudioUrl(getVideoAudioUrl(selectedVideoId));
       })
@@ -259,14 +290,19 @@ export function BoundaryEditor() {
       });
     }
 
-    // Add corrected boundaries (green, brighter if selected)
+    // Add corrected boundaries with session-based colors
+    const sessionOrder = getSessionOrder(correctedBoundaries);
     correctedBoundaries.forEach((b) => {
       const isSelected = b.id === selectedRegionId;
+      const sessionIdx = sessionOrder.indexOf(b.session_id ?? 0);
+      const colorIdx = (sessionIdx >= 0 ? sessionIdx : 0) % SESSION_COLORS.length;
+      const color = SESSION_COLORS[colorIdx];
+
       regionsRef.current?.addRegion({
         id: b.id,
         start: b.start_s,
         end: b.end_s,
-        color: isSelected ? 'rgba(34, 197, 94, 0.5)' : 'rgba(34, 197, 94, 0.3)',
+        color: isSelected ? color.selected : color.bg,
         drag: true,
         resize: true,
       });
@@ -355,7 +391,7 @@ export function BoundaryEditor() {
       );
 
       if (existingIdx >= 0) {
-        // Split the existing boundary at playhead
+        // Split the existing boundary at playhead - inherit session_id
         const existing = prev[existingIdx];
         const newBoundaries = [...prev];
         newBoundaries[existingIdx] = { ...existing, end_s: time };
@@ -364,6 +400,7 @@ export function BoundaryEditor() {
           start_s: time,
           end_s: existing.end_s,
           type: 'corrected',
+          session_id: existing.session_id,  // Inherit from parent
         });
         return newBoundaries;
       } else {
@@ -376,6 +413,7 @@ export function BoundaryEditor() {
           start_s: time,
           end_s: endTime,
           type: 'corrected',
+          session_id: getNextSessionId(prev),  // New session
         };
         return [...prev, newBoundary].sort((a, b) => a.start_s - b.start_s);
       }
@@ -394,7 +432,7 @@ export function BoundaryEditor() {
       );
 
       if (existingIdx >= 0) {
-        // Split the existing boundary at playhead (same as B)
+        // Split the existing boundary at playhead - inherit session_id
         const existing = prev[existingIdx];
         const newBoundaries = [...prev];
         newBoundaries[existingIdx] = { ...existing, end_s: time };
@@ -403,6 +441,7 @@ export function BoundaryEditor() {
           start_s: time,
           end_s: existing.end_s,
           type: 'corrected',
+          session_id: existing.session_id,  // Inherit from parent
         });
         return newBoundaries;
       } else {
@@ -417,6 +456,7 @@ export function BoundaryEditor() {
           start_s: startTime,
           end_s: time,
           type: 'corrected',
+          session_id: getNextSessionId(prev),  // New session
         };
         return [...prev, newBoundary].sort((a, b) => a.start_s - b.start_s);
       }
@@ -429,11 +469,13 @@ export function BoundaryEditor() {
 
   const initFromAuto = useCallback(() => {
     // Initialize corrected boundaries from auto-detected ones
+    // Each auto boundary gets its own session_id
     const corrected = autoBoundaries.map((b, i) => ({
       id: `corrected-${i}`,
       start_s: b.start_s,
       end_s: b.end_s,
       type: 'corrected' as const,
+      session_id: i,
     }));
     setCorrectedBoundaries(corrected);
   }, [autoBoundaries]);
@@ -441,6 +483,38 @@ export function BoundaryEditor() {
   const deleteBoundary = useCallback((id: string) => {
     setCorrectedBoundaries((prev) => prev.filter((b) => b.id !== id));
   }, []);
+
+  // Group selected boundary with the previous one (adopt its session_id)
+  const groupWithPrevious = useCallback(() => {
+    if (!selectedRegionId) return;
+    setCorrectedBoundaries((prev) => {
+      const sorted = [...prev].sort((a, b) => a.start_s - b.start_s);
+      const selectedIdx = sorted.findIndex((b) => b.id === selectedRegionId);
+      if (selectedIdx <= 0) {
+        alert('No previous boundary to group with');
+        return prev;
+      }
+      const prevBoundary = sorted[selectedIdx - 1];
+      return prev.map((b) =>
+        b.id === selectedRegionId
+          ? { ...b, session_id: prevBoundary.session_id }
+          : b
+      );
+    });
+  }, [selectedRegionId]);
+
+  // Ungroup selected boundary (assign new session_id)
+  const ungroupSelected = useCallback(() => {
+    if (!selectedRegionId) return;
+    setCorrectedBoundaries((prev) => {
+      const newSessionId = getNextSessionId(prev);
+      return prev.map((b) =>
+        b.id === selectedRegionId
+          ? { ...b, session_id: newSessionId }
+          : b
+      );
+    });
+  }, [selectedRegionId]);
 
   // Check if corrected boundaries match auto boundaries (no real edits made)
   const boundariesMatchAuto = useCallback(() => {
@@ -478,6 +552,7 @@ export function BoundaryEditor() {
       const boundariesData = correctedBoundaries.map((b) => ({
         start_s: b.start_s,
         end_s: b.end_s,
+        session_id: b.session_id,
       }));
       await saveVideoBoundaries(selectedVideoId, boundariesData);
       // Update video list to show correction status
@@ -487,7 +562,7 @@ export function BoundaryEditor() {
         )
       );
       alert('Boundaries saved!');
-      initialBoundariesRef.current = JSON.stringify(boundariesData.map(b => ({ s: b.start_s, e: b.end_s })));
+      initialBoundariesRef.current = JSON.stringify(boundariesData.map(b => ({ s: b.start_s, e: b.end_s, sid: b.session_id })));
       setHasUnsavedChanges(false);
       refreshProgress();
     } catch (error: unknown) {
@@ -953,6 +1028,25 @@ export function BoundaryEditor() {
               >
                 Jump to Gap
               </button>
+              {selectedRegionId && (
+                <>
+                  <div className="w-px h-8 bg-gray-300 mx-2" />
+                  <button
+                    onClick={groupWithPrevious}
+                    className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 text-sm"
+                    title="Group with previous boundary (same session)"
+                  >
+                    Group with Prev
+                  </button>
+                  <button
+                    onClick={ungroupSelected}
+                    className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
+                    title="Ungroup (new session)"
+                  >
+                    Ungroup
+                  </button>
+                </>
+              )}
               <div className="flex-1" />
               <button
                 onClick={handleSave}
@@ -1024,45 +1118,59 @@ export function BoundaryEditor() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {correctedBoundaries.map((boundary, index) => (
-                    <div
-                      key={boundary.id}
-                      onClick={() => setSelectedRegionId(boundary.id)}
-                      className={`rounded-lg p-3 border flex items-center gap-4 cursor-pointer transition-colors ${
-                        selectedRegionId === boundary.id
-                          ? 'bg-green-50 border-green-400 ring-2 ring-green-200'
-                          : 'bg-white border-gray-200 hover:bg-gray-50'
-                      }`}
-                    >
-                      <span className="font-semibold text-gray-700">Call {index + 1}</span>
-                      <span className="font-mono text-sm text-gray-600">
-                        {formatTimeMs(boundary.start_s)} - {formatTimeMs(boundary.end_s)}
-                      </span>
-                      <span className="text-sm text-gray-500">
-                        ({(boundary.end_s - boundary.start_s).toFixed(1)}s)
-                      </span>
-                      <div className="flex-1" />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          wavesurferRef.current?.setTime(boundary.start_s);
-                          wavesurferRef.current?.play();
-                        }}
-                        className="px-3 py-1 text-indigo-600 hover:bg-indigo-50 rounded"
-                      >
-                        ▶ Preview
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteBoundary(boundary.id);
-                        }}
-                        className="px-3 py-1 text-red-600 hover:bg-red-50 rounded"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  ))}
+                  {(() => {
+                    const sessionOrder = getSessionOrder(correctedBoundaries);
+                    return correctedBoundaries.map((boundary, index) => {
+                      const sessionIdx = sessionOrder.indexOf(boundary.session_id ?? 0);
+                      const colorIdx = (sessionIdx >= 0 ? sessionIdx : 0) % SESSION_COLORS.length;
+                      return (
+                        <div
+                          key={boundary.id}
+                          onClick={() => setSelectedRegionId(boundary.id)}
+                          className={`rounded-lg p-3 border flex items-center gap-4 cursor-pointer transition-colors ${
+                            selectedRegionId === boundary.id
+                              ? 'bg-green-50 border-green-400 ring-2 ring-green-200'
+                              : 'bg-white border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          <span className="font-semibold text-gray-700">Call {index + 1}</span>
+                          <span
+                            className="px-2 py-0.5 text-xs font-medium rounded"
+                            style={{ backgroundColor: SESSION_COLORS[colorIdx].bg.replace('0.3', '0.6') }}
+                            title={`Session ${sessionIdx}`}
+                          >
+                            S{sessionIdx}
+                          </span>
+                          <span className="font-mono text-sm text-gray-600">
+                            {formatTimeMs(boundary.start_s)} - {formatTimeMs(boundary.end_s)}
+                          </span>
+                          <span className="text-sm text-gray-500">
+                            ({(boundary.end_s - boundary.start_s).toFixed(1)}s)
+                          </span>
+                          <div className="flex-1" />
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              wavesurferRef.current?.setTime(boundary.start_s);
+                              wavesurferRef.current?.play();
+                            }}
+                            className="px-3 py-1 text-indigo-600 hover:bg-indigo-50 rounded"
+                          >
+                            ▶ Preview
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteBoundary(boundary.id);
+                            }}
+                            className="px-3 py-1 text-red-600 hover:bg-red-50 rounded"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               )}
             </div>

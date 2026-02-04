@@ -32,6 +32,7 @@ def boundaries_to_dict(boundaries: List[Dict[str, Any]]) -> List[Dict[str, Any]]
             "start_s": b["start_s"],
             "end_s": b["end_s"],
             "corrected_at": b.get("corrected_at", ""),
+            "session_id": b.get("session_id"),
         }
         for i, b in enumerate(boundaries)
     ]

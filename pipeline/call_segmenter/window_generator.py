@@ -18,7 +18,7 @@ class WindowConfig:
     hop_s: float = 0.5          # Hop size in seconds
     ignore_s: float = 0.75      # Distance to boundary within which to ignore
     context_10s: float = 10.0   # Lookback for speaker switches
-    context_30s: float = 30.0   # Lookback for non-host stats
+    context_30s: float = 30.0   # Lookback for longer-context speaker stats
 
 
 @dataclass
@@ -44,14 +44,13 @@ class Window:
     # Features (populated separately)
     features: WindowFeatures = field(default_factory=lambda: WindowFeatures(
         speech_frac=0.0,
-        host_speech_frac=0.0,
-        nonhost_speech_frac=0.0,
         num_active_speakers=0,
-        nonhost_active=0,
         speaker_switches_10s=0,
-        unique_nonhost_speakers_30s=0,
-        nonhost_turns_30s=0,
-        avg_nonhost_turn_len_30s=0.0,
+        dominant_speech_frac=0.0,
+        speech_entropy=0.0,
+        unique_speakers_30s=0,
+        turns_30s=0,
+        avg_turn_len_30s=0.0,
     ))
 
     def to_dict(self) -> Dict:
@@ -126,7 +125,6 @@ def assign_labels(
 
 def generate_windows(
     segments: List[DiarizationSegment],
-    host_speaker: str,
     call_boundaries: List[CallBoundary],
     timeline_start: float,
     timeline_end: float,
@@ -136,7 +134,6 @@ def generate_windows(
 
     Args:
         segments: All diarization segments
-        host_speaker: Identified host speaker ID
         call_boundaries: Human-labeled call boundaries
         timeline_start: Start of timeline (seconds)
         timeline_end: End of timeline (seconds)
@@ -157,7 +154,6 @@ def generate_windows(
         # Compute features
         features = compute_window_features(
             segments=segments,
-            host_speaker=host_speaker,
             win_start=t_start,
             win_end=t_end,
             context_10s_start=context_10s_start,
@@ -183,16 +179,14 @@ def generate_windows(
 
 def compute_call_sanity_stats(
     segments: List[DiarizationSegment],
-    host_speaker: str,
     boundary: CallBoundary,
 ) -> Dict:
     """Compute sanity statistics for a single call.
 
-    Used to detect potential labeling errors (e.g., calls with no non-host speech).
+    Used to detect potential label/timebase issues and extreme speaker dominance.
 
     Args:
         segments: All diarization segments
-        host_speaker: Host speaker ID
         boundary: The call boundary to analyze
 
     Returns:
@@ -205,9 +199,8 @@ def compute_call_sanity_stats(
     ]
 
     call_duration = boundary.end - boundary.start
-    host_speech = 0.0
-    nonhost_speech = 0.0
-    nonhost_speakers: set = set()
+    total_speech = 0.0
+    speech_by_speaker: Dict[str, float] = {}
     switches = 0
 
     # Sort segments by time
@@ -220,26 +213,30 @@ def compute_call_sanity_stats(
         seg_end = min(seg.t1_abs, boundary.end)
         duration = seg_end - seg_start
 
-        if seg.spk == host_speaker:
-            host_speech += duration
-        else:
-            nonhost_speech += duration
-            nonhost_speakers.add(seg.spk)
+        if duration > 0:
+            total_speech += duration
+            speech_by_speaker[seg.spk] = speech_by_speaker.get(seg.spk, 0.0) + duration
 
         # Count switches
         if prev_speaker is not None and seg.spk != prev_speaker:
             switches += 1
         prev_speaker = seg.spk
 
-    nonhost_frac = nonhost_speech / call_duration if call_duration > 0 else 0.0
+    speaker_count = len(speech_by_speaker)
+    if total_speech > 0 and speech_by_speaker:
+        dominant_speaker_frac = max(speech_by_speaker.values()) / total_speech
+    else:
+        dominant_speaker_frac = 0.0
+
+    speech_frac = total_speech / call_duration if call_duration > 0 else 0.0
 
     return {
         "start": boundary.start,
         "end": boundary.end,
         "duration_s": call_duration,
-        "nonhost_frac": round(nonhost_frac, 3),
-        "nonhost_speakers": len(nonhost_speakers),
+        "speech_frac": round(speech_frac, 3),
+        "speaker_count": speaker_count,
+        "dominant_speaker_frac": round(dominant_speaker_frac, 3),
         "switches": switches,
-        "host_speech_s": round(host_speech, 2),
-        "nonhost_speech_s": round(nonhost_speech, 2),
+        "speech_s": round(total_speech, 2),
     }

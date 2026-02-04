@@ -205,7 +205,7 @@ def navigate(direction: str):
 
 
 class BoundaryRequest(BaseModel):
-    boundaries: List[Dict[str, float]]  # [{"start_s": 0.0, "end_s": 123.4}, ...]
+    boundaries: List[Dict[str, Any]]  # [{"start_s": 0.0, "end_s": 123.4, "session_id": 0}, ...]
 
 
 @app.get("/api/videos")

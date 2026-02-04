@@ -1,0 +1,702 @@
+#!/usr/bin/env python3
+"""Predict call segments using trained XGBoost model.
+
+Loads a trained Model B (diarization + hashed text features) and predicts
+call segments for videos. Outputs predictions to S3.
+
+Usage:
+    python scripts/predict_call_segmenter.py \
+        --video-list data/video_ids.txt \
+        --model-dir data/call_segmenter/models/v1 \
+        --s3-out-prefix call_segmenter/predictions/v1
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import sys
+from dataclasses import dataclass, asdict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, List, Optional, Set, Tuple
+
+import numpy as np
+import pandas as pd
+import boto3
+from scipy import sparse
+from sklearn.feature_extraction.text import HashingVectorizer
+
+# Add project root to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from pipeline.config import S3_BUCKET, AWS_REGION
+from pipeline.transcriber import DiarizationSegment
+from pipeline.call_segmenter.features import merge_adjacent_segments, compute_window_features
+from pipeline.call_segmenter.window_generator import WindowConfig, generate_window_times
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+# Videos excluded due to label/processing issues
+EXCLUDED_VIDEO_IDS = {"EVwBLXWlZiI", "FBmODQn9grE", "N7XqeLuVOzk"}
+
+
+# =============================================================================
+# Data Classes
+# =============================================================================
+
+
+@dataclass
+class PredictedSegment:
+    """A predicted call segment."""
+    start_s: float
+    end_s: float
+    mean_p: float
+
+
+@dataclass
+class PredictionResult:
+    """Complete prediction output for a video."""
+    video_id: str
+    run_id: str
+    model_git_sha: str
+    threshold: float
+    threshold_off: Optional[float]
+    gap_merge_s: float
+    min_seg_s: float
+    win_s: float
+    hop_s: float
+    mp3_duration_s: Optional[float]
+    segments: List[PredictedSegment]
+    predicted_at: str
+    num_windows: int
+
+
+# =============================================================================
+# Model Loading
+# =============================================================================
+
+
+def load_model_and_meta(model_dir: Path) -> Tuple["xgb.XGBClassifier", Dict]:
+    """Load XGBoost model and metadata from model directory."""
+    import xgboost as xgb
+
+    model_path = model_dir / "model_b.ubj"
+    meta_path = model_dir / "meta.json"
+
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model not found: {model_path}")
+    if not meta_path.exists():
+        raise FileNotFoundError(f"Metadata not found: {meta_path}")
+
+    model = xgb.XGBClassifier()
+    model.load_model(str(model_path))
+
+    with open(meta_path) as f:
+        meta = json.load(f)
+
+    logger.info(f"Loaded model from {model_dir}")
+    logger.info(f"  Git SHA: {meta.get('git_sha', 'unknown')}")
+    logger.info(f"  Default threshold: {meta.get('default_threshold', 0.5)}")
+
+    return model, meta
+
+
+def create_text_vectorizer(text_hashing: Dict) -> HashingVectorizer:
+    """Create HashingVectorizer with exact params from training."""
+    ngram_range = tuple(text_hashing.get("ngram_range", [2, 5]))
+    return HashingVectorizer(
+        n_features=text_hashing.get("n_features", 4096),
+        analyzer=text_hashing.get("analyzer", "char_wb"),
+        ngram_range=ngram_range,
+        alternate_sign=False,
+        norm=None,
+        lowercase=True,
+    )
+
+
+# =============================================================================
+# S3 Data Loading (adapted from build_call_segmenter_dataset.py)
+# =============================================================================
+
+
+def get_s3_client():
+    return boto3.client("s3", region_name=AWS_REGION)
+
+
+def load_latest_run_id(s3_client, video_id: str) -> Optional[str]:
+    key = f"latest/{video_id}.json"
+    try:
+        resp = s3_client.get_object(Bucket=S3_BUCKET, Key=key)
+        data = json.loads(resp["Body"].read())
+        return data.get("run_id")
+    except Exception as e:
+        logger.warning(f"Could not load latest pointer for {video_id}: {e}")
+        return None
+
+
+def list_chunks(s3_client, video_id: str, run_id: str) -> List[str]:
+    prefix = f"runs/{video_id}/{run_id}/chunks/"
+    chunk_ids = set()
+    paginator = s3_client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            parts = obj["Key"].split("/")
+            if len(parts) >= 5:
+                chunk_ids.add(parts[4])
+    return sorted(chunk_ids)
+
+
+def load_chunk_metadata(s3_client, video_id: str, run_id: str, chunk_id: str) -> Optional[Dict]:
+    key = f"runs/{video_id}/{run_id}/chunks/{chunk_id}/chunk_metadata.json"
+    try:
+        resp = s3_client.get_object(Bucket=S3_BUCKET, Key=key)
+        return json.loads(resp["Body"].read())
+    except Exception:
+        return None
+
+
+def load_diarization_segments(s3_client, video_id: str, run_id: str, chunk_id: str) -> List[DiarizationSegment]:
+    key = f"runs/{video_id}/{run_id}/chunks/{chunk_id}/diarization_segments.json"
+    try:
+        resp = s3_client.get_object(Bucket=S3_BUCKET, Key=key)
+        data = json.loads(resp["Body"].read())
+        return [
+            DiarizationSegment(
+                t0_abs=float(seg["t0_abs"]),
+                t1_abs=float(seg["t1_abs"]),
+                spk=str(seg["spk"]),
+            )
+            for seg in data.get("segments", [])
+        ]
+    except Exception:
+        return []
+
+
+def load_words(s3_client, video_id: str, run_id: str, chunk_id: str) -> List[dict]:
+    key = f"runs/{video_id}/{run_id}/chunks/{chunk_id}/words.json"
+    try:
+        resp = s3_client.get_object(Bucket=S3_BUCKET, Key=key)
+        data = json.loads(resp["Body"].read())
+        words = data.get("words", [])
+        for w in words:
+            if "t0_abs" in w:
+                w["t0_abs"] = float(w["t0_abs"])
+            if "t1_abs" in w:
+                w["t1_abs"] = float(w["t1_abs"])
+        return words
+    except Exception:
+        return []
+
+
+def get_mp3_key_for_video(s3_client, video_id: str) -> Optional[str]:
+    paginator = s3_client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=S3_BUCKET, Prefix="audio/pretraining/"):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if video_id in key and key.endswith(".mp3"):
+                return key
+    return None
+
+
+def get_mp3_duration_s(s3_client, mp3_key: str) -> Optional[float]:
+    """Get MP3 duration using ffprobe."""
+    import subprocess
+    import tempfile
+
+    try:
+        head = s3_client.head_object(Bucket=S3_BUCKET, Key=mp3_key)
+        if "x-amz-meta-duration-s" in head.get("Metadata", {}):
+            return float(head["Metadata"]["x-amz-meta-duration-s"])
+    except Exception:
+        pass
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=True) as tmp:
+            s3_client.download_file(S3_BUCKET, mp3_key, tmp.name)
+            result = subprocess.run(
+                [
+                    "ffprobe", "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    tmp.name,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return float(result.stdout.strip())
+    except Exception:
+        return None
+
+
+# =============================================================================
+# Feature Extraction
+# =============================================================================
+
+
+class WindowTextExtractor:
+    """Streaming extractor of window text from a sorted word list."""
+
+    def __init__(self, words: List[dict]):
+        self.words = sorted(words, key=lambda w: w.get("t0_abs", 0.0))
+        self.i = 0
+
+    def text_for_window(self, t_start: float, t_end: float) -> str:
+        while self.i < len(self.words) and float(self.words[self.i].get("t1_abs", 0.0)) <= t_start:
+            self.i += 1
+
+        tokens: List[str] = []
+        j = self.i
+        while j < len(self.words) and float(self.words[j].get("t0_abs", 0.0)) < t_end:
+            tok = self.words[j].get("text_norm") or self.words[j].get("text") or ""
+            tok = str(tok).strip()
+            if tok:
+                tokens.append(tok)
+            j += 1
+
+        return " ".join(tokens)
+
+
+def load_video_data_for_inference(
+    s3_client,
+    video_id: str,
+    merge_gap_s: float = 0.2,
+) -> Optional[Tuple[str, List[DiarizationSegment], List[dict], float, Optional[float]]]:
+    """Load video data needed for inference (no labels).
+
+    Returns:
+        Tuple of (run_id, segments, words, processed_end_s, mp3_duration_s) or None if failed.
+    """
+    run_id = load_latest_run_id(s3_client, video_id)
+    if not run_id:
+        logger.error(f"No latest run for {video_id}")
+        return None
+
+    chunk_ids = list_chunks(s3_client, video_id, run_id)
+    if not chunk_ids:
+        logger.error(f"No chunks found for {video_id}/{run_id}")
+        return None
+
+    all_segments: List[DiarizationSegment] = []
+    all_words: List[dict] = []
+    processed_end_s = 0.0
+
+    for chunk_id in chunk_ids:
+        meta = load_chunk_metadata(s3_client, video_id, run_id, chunk_id)
+        if meta:
+            chunk_end = float(meta["chunk_time_offset_s"]) + float(meta["duration_s"])
+            processed_end_s = max(processed_end_s, chunk_end)
+
+        all_segments.extend(load_diarization_segments(s3_client, video_id, run_id, chunk_id))
+        all_words.extend(load_words(s3_client, video_id, run_id, chunk_id))
+
+    all_segments.sort(key=lambda s: s.t0_abs)
+    if merge_gap_s > 0:
+        all_segments = merge_adjacent_segments(all_segments, max_gap_s=merge_gap_s)
+
+    # Get MP3 duration for clamping
+    mp3_key = get_mp3_key_for_video(s3_client, video_id)
+    mp3_duration_s = get_mp3_duration_s(s3_client, mp3_key) if mp3_key else None
+
+    return run_id, all_segments, all_words, processed_end_s, mp3_duration_s
+
+
+def generate_features_for_video(
+    segments: List[DiarizationSegment],
+    words: List[dict],
+    timeline_end: float,
+    window_config: WindowConfig,
+    feature_columns: List[str],
+    vectorizer: HashingVectorizer,
+) -> Tuple[pd.DataFrame, sparse.csr_matrix]:
+    """Generate numeric and text features for all windows in a video.
+
+    Returns:
+        Tuple of (DataFrame with t_mid and numeric features, sparse text feature matrix)
+    """
+    rows: List[Dict] = []
+    window_texts: List[str] = []
+
+    text_extractor = WindowTextExtractor(words)
+
+    for t_start, t_end, t_mid in generate_window_times(0.0, timeline_end, window_config):
+        context_10s_start = max(0.0, t_end - window_config.context_10s)
+        context_30s_start = max(0.0, t_end - window_config.context_30s)
+
+        feats = compute_window_features(
+            segments=segments,
+            win_start=t_start,
+            win_end=t_end,
+            context_10s_start=context_10s_start,
+            context_30s_start=context_30s_start,
+        )
+
+        row = {
+            "t_mid": t_mid,
+            **feats.to_dict(),
+        }
+        rows.append(row)
+        window_texts.append(text_extractor.text_for_window(t_start, t_end))
+
+    df = pd.DataFrame(rows)
+
+    # Ensure feature columns are in correct order
+    X_numeric = df[feature_columns].to_numpy(dtype=np.float32)
+
+    # Extract text features
+    X_text = vectorizer.transform(window_texts).tocsr()
+
+    return df, sparse.hstack([sparse.csr_matrix(X_numeric), X_text], format="csr")
+
+
+# =============================================================================
+# Segment Conversion
+# =============================================================================
+
+
+def probabilities_to_segments(
+    t_mids: np.ndarray,
+    probs: np.ndarray,
+    win_s: float,
+    threshold: float,
+    threshold_off: Optional[float],
+    gap_merge_s: float,
+    min_seg_s: float,
+    mp3_duration_s: Optional[float],
+) -> List[PredictedSegment]:
+    """Convert per-window probabilities to merged call segments.
+
+    Args:
+        t_mids: Window center times
+        probs: Prediction probabilities
+        win_s: Window duration (for converting t_mid to segment bounds)
+        threshold: Classification threshold
+        gap_merge_s: Merge segments with gaps smaller than this
+        min_seg_s: Drop segments shorter than this
+        mp3_duration_s: Clamp segments to this duration (if known)
+
+    Returns:
+        List of PredictedSegment with start_s, end_s, mean_p
+    """
+    if len(t_mids) == 0:
+        return []
+
+    # Sort by time (should already be sorted, but be safe)
+    order = np.argsort(t_mids)
+    t_mids = t_mids[order]
+    probs = probs[order]
+
+    # Hysteresis thresholding: start when >= threshold, stay active while >= threshold_off.
+    # When threshold_off == threshold, this reduces to single-threshold behavior.
+    thr_off = threshold if threshold_off is None else float(threshold_off)
+    if thr_off > threshold:
+        raise ValueError(f"threshold_off ({thr_off}) must be <= threshold ({threshold})")
+
+    active_mask = np.zeros_like(probs, dtype=bool)
+    in_seg = False
+    for i, p in enumerate(probs):
+        if not in_seg:
+            if p >= threshold:
+                in_seg = True
+                active_mask[i] = True
+        else:
+            if p >= thr_off:
+                active_mask[i] = True
+            else:
+                in_seg = False
+
+    # Build raw segments from contiguous positive windows
+    raw_segments: List[Tuple[float, float, List[float]]] = []
+    current_start: Optional[float] = None
+    current_probs: List[float] = []
+
+    half_win = win_s / 2.0
+
+    for i, (t_mid, is_pos) in enumerate(zip(t_mids, active_mask)):
+        if is_pos:
+            if current_start is None:
+                current_start = t_mid - half_win
+            current_probs.append(probs[i])
+            # Update end on every positive window
+            current_end = t_mid + half_win
+        else:
+            if current_start is not None:
+                raw_segments.append((current_start, current_end, current_probs))
+                current_start = None
+                current_probs = []
+
+    # Don't forget last segment
+    if current_start is not None:
+        current_end = t_mids[np.where(active_mask)[0][-1]] + half_win
+        raw_segments.append((current_start, current_end, current_probs))
+
+    if not raw_segments:
+        return []
+
+    # Merge segments with small gaps
+    merged: List[Tuple[float, float, List[float]]] = []
+    cur_start, cur_end, cur_probs = raw_segments[0]
+
+    for seg_start, seg_end, seg_probs in raw_segments[1:]:
+        gap = seg_start - cur_end
+        if gap <= gap_merge_s:
+            # Merge: extend current segment
+            cur_end = seg_end
+            cur_probs.extend(seg_probs)
+        else:
+            merged.append((cur_start, cur_end, cur_probs))
+            cur_start, cur_end, cur_probs = seg_start, seg_end, seg_probs
+
+    merged.append((cur_start, cur_end, cur_probs))
+
+    # Filter by minimum duration and clamp to bounds
+    result: List[PredictedSegment] = []
+    for start_s, end_s, seg_probs in merged:
+        # Clamp to [0, mp3_duration_s]
+        start_s = max(0.0, start_s)
+        if mp3_duration_s is not None:
+            end_s = min(end_s, mp3_duration_s)
+
+        duration = end_s - start_s
+        if duration >= min_seg_s:
+            mean_p = float(np.mean(seg_probs)) if seg_probs else 0.0
+            result.append(PredictedSegment(
+                start_s=round(start_s, 3),
+                end_s=round(end_s, 3),
+                mean_p=round(mean_p, 4),
+            ))
+
+    return result
+
+
+# =============================================================================
+# S3 Upload
+# =============================================================================
+
+
+def upload_prediction(s3_client, s3_prefix: str, result: PredictionResult) -> str:
+    """Upload prediction result to S3."""
+    s3_key = f"{s3_prefix}/{result.video_id}.json"
+
+    payload = {
+        "video_id": result.video_id,
+        "run_id": result.run_id,
+        "model_git_sha": result.model_git_sha,
+        "threshold": result.threshold,
+        "threshold_off": result.threshold_off,
+        "gap_merge_s": result.gap_merge_s,
+        "min_seg_s": result.min_seg_s,
+        "win_s": result.win_s,
+        "hop_s": result.hop_s,
+        "mp3_duration_s": result.mp3_duration_s,
+        "num_windows": result.num_windows,
+        "predicted_at": result.predicted_at,
+        "segments": [asdict(seg) for seg in result.segments],
+    }
+
+    s3_client.put_object(
+        Bucket=S3_BUCKET,
+        Key=s3_key,
+        Body=json.dumps(payload, indent=2),
+        ContentType="application/json",
+    )
+
+    return f"s3://{S3_BUCKET}/{s3_key}"
+
+
+# =============================================================================
+# Main
+# =============================================================================
+
+
+def load_video_ids(video_list_path: Path, exclude_ids: Set[str]) -> List[str]:
+    """Load video IDs from file, applying exclusions."""
+    video_ids = []
+    with open(video_list_path) as f:
+        for line in f:
+            vid = line.strip()
+            if vid and not vid.startswith("#"):
+                if vid in exclude_ids:
+                    logger.info(f"Skipping excluded video: {vid}")
+                else:
+                    video_ids.append(vid)
+    return video_ids
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Predict call segments using trained XGBoost model",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--video-list", type=Path, required=True,
+                        help="File with video IDs (one per line)")
+    parser.add_argument("--model-dir", type=Path, default=Path("data/call_segmenter/models/v1"),
+                        help="Directory containing model_b.ubj and meta.json")
+    parser.add_argument("--s3-out-prefix", type=str, default="call_segmenter/predictions/v1",
+                        help="S3 prefix for output predictions")
+    parser.add_argument("--threshold", type=float, default=None,
+                        help="Classification threshold (default: from meta.json)")
+    parser.add_argument("--threshold-off", type=float, default=None,
+                        help="Hysteresis: keep call active while prob >= threshold-off (default: same as --threshold)")
+    parser.add_argument("--gap-merge-s", type=float, default=1.0,
+                        help="Merge segments with gaps smaller than this")
+    parser.add_argument("--min-seg-s", type=float, default=5.0,
+                        help="Drop segments shorter than this")
+    parser.add_argument("--exclude-video-ids", type=str, default=None,
+                        help="Comma-separated video IDs to skip")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Print actions without uploading to S3")
+
+    args = parser.parse_args()
+
+    # Build exclusion set
+    exclude_ids = set(EXCLUDED_VIDEO_IDS)
+    if args.exclude_video_ids:
+        exclude_ids.update(args.exclude_video_ids.split(","))
+
+    # Load model and metadata
+    try:
+        model, meta = load_model_and_meta(args.model_dir)
+    except Exception as e:
+        logger.error(f"Failed to load model: {e}")
+        return 1
+
+    # Get parameters from meta.json
+    feature_columns = meta["feature_columns"]
+    text_hashing = meta["text_hashing"]
+    window_config_dict = meta["window_config"]
+    model_git_sha = meta.get("git_sha", "unknown")
+
+    # Use threshold from args or meta.json
+    threshold = args.threshold if args.threshold is not None else meta.get("default_threshold", 0.5)
+    threshold_off = args.threshold_off
+    if threshold_off is not None and threshold_off > threshold:
+        logger.error(f"--threshold-off ({threshold_off}) must be <= --threshold ({threshold})")
+        return 1
+
+    # Build window config
+    window_config = WindowConfig(
+        win_s=window_config_dict["win_s"],
+        hop_s=window_config_dict["hop_s"],
+        ignore_s=window_config_dict.get("ignore_s", 0.75),
+    )
+
+    # Create text vectorizer with exact training params
+    vectorizer = create_text_vectorizer(text_hashing)
+
+    # Load video IDs
+    if not args.video_list.exists():
+        logger.error(f"Video list not found: {args.video_list}")
+        return 1
+
+    video_ids = load_video_ids(args.video_list, exclude_ids)
+    logger.info(f"Processing {len(video_ids)} videos")
+
+    s3 = get_s3_client()
+
+    # Process each video
+    results: List[Dict] = []
+    skipped: List[str] = []
+
+    for idx, video_id in enumerate(video_ids):
+        logger.info(f"[{idx + 1}/{len(video_ids)}] {video_id}")
+
+        # Load video data
+        video_data = load_video_data_for_inference(s3, video_id)
+        if video_data is None:
+            logger.warning(f"  Skipping {video_id}: failed to load data")
+            skipped.append(video_id)
+            continue
+
+        run_id, segments, words, processed_end_s, mp3_duration_s = video_data
+
+        # Use mp3_duration_s as timeline end if available, else processed_end_s
+        timeline_end = min(processed_end_s, mp3_duration_s) if mp3_duration_s else processed_end_s
+
+        logger.info(f"  run_id={run_id} segments={len(segments)} words={len(words)} timeline_end={timeline_end:.1f}s")
+
+        # Generate features
+        df, X_combined = generate_features_for_video(
+            segments=segments,
+            words=words,
+            timeline_end=timeline_end,
+            window_config=window_config,
+            feature_columns=feature_columns,
+            vectorizer=vectorizer,
+        )
+
+        if len(df) == 0:
+            logger.warning(f"  Skipping {video_id}: no windows generated")
+            skipped.append(video_id)
+            continue
+
+        # Predict
+        probs = model.predict_proba(X_combined)[:, 1]
+
+        # Convert to segments
+        predicted_segments = probabilities_to_segments(
+            t_mids=df["t_mid"].to_numpy(),
+            probs=probs,
+            win_s=window_config.win_s,
+            threshold=threshold,
+            threshold_off=threshold_off,
+            gap_merge_s=args.gap_merge_s,
+            min_seg_s=args.min_seg_s,
+            mp3_duration_s=mp3_duration_s,
+        )
+
+        if threshold_off is None:
+            logger.info(f"  windows={len(df)} segments={len(predicted_segments)} threshold={threshold}")
+        else:
+            logger.info(f"  windows={len(df)} segments={len(predicted_segments)} thr_on={threshold} thr_off={threshold_off}")
+
+        # Build result
+        result = PredictionResult(
+            video_id=video_id,
+            run_id=run_id,
+            model_git_sha=model_git_sha,
+            threshold=threshold,
+            threshold_off=threshold_off,
+            gap_merge_s=args.gap_merge_s,
+            min_seg_s=args.min_seg_s,
+            win_s=window_config.win_s,
+            hop_s=window_config.hop_s,
+            mp3_duration_s=mp3_duration_s,
+            segments=predicted_segments,
+            predicted_at=datetime.now(timezone.utc).isoformat(),
+            num_windows=len(df),
+        )
+
+        # Upload or print
+        if args.dry_run:
+            logger.info(f"  [DRY RUN] Would upload to {args.s3_out_prefix}/{video_id}.json")
+            for seg in predicted_segments[:3]:
+                logger.info(f"    segment: {seg.start_s:.1f}-{seg.end_s:.1f}s (p={seg.mean_p:.3f})")
+        else:
+            s3_path = upload_prediction(s3, args.s3_out_prefix, result)
+            logger.info(f"  Uploaded to {s3_path}")
+
+        results.append({
+            "video_id": video_id,
+            "segments": len(predicted_segments),
+            "windows": len(df),
+        })
+
+    # Summary
+    logger.info("=" * 60)
+    logger.info("Prediction Complete")
+    logger.info(f"  Processed: {len(results)} videos")
+    logger.info(f"  Skipped: {len(skipped)} videos")
+    if skipped:
+        logger.info(f"  Skipped IDs: {', '.join(skipped[:10])}")
+    total_segs = sum(r["segments"] for r in results)
+    logger.info(f"  Total segments predicted: {total_segs}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

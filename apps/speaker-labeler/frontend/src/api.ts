@@ -75,6 +75,7 @@ export interface CorrectedBoundary {
   start_s: number;
   end_s: number;
   corrected_at: string;
+  session_id?: number;
 }
 
 export interface VideoBoundaries {
@@ -87,7 +88,7 @@ export interface VideoBoundaries {
 export const getVideos = () => api.get<VideoInfo[]>('/api/videos').then(r => r.data);
 export const getVideoBoundaries = (videoId: string) =>
   api.get<VideoBoundaries>(`/api/videos/${videoId}/boundaries`).then(r => r.data);
-export const saveVideoBoundaries = (videoId: string, boundaries: { start_s: number; end_s: number }[]) =>
+export const saveVideoBoundaries = (videoId: string, boundaries: { start_s: number; end_s: number; session_id?: number }[]) =>
   api.post(`/api/videos/${videoId}/boundaries`, { boundaries });
 export const getVideoAudioUrl = (videoId: string) =>
   // Use streaming endpoint to bypass CORS issues with S3 presigned URLs
