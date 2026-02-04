@@ -416,8 +416,15 @@ def get_mp3_duration_s(s3_client, mp3_key: str) -> Optional[float]:
 
     try:
         head = s3_client.head_object(Bucket=S3_BUCKET, Key=mp3_key)
-        if "x-amz-meta-duration-s" in head.get("Metadata", {}):
-            return float(head["Metadata"]["x-amz-meta-duration-s"])
+        md = head.get("Metadata") or {}
+        # boto3 exposes user metadata as lowercased keys in "Metadata" without the x-amz-meta- prefix.
+        # We keep a couple fallbacks for older uploads / mismatched conventions.
+        for key in ["duration-s", "duration_s", "x-amz-meta-duration-s"]:
+            if key in md:
+                try:
+                    return float(md[key])
+                except Exception:
+                    break
     except Exception:
         pass
 
@@ -487,8 +494,8 @@ def load_labels_s3(s3_client, prefix: str = "labeling/corrected_boundaries/v1/")
                 doc = json.loads(resp["Body"].read())
                 boundaries = [CallBoundary(start=float(b["start_s"]), end=float(b["end_s"])) for b in doc.get("boundaries", [])]
                 boundaries.sort(key=lambda b: b.start)
-                if boundaries:
-                    labels[video_id] = boundaries
+                # Keep empty boundaries too: they are important "no-call" negatives.
+                labels[video_id] = boundaries
             except Exception as e:
                 logger.warning(f"Error loading boundaries for {video_id}: {e}")
     return labels

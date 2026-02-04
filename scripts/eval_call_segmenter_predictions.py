@@ -184,8 +184,9 @@ def load_ground_truth_s3(s3_client, prefix: str = "labeling/corrected_boundaries
                     Segment(start_s=float(b["start_s"]), end_s=float(b["end_s"]))
                     for b in doc.get("boundaries", [])
                 ]
-                if boundaries:
-                    labels[video_id] = boundaries
+                boundaries.sort(key=lambda s: s.start_s)
+                # Keep empty boundaries too: they are important "no-call" negatives.
+                labels[video_id] = boundaries
             except Exception as e:
                 logger.warning(f"Error loading labels for {video_id}: {e}")
 
