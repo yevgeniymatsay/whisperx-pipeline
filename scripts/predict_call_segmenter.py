@@ -35,7 +35,7 @@ from sklearn.feature_extraction.text import HashingVectorizer
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pipeline.config import S3_BUCKET, AWS_REGION
-from pipeline.audio_preprocess import convert_to_wav, load_audio
+from pipeline.audio_preprocess import decode_audio_to_float32
 from pipeline.transcriber import DiarizationSegment
 from pipeline.call_segmenter.features import merge_adjacent_segments, compute_window_features
 from pipeline.call_segmenter.window_generator import WindowConfig, generate_window_times
@@ -339,10 +339,8 @@ def load_mp3_audio_16k_from_s3(s3_client, mp3_key: str) -> np.ndarray:
     """Download MP3 from S3 and load it as 16kHz mono float32."""
     with tempfile.TemporaryDirectory() as td:
         mp3_path = Path(td) / "audio.mp3"
-        wav_path = Path(td) / "audio.wav"
         s3_client.download_file(S3_BUCKET, mp3_key, str(mp3_path))
-        convert_to_wav(str(mp3_path), str(wav_path))
-        audio = load_audio(str(wav_path))
+        audio = decode_audio_to_float32(str(mp3_path), sr_hz=16000)
     return audio.astype(np.float32, copy=False)
 
 
