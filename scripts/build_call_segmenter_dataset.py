@@ -954,7 +954,11 @@ def main() -> int:
     parser.add_argument("--ignore-s", type=float, default=0.75)
     parser.add_argument("--exclude-drift-above", type=float, default=None, help="Exclude videos with |processed_end - mp3_duration| above this threshold")
     parser.add_argument("--processed-end-tolerance-s", type=float, default=2.0, help="Tolerance for label end beyond processed_end before hard error")
-    parser.add_argument("--video-ids", type=str, nargs="*", help="Process only these video IDs")
+    video_sel = parser.add_mutually_exclusive_group()
+    video_sel.add_argument("--video-ids", type=str, nargs="*", help="Process only these video IDs")
+    video_sel.add_argument("--video-list", type=Path, default=None,
+                           help="Process only video IDs listed in this file (one per line). "
+                                "Recommended when IDs may start with '-'")
     parser.add_argument("--no-text", action="store_true", help="Skip hashed text feature extraction")
     parser.add_argument("--no-audio-features", action="store_true", help="Skip audio-derived band-energy features")
     parser.add_argument("--text-n-features", type=int, default=2**12)
@@ -1003,7 +1007,17 @@ def main() -> int:
         for i in issues[:10]:
             logger.warning(f"  {i}")
 
-    video_ids = args.video_ids if args.video_ids else sorted(labels.keys())
+    if args.video_list:
+        if not args.video_list.exists():
+            raise FileNotFoundError(f"--video-list not found: {args.video_list}")
+        video_ids = []
+        for line in args.video_list.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            video_ids.append(line)
+    else:
+        video_ids = args.video_ids if args.video_ids else sorted(labels.keys())
     logger.info(f"Processing {len(video_ids)} videos")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
