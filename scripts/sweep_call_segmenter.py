@@ -75,6 +75,7 @@ class SweepResult:
     threshold: float
     threshold_off: float
     gap_merge_s: float
+    gap_merge_min_p: float
     min_seg_s: float
     f1: float  # time-level F1
     precision: float
@@ -209,6 +210,7 @@ def extract_video_probabilities(
     vectorizer: HashingVectorizer,
     window_config: WindowConfig,
     feature_columns: List[str],
+    audio_features_meta: Optional[Dict] = None,
 ) -> Optional[Tuple[str, np.ndarray, np.ndarray, Optional[float]]]:
     """Extract probabilities for a video using the trained model.
 
@@ -220,7 +222,7 @@ def extract_video_probabilities(
     if video_data is None:
         return None
 
-    run_id, segments, words, processed_end_s, mp3_duration_s = video_data
+    run_id, segments, words, processed_end_s, mp3_duration_s, mp3_key, chunk_coverage = video_data
 
     # Use mp3_duration_s as timeline end if available
     timeline_end = min(processed_end_s, mp3_duration_s) if mp3_duration_s else processed_end_s
@@ -233,6 +235,10 @@ def extract_video_probabilities(
         window_config=window_config,
         feature_columns=feature_columns,
         vectorizer=vectorizer,
+        s3_client=s3_client,
+        mp3_key=mp3_key,
+        chunk_coverage=chunk_coverage,
+        audio_features_meta=audio_features_meta,
     )
 
     if len(df) == 0:
@@ -292,7 +298,13 @@ def cache_all_probabilities(
 
         # Extract features and get probabilities
         result = extract_video_probabilities(
-            s3_client, video_id, model, vectorizer, window_config, feature_columns
+            s3_client,
+            video_id,
+            model,
+            vectorizer,
+            window_config,
+            feature_columns,
+            audio_features_meta=meta.get("audio_features"),
         )
 
         if result is None:
@@ -324,6 +336,7 @@ def evaluate_params_on_videos(
     threshold: float,
     threshold_off: float,
     gap_merge_s: float,
+    gap_merge_min_p: float,
     min_seg_s: float,
 ) -> Optional[SweepResult]:
     """Evaluate parameter combination on a set of videos."""
@@ -354,6 +367,7 @@ def evaluate_params_on_videos(
             threshold_off=threshold_off,
             gap_merge_s=gap_merge_s,
             min_seg_s=min_seg_s,
+            gap_merge_min_p=gap_merge_min_p,
             mp3_duration_s=mp3_duration_s,
         )
 
@@ -441,6 +455,7 @@ def evaluate_params_on_videos(
         threshold=threshold,
         threshold_off=threshold_off,
         gap_merge_s=gap_merge_s,
+        gap_merge_min_p=gap_merge_min_p,
         min_seg_s=min_seg_s,
         f1=f1,
         precision=precision,
@@ -468,6 +483,7 @@ def run_parameter_sweep(
     threshold_step: float,
     threshold_off_delta_values: List[float],
     gap_merge_values: List[float],
+    gap_merge_min_p_values: List[float],
     min_seg_values: List[float],
 ) -> List[SweepResult]:
     """Run sweep over all parameter combinations."""
@@ -480,10 +496,17 @@ def run_parameter_sweep(
         thresholds.append(round(t, 4))
         t += threshold_step
 
-    total_combos = len(thresholds) * len(threshold_off_delta_values) * len(gap_merge_values) * len(min_seg_values)
+    total_combos = (
+        len(thresholds)
+        * len(threshold_off_delta_values)
+        * len(gap_merge_values)
+        * len(gap_merge_min_p_values)
+        * len(min_seg_values)
+    )
     logger.info(
         f"Running sweep: {len(thresholds)} thresholds x {len(threshold_off_delta_values)} off-deltas x "
-        f"{len(gap_merge_values)} gaps x {len(min_seg_values)} min_segs = {total_combos} combinations"
+        f"{len(gap_merge_values)} gaps x {len(gap_merge_min_p_values)} gap-min-p x "
+        f"{len(min_seg_values)} min_segs = {total_combos} combinations"
     )
 
     combo_idx = 0
@@ -491,23 +514,25 @@ def run_parameter_sweep(
         for off_delta in threshold_off_delta_values:
             threshold_off = max(0.0, threshold - off_delta)
             for gap_merge_s in gap_merge_values:
-                for min_seg_s in min_seg_values:
-                    combo_idx += 1
-                    if combo_idx % 100 == 0:
-                        logger.info(f"  Progress: {combo_idx}/{total_combos}")
+                for gap_merge_min_p in gap_merge_min_p_values:
+                    for min_seg_s in min_seg_values:
+                        combo_idx += 1
+                        if combo_idx % 200 == 0:
+                            logger.info(f"  Progress: {combo_idx}/{total_combos}")
 
-                    result = evaluate_params_on_videos(
-                        prob_cache=prob_cache,
-                        ground_truth=ground_truth,
-                        win_s=win_s,
-                        threshold=threshold,
-                        threshold_off=threshold_off,
-                        gap_merge_s=gap_merge_s,
-                        min_seg_s=min_seg_s,
-                    )
+                        result = evaluate_params_on_videos(
+                            prob_cache=prob_cache,
+                            ground_truth=ground_truth,
+                            win_s=win_s,
+                            threshold=threshold,
+                            threshold_off=threshold_off,
+                            gap_merge_s=gap_merge_s,
+                            gap_merge_min_p=gap_merge_min_p,
+                            min_seg_s=min_seg_s,
+                        )
 
-                    if result:
-                        results.append(result)
+                        if result:
+                            results.append(result)
 
     return results
 
@@ -550,18 +575,62 @@ def select_best_params(results: List[SweepResult]) -> Tuple[SweepResult, SweepRe
     # Best unconstrained (for comparison)
     best_overall = max(results, key=lambda r: r.score)
 
-    # Filter: seg_ratio in [0.8, 1.5]
-    valid = [r for r in results if 0.8 <= r.seg_ratio <= 1.5]
+    # Primary gates: we care about correct splits, not just time coverage.
+    # - seg_ratio close to 1.0 prevents "winning by spam" or over-merging
+    # - time F1 gate prevents degenerate low-coverage solutions
+    seg_ratio_min, seg_ratio_max = 0.9, 1.2
+    time_f1_min = 0.85
+
+    valid = [
+        r
+        for r in results
+        if (seg_ratio_min <= r.seg_ratio <= seg_ratio_max and r.f1 >= time_f1_min)
+    ]
 
     if valid:
         winner = max(valid, key=lambda r: r.score)
         return winner, best_overall
 
-    # Fallback: widen to [0.5, 2.0]
-    fallback = [r for r in results if 0.5 <= r.seg_ratio <= 2.0]
+    # Fallback: widen seg_ratio constraints, but keep time-F1 gate.
+    fallback = [
+        r
+        for r in results
+        if (0.8 <= r.seg_ratio <= 1.5 and r.f1 >= time_f1_min)
+    ]
     if fallback:
-        logger.warning("No params in [0.8, 1.5] seg_ratio, using [0.5, 2.0]")
+        logger.warning(
+            "No params in [0.9, 1.2] seg_ratio with time-F1>=0.85, using [0.8, 1.5]"
+        )
         winner = max(fallback, key=lambda r: r.score)
+        return winner, best_overall
+
+    fallback2 = [
+        r
+        for r in results
+        if (0.5 <= r.seg_ratio <= 2.0 and r.f1 >= time_f1_min)
+    ]
+    if fallback2:
+        logger.warning(
+            "No params in [0.8, 1.5] seg_ratio with time-F1>=0.85, using [0.5, 2.0]"
+        )
+        winner = max(fallback2, key=lambda r: r.score)
+        return winner, best_overall
+
+    # If we still have no valid params, relax the time-F1 gate but keep seg-ratio sanity.
+    fallback3 = [r for r in results if 0.8 <= r.seg_ratio <= 1.5]
+    if fallback3:
+        logger.warning(
+            "No params meet time-F1>=0.85; using best in [0.8, 1.5] seg_ratio"
+        )
+        winner = max(fallback3, key=lambda r: r.score)
+        return winner, best_overall
+
+    fallback4 = [r for r in results if 0.5 <= r.seg_ratio <= 2.0]
+    if fallback4:
+        logger.warning(
+            "No params meet time-F1>=0.85; using best in [0.5, 2.0] seg_ratio"
+        )
+        winner = max(fallback4, key=lambda r: r.score)
         return winner, best_overall
 
     # Last resort: best score overall
@@ -582,7 +651,7 @@ def format_result_row(r: SweepResult) -> str:
     seg_ratio_str = f"{r.seg_ratio:.2f}" if r.seg_ratio != float("inf") else "inf"
 
     return (
-        f"{r.threshold:>6.2f}  {r.threshold_off:>6.2f}  {r.gap_merge_s:>5.0f}  {r.min_seg_s:>6.0f}  "
+        f"{r.threshold:>6.2f}  {r.threshold_off:>6.2f}  {r.gap_merge_s:>5.0f}  {r.gap_merge_min_p:>7.2f}  {r.min_seg_s:>6.0f}  "
         f"{r.f1:>7.4f}  {r.seg_f1:>7.4f}  {seg_ratio_str:>8}  {iou:>6}  {mae_s:>7}  {mae_e:>7}  "
         f"{r.unmatched_pred:>8}  {r.unmatched_truth:>8}  {r.score:>7.4f}"
     )
@@ -593,7 +662,7 @@ def print_sweep_results(results: List[SweepResult], top_n: int, title: str) -> N
     print(f"\n{'=' * 100}")
     print(f"{title}")
     print("=" * 100)
-    print(f"{'ThrOn':>6}  {'ThrOff':>6}  {'Gap':>5}  {'MinSeg':>6}  {'TimeF1':>7}  {'SegF1':>7}  {'SegRatio':>8}  {'IoU':>6}  {'MAE-S':>7}  {'MAE-E':>7}  {'UnmtchP':>8}  {'UnmtchT':>8}  {'Score':>7}")
+    print(f"{'ThrOn':>6}  {'ThrOff':>6}  {'Gap':>5}  {'GapMinP':>7}  {'MinSeg':>6}  {'TimeF1':>7}  {'SegF1':>7}  {'SegRatio':>8}  {'IoU':>6}  {'MAE-S':>7}  {'MAE-E':>7}  {'UnmtchP':>8}  {'UnmtchT':>8}  {'Score':>7}")
     print("-" * 100)
 
     # Sort by score descending
@@ -613,6 +682,7 @@ def save_results_csv(results: List[SweepResult], output_path: Path) -> None:
             "threshold": r.threshold,
             "threshold_off": r.threshold_off,
             "gap_merge_s": r.gap_merge_s,
+            "gap_merge_min_p": r.gap_merge_min_p,
             "min_seg_s": r.min_seg_s,
             "time_f1": r.f1,
             "precision": r.precision,
@@ -664,6 +734,9 @@ def main() -> int:
                              "0.0 means no hysteresis (threshold_off == threshold).")
     parser.add_argument("--gap-merge-values", type=str, default="0,1,2,5,10,20,30",
                         help="Comma-separated gap merge values (seconds)")
+    parser.add_argument("--gap-merge-min-p-values", type=str, default="0,0.2,0.4,0.6,0.8",
+                        help="Comma-separated values for conditional gap merging. "
+                             "A gap only merges if max prob in the gap >= gap_merge_min_p (0 disables).")
     parser.add_argument("--min-seg-values", type=str, default="1,3,5,10",
                         help="Comma-separated minimum segment values (seconds)")
     parser.add_argument("--output-csv", type=Path, default=None,
@@ -681,6 +754,7 @@ def main() -> int:
     threshold_min, threshold_max, threshold_step = map(float, thresh_parts)
 
     gap_merge_values = parse_float_list(args.gap_merge_values)
+    gap_merge_min_p_values = parse_float_list(args.gap_merge_min_p_values)
     min_seg_values = parse_float_list(args.min_seg_values)
     threshold_off_delta_values = parse_float_list(args.threshold_off_delta_values)
 
@@ -768,6 +842,7 @@ def main() -> int:
         threshold_step=threshold_step,
         threshold_off_delta_values=threshold_off_delta_values,
         gap_merge_values=gap_merge_values,
+        gap_merge_min_p_values=gap_merge_min_p_values,
         min_seg_values=min_seg_values,
     )
 
@@ -786,12 +861,12 @@ def main() -> int:
     print("=" * 100)
     print(
         f"BEST (constrained): thr_on={best_constrained.threshold:.2f}, thr_off={best_constrained.threshold_off:.2f}, "
-        f"gap={best_constrained.gap_merge_s:.0f}, min_seg={best_constrained.min_seg_s:.0f}, "
+        f"gap={best_constrained.gap_merge_s:.0f}, gap_min_p={best_constrained.gap_merge_min_p:.2f}, min_seg={best_constrained.min_seg_s:.0f}, "
         f"time_f1={best_constrained.f1:.4f}, seg_f1={best_constrained.seg_f1:.4f}, seg_ratio={best_constrained.seg_ratio:.2f}"
     )
     print(
         f"BEST (overall):     thr_on={best_overall.threshold:.2f}, thr_off={best_overall.threshold_off:.2f}, "
-        f"gap={best_overall.gap_merge_s:.0f}, min_seg={best_overall.min_seg_s:.0f}, "
+        f"gap={best_overall.gap_merge_s:.0f}, gap_min_p={best_overall.gap_merge_min_p:.2f}, min_seg={best_overall.min_seg_s:.0f}, "
         f"time_f1={best_overall.f1:.4f}, seg_f1={best_overall.seg_f1:.4f}, seg_ratio={best_overall.seg_ratio:.2f}"
     )
 
@@ -821,6 +896,7 @@ def main() -> int:
                 threshold=best_constrained.threshold,
                 threshold_off=best_constrained.threshold_off,
                 gap_merge_s=best_constrained.gap_merge_s,
+                gap_merge_min_p=best_constrained.gap_merge_min_p,
                 min_seg_s=best_constrained.min_seg_s,
             )
 
@@ -832,6 +908,7 @@ def main() -> int:
                 print("\n" + "=" * 100)
                 print(f"EVAL SET (best params: thr_on={best_constrained.threshold:.2f}, "
                       f"thr_off={best_constrained.threshold_off:.2f}, gap={best_constrained.gap_merge_s:.0f}, "
+                      f"gap_min_p={best_constrained.gap_merge_min_p:.2f}, "
                       f"min_seg={best_constrained.min_seg_s:.0f})")
                 print("=" * 100)
                 iou_str = f"{eval_result.mean_iou:.3f}" if eval_result.mean_iou is not None else "N/A"
@@ -858,6 +935,7 @@ def main() -> int:
     print(f"      --threshold {best_constrained.threshold:.2f} \\")
     print(f"      --threshold-off {best_constrained.threshold_off:.2f} \\")
     print(f"      --gap-merge-s {best_constrained.gap_merge_s:.0f} \\")
+    print(f"      --gap-merge-min-p {best_constrained.gap_merge_min_p:.2f} \\")
     print(f"      --min-seg-s {best_constrained.min_seg_s:.0f}")
     print()
     print("Then evaluate:")

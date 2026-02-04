@@ -16,7 +16,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import sys
+import tempfile
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,12 +28,14 @@ import numpy as np
 import pandas as pd
 import boto3
 from scipy import sparse
+from scipy import signal
 from sklearn.feature_extraction.text import HashingVectorizer
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pipeline.config import S3_BUCKET, AWS_REGION
+from pipeline.audio_preprocess import convert_to_wav, load_audio
 from pipeline.transcriber import DiarizationSegment
 from pipeline.call_segmenter.features import merge_adjacent_segments, compute_window_features
 from pipeline.call_segmenter.window_generator import WindowConfig, generate_window_times
@@ -65,6 +69,7 @@ class PredictionResult:
     threshold: float
     threshold_off: Optional[float]
     gap_merge_s: float
+    gap_merge_min_p: float
     min_seg_s: float
     win_s: float
     hop_s: float
@@ -237,6 +242,31 @@ def get_mp3_duration_s(s3_client, mp3_key: str) -> Optional[float]:
 # =============================================================================
 
 
+def merge_intervals(intervals: List[Tuple[float, float]], eps: float = 1e-3) -> List[Tuple[float, float]]:
+    """Merge overlapping / touching intervals."""
+    if not intervals:
+        return []
+    sorted_ints = sorted(intervals, key=lambda x: x[0])
+    merged: List[Tuple[float, float]] = []
+    cur_s, cur_e = sorted_ints[0]
+    for s, e in sorted_ints[1:]:
+        if s <= cur_e + eps:
+            cur_e = max(cur_e, e)
+        else:
+            merged.append((cur_s, cur_e))
+            cur_s, cur_e = s, e
+    merged.append((cur_s, cur_e))
+    return merged
+
+
+def point_in_intervals(t: float, intervals: List[Tuple[float, float]]) -> bool:
+    """Return True if t is within any merged interval (linear scan)."""
+    for s, e in intervals:
+        if s <= t <= e:
+            return True
+    return False
+
+
 class WindowTextExtractor:
     """Streaming extractor of window text from a sorted word list."""
 
@@ -260,11 +290,115 @@ class WindowTextExtractor:
         return " ".join(tokens)
 
 
+# =============================================================================
+# Audio Features (phone-band / high-frequency energy)
+# =============================================================================
+
+
+@dataclass
+class AudioEnergyContext:
+    """Precomputed prefix sums for fast per-window band-energy features."""
+
+    sr_hz: int
+    n_samples: int
+    total_energy_prefix: np.ndarray  # shape [n_samples + 1]
+    phone_energy_prefix: np.ndarray  # shape [n_samples + 1]
+    hf_energy_prefix: np.ndarray  # shape [n_samples + 1]
+
+    def _idx(self, t_s: float) -> int:
+        return int(round(float(t_s) * self.sr_hz))
+
+    def features_for_window(self, t_start: float, t_end: float) -> Tuple[float, float, float]:
+        """Return (rms_energy, phone_band_frac, hf_energy_frac) for [t_start, t_end]."""
+        i0 = max(0, min(self.n_samples, self._idx(t_start)))
+        i1 = max(0, min(self.n_samples, self._idx(t_end)))
+        if i1 <= i0:
+            return 0.0, 0.0, 0.0
+
+        total_e = float(self.total_energy_prefix[i1] - self.total_energy_prefix[i0])
+        phone_e = float(self.phone_energy_prefix[i1] - self.phone_energy_prefix[i0])
+        hf_e = float(self.hf_energy_prefix[i1] - self.hf_energy_prefix[i0])
+
+        n = i1 - i0
+        rms = math.sqrt(max(total_e / max(n, 1), 0.0))
+
+        if total_e > 0.0:
+            phone_frac = phone_e / total_e
+            hf_frac = hf_e / total_e
+        else:
+            phone_frac = 0.0
+            hf_frac = 0.0
+
+        phone_frac = float(min(1.0, max(0.0, phone_frac)))
+        hf_frac = float(min(1.0, max(0.0, hf_frac)))
+
+        return float(rms), phone_frac, hf_frac
+
+
+def load_mp3_audio_16k_from_s3(s3_client, mp3_key: str) -> np.ndarray:
+    """Download MP3 from S3 and load it as 16kHz mono float32."""
+    with tempfile.TemporaryDirectory() as td:
+        mp3_path = Path(td) / "audio.mp3"
+        wav_path = Path(td) / "audio.wav"
+        s3_client.download_file(S3_BUCKET, mp3_key, str(mp3_path))
+        convert_to_wav(str(mp3_path), str(wav_path))
+        audio = load_audio(str(wav_path))
+    return audio.astype(np.float32, copy=False)
+
+
+def build_audio_energy_context(audio: np.ndarray, audio_meta: Optional[Dict] = None) -> AudioEnergyContext:
+    """Build AudioEnergyContext for fast per-window audio features."""
+    audio_meta = audio_meta or {}
+
+    sr = int(audio_meta.get("sr_hz", 16000))
+    order = int(audio_meta.get("filter_order", 4))
+
+    phone_band = audio_meta.get("phone_band_hz", [300.0, 3400.0])
+    if isinstance(phone_band, (list, tuple)) and len(phone_band) == 2:
+        phone_low = float(phone_band[0])
+        phone_high = float(phone_band[1])
+    else:
+        phone_low, phone_high = 300.0, 3400.0
+
+    hf_low = float(audio_meta.get("hf_low_hz", 4000.0))
+
+    x = np.asarray(audio, dtype=np.float32).reshape(-1)
+    n = int(x.shape[0])
+
+    total_energy_prefix = np.concatenate([[0.0], np.cumsum(x * x, dtype=np.float64)])
+
+    sos_phone = signal.butter(order, [phone_low, phone_high], btype="bandpass", fs=sr, output="sos")
+    x_phone = signal.sosfilt(sos_phone, x)
+    phone_energy_prefix = np.concatenate([[0.0], np.cumsum(x_phone * x_phone, dtype=np.float64)])
+
+    sos_hf = signal.butter(order, hf_low, btype="highpass", fs=sr, output="sos")
+    x_hf = signal.sosfilt(sos_hf, x)
+    hf_energy_prefix = np.concatenate([[0.0], np.cumsum(x_hf * x_hf, dtype=np.float64)])
+
+    return AudioEnergyContext(
+        sr_hz=sr,
+        n_samples=n,
+        total_energy_prefix=total_energy_prefix,
+        phone_energy_prefix=phone_energy_prefix,
+        hf_energy_prefix=hf_energy_prefix,
+    )
+
+
 def load_video_data_for_inference(
     s3_client,
     video_id: str,
     merge_gap_s: float = 0.2,
-) -> Optional[Tuple[str, List[DiarizationSegment], List[dict], float, Optional[float]]]:
+) -> Optional[
+    Tuple[
+        str,
+        List[DiarizationSegment],
+        List[dict],
+        float,
+        Optional[float],
+        Optional[str],
+        List[Tuple[float, float]],
+    ]
+]:
     """Load video data needed for inference (no labels).
 
     Returns:
@@ -283,12 +417,14 @@ def load_video_data_for_inference(
     all_segments: List[DiarizationSegment] = []
     all_words: List[dict] = []
     processed_end_s = 0.0
+    coverage_ints: List[Tuple[float, float]] = []
 
     for chunk_id in chunk_ids:
         meta = load_chunk_metadata(s3_client, video_id, run_id, chunk_id)
         if meta:
             chunk_end = float(meta["chunk_time_offset_s"]) + float(meta["duration_s"])
             processed_end_s = max(processed_end_s, chunk_end)
+            coverage_ints.append((float(meta["chunk_time_offset_s"]), float(chunk_end)))
 
         all_segments.extend(load_diarization_segments(s3_client, video_id, run_id, chunk_id))
         all_words.extend(load_words(s3_client, video_id, run_id, chunk_id))
@@ -297,11 +433,13 @@ def load_video_data_for_inference(
     if merge_gap_s > 0:
         all_segments = merge_adjacent_segments(all_segments, max_gap_s=merge_gap_s)
 
-    # Get MP3 duration for clamping
+    # Get MP3 key + duration for clamping / audio features.
     mp3_key = get_mp3_key_for_video(s3_client, video_id)
     mp3_duration_s = get_mp3_duration_s(s3_client, mp3_key) if mp3_key else None
 
-    return run_id, all_segments, all_words, processed_end_s, mp3_duration_s
+    chunk_coverage = merge_intervals(coverage_ints)
+
+    return run_id, all_segments, all_words, processed_end_s, mp3_duration_s, mp3_key, chunk_coverage
 
 
 def generate_features_for_video(
@@ -311,6 +449,11 @@ def generate_features_for_video(
     window_config: WindowConfig,
     feature_columns: List[str],
     vectorizer: HashingVectorizer,
+    *,
+    s3_client=None,
+    mp3_key: Optional[str] = None,
+    chunk_coverage: Optional[List[Tuple[float, float]]] = None,
+    audio_features_meta: Optional[Dict] = None,
 ) -> Tuple[pd.DataFrame, sparse.csr_matrix]:
     """Generate numeric and text features for all windows in a video.
 
@@ -322,7 +465,21 @@ def generate_features_for_video(
 
     text_extractor = WindowTextExtractor(words)
 
+    audio_ctx: Optional[AudioEnergyContext] = None
+    needs_audio = any(
+        c in feature_columns for c in ["rms_energy", "phone_band_frac", "hf_energy_frac"]
+    )
+    if needs_audio:
+        if s3_client is None or not mp3_key:
+            raise ValueError("Audio features required by model but mp3_key/s3_client was not provided")
+        audio = load_mp3_audio_16k_from_s3(s3_client, mp3_key)
+        audio_ctx = build_audio_energy_context(audio, audio_features_meta)
+
     for t_start, t_end, t_mid in generate_window_times(0.0, timeline_end, window_config):
+        # Match training distribution: only score windows where the pipeline produced chunk artifacts.
+        if chunk_coverage is not None and not point_in_intervals(t_mid, chunk_coverage):
+            continue
+
         context_10s_start = max(0.0, t_end - window_config.context_10s)
         context_30s_start = max(0.0, t_end - window_config.context_30s)
 
@@ -338,6 +495,13 @@ def generate_features_for_video(
             "t_mid": t_mid,
             **feats.to_dict(),
         }
+        if audio_ctx is not None:
+            rms_energy, phone_band_frac, hf_energy_frac = audio_ctx.features_for_window(t_start, t_end)
+            row.update({
+                "rms_energy": rms_energy,
+                "phone_band_frac": phone_band_frac,
+                "hf_energy_frac": hf_energy_frac,
+            })
         rows.append(row)
         window_texts.append(text_extractor.text_for_window(t_start, t_end))
 
@@ -365,7 +529,8 @@ def probabilities_to_segments(
     threshold_off: Optional[float],
     gap_merge_s: float,
     min_seg_s: float,
-    mp3_duration_s: Optional[float],
+    gap_merge_min_p: float = 0.0,
+    mp3_duration_s: Optional[float] = None,
 ) -> List[PredictedSegment]:
     """Convert per-window probabilities to merged call segments.
 
@@ -375,6 +540,7 @@ def probabilities_to_segments(
         win_s: Window duration (for converting t_mid to segment bounds)
         threshold: Classification threshold
         gap_merge_s: Merge segments with gaps smaller than this
+        gap_merge_min_p: Only merge across a gap if max prob in the gap is >= this value (0 disables)
         min_seg_s: Drop segments shorter than this
         mp3_duration_s: Clamp segments to this duration (if known)
 
@@ -394,6 +560,9 @@ def probabilities_to_segments(
     thr_off = threshold if threshold_off is None else float(threshold_off)
     if thr_off > threshold:
         raise ValueError(f"threshold_off ({thr_off}) must be <= threshold ({threshold})")
+    gap_merge_min_p = float(gap_merge_min_p)
+    if gap_merge_min_p < 0.0 or gap_merge_min_p > 1.0:
+        raise ValueError("gap_merge_min_p must be in [0, 1]")
 
     active_mask = np.zeros_like(probs, dtype=bool)
     in_seg = False
@@ -408,53 +577,53 @@ def probabilities_to_segments(
             else:
                 in_seg = False
 
-    # Build raw segments from contiguous positive windows
-    raw_segments: List[Tuple[float, float, List[float]]] = []
-    current_start: Optional[float] = None
-    current_probs: List[float] = []
-
+    # Build raw runs as contiguous True spans (store indices so we can conditionally merge gaps).
     half_win = win_s / 2.0
+    raw_runs: List[Tuple[int, int]] = []
+    start_idx: Optional[int] = None
+    for i, is_pos in enumerate(active_mask):
+        if is_pos and start_idx is None:
+            start_idx = i
+        elif not is_pos and start_idx is not None:
+            raw_runs.append((start_idx, i - 1))
+            start_idx = None
+    if start_idx is not None:
+        raw_runs.append((start_idx, len(active_mask) - 1))
 
-    for i, (t_mid, is_pos) in enumerate(zip(t_mids, active_mask)):
-        if is_pos:
-            if current_start is None:
-                current_start = t_mid - half_win
-            current_probs.append(probs[i])
-            # Update end on every positive window
-            current_end = t_mid + half_win
-        else:
-            if current_start is not None:
-                raw_segments.append((current_start, current_end, current_probs))
-                current_start = None
-                current_probs = []
-
-    # Don't forget last segment
-    if current_start is not None:
-        current_end = t_mids[np.where(active_mask)[0][-1]] + half_win
-        raw_segments.append((current_start, current_end, current_probs))
-
-    if not raw_segments:
+    if not raw_runs:
         return []
 
-    # Merge segments with small gaps
-    merged: List[Tuple[float, float, List[float]]] = []
-    cur_start, cur_end, cur_probs = raw_segments[0]
+    def run_start_s(si: int) -> float:
+        return float(t_mids[si] - half_win)
 
-    for seg_start, seg_end, seg_probs in raw_segments[1:]:
-        gap = seg_start - cur_end
-        if gap <= gap_merge_s:
-            # Merge: extend current segment
-            cur_end = seg_end
-            cur_probs.extend(seg_probs)
+    def run_end_s(ei: int) -> float:
+        return float(t_mids[ei] + half_win)
+
+    merged_runs: List[Tuple[int, int]] = []
+    cur_si, cur_ei = raw_runs[0]
+
+    for next_si, next_ei in raw_runs[1:]:
+        gap_s = run_start_s(next_si) - run_end_s(cur_ei)
+
+        should_merge = gap_s <= gap_merge_s
+        if should_merge and gap_merge_min_p > 0.0:
+            gap_probs = probs[cur_ei + 1: next_si]
+            gap_max = float(gap_probs.max()) if gap_probs.size else 1.0
+            should_merge = gap_max >= gap_merge_min_p
+
+        if should_merge:
+            cur_ei = next_ei
         else:
-            merged.append((cur_start, cur_end, cur_probs))
-            cur_start, cur_end, cur_probs = seg_start, seg_end, seg_probs
+            merged_runs.append((cur_si, cur_ei))
+            cur_si, cur_ei = next_si, next_ei
 
-    merged.append((cur_start, cur_end, cur_probs))
+    merged_runs.append((cur_si, cur_ei))
 
     # Filter by minimum duration and clamp to bounds
     result: List[PredictedSegment] = []
-    for start_s, end_s, seg_probs in merged:
+    for si, ei in merged_runs:
+        start_s = run_start_s(si)
+        end_s = run_end_s(ei)
         # Clamp to [0, mp3_duration_s]
         start_s = max(0.0, start_s)
         if mp3_duration_s is not None:
@@ -462,7 +631,8 @@ def probabilities_to_segments(
 
         duration = end_s - start_s
         if duration >= min_seg_s:
-            mean_p = float(np.mean(seg_probs)) if seg_probs else 0.0
+            # Use full span (including merged gaps) so deep dips reduce confidence.
+            mean_p = float(np.mean(probs[si:ei + 1])) if ei >= si else 0.0
             result.append(PredictedSegment(
                 start_s=round(start_s, 3),
                 end_s=round(end_s, 3),
@@ -488,6 +658,7 @@ def upload_prediction(s3_client, s3_prefix: str, result: PredictionResult) -> st
         "threshold": result.threshold,
         "threshold_off": result.threshold_off,
         "gap_merge_s": result.gap_merge_s,
+        "gap_merge_min_p": result.gap_merge_min_p,
         "min_seg_s": result.min_seg_s,
         "win_s": result.win_s,
         "hop_s": result.hop_s,
@@ -543,6 +714,8 @@ def main() -> int:
                         help="Hysteresis: keep call active while prob >= threshold-off (default: same as --threshold)")
     parser.add_argument("--gap-merge-s", type=float, default=1.0,
                         help="Merge segments with gaps smaller than this")
+    parser.add_argument("--gap-merge-min-p", type=float, default=0.0,
+                        help="Only merge across gaps if max prob in the gap >= this value (0 disables)")
     parser.add_argument("--min-seg-s", type=float, default=5.0,
                         help="Drop segments shorter than this")
     parser.add_argument("--exclude-video-ids", type=str, default=None,
@@ -611,7 +784,7 @@ def main() -> int:
             skipped.append(video_id)
             continue
 
-        run_id, segments, words, processed_end_s, mp3_duration_s = video_data
+        run_id, segments, words, processed_end_s, mp3_duration_s, mp3_key, chunk_coverage = video_data
 
         # Use mp3_duration_s as timeline end if available, else processed_end_s
         timeline_end = min(processed_end_s, mp3_duration_s) if mp3_duration_s else processed_end_s
@@ -626,6 +799,10 @@ def main() -> int:
             window_config=window_config,
             feature_columns=feature_columns,
             vectorizer=vectorizer,
+            s3_client=s3,
+            mp3_key=mp3_key,
+            chunk_coverage=chunk_coverage,
+            audio_features_meta=meta.get("audio_features"),
         )
 
         if len(df) == 0:
@@ -644,6 +821,7 @@ def main() -> int:
             threshold=threshold,
             threshold_off=threshold_off,
             gap_merge_s=args.gap_merge_s,
+            gap_merge_min_p=args.gap_merge_min_p,
             min_seg_s=args.min_seg_s,
             mp3_duration_s=mp3_duration_s,
         )
@@ -661,6 +839,7 @@ def main() -> int:
             threshold=threshold,
             threshold_off=threshold_off,
             gap_merge_s=args.gap_merge_s,
+            gap_merge_min_p=args.gap_merge_min_p,
             min_seg_s=args.min_seg_s,
             win_s=window_config.win_s,
             hop_s=window_config.hop_s,

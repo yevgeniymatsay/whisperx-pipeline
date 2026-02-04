@@ -13,7 +13,7 @@ import json
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -46,6 +46,35 @@ def split_by_video(df: pd.DataFrame, eval_frac: float, seed: int) -> Tuple[pd.Da
     train_df = df[~df["video_id"].isin(eval_vids)].copy().reset_index(drop=True)
     eval_df = df[df["video_id"].isin(eval_vids)].copy().reset_index(drop=True)
     return train_df, eval_df, sorted(eval_vids)
+
+
+def split_by_fixed_meta(df: pd.DataFrame, split_meta_path: Path) -> Tuple[pd.DataFrame, pd.DataFrame, List[str], List[str]]:
+    """Split rows by video_id using an existing meta.json containing train/eval ids."""
+    meta = json.loads(split_meta_path.read_text())
+    train_vids = meta.get("train_video_ids")
+    eval_vids = meta.get("eval_video_ids")
+    if not isinstance(train_vids, list) or not isinstance(eval_vids, list):
+        raise ValueError(f"{split_meta_path} missing train_video_ids/eval_video_ids")
+
+    train_vids = [str(v) for v in train_vids]
+    eval_vids = [str(v) for v in eval_vids]
+
+    overlap = set(train_vids) & set(eval_vids)
+    if overlap:
+        raise ValueError(f"Split meta has overlapping train/eval video_ids: {sorted(overlap)[:10]}")
+
+    present = set(df["video_id"].dropna().astype(str).unique().tolist())
+    missing_train = [v for v in train_vids if v not in present]
+    missing_eval = [v for v in eval_vids if v not in present]
+    if missing_train or missing_eval:
+        raise ValueError(
+            f"Split meta video_ids missing from dataset (train_missing={missing_train[:5]} eval_missing={missing_eval[:5]})"
+        )
+
+    train_df = df[df["video_id"].isin(train_vids)].copy().reset_index(drop=True)
+    eval_df = df[df["video_id"].isin(eval_vids)].copy().reset_index(drop=True)
+
+    return train_df, eval_df, sorted(eval_vids), sorted(train_vids)
 
 
 def classification_report(y_true: np.ndarray, y_prob: np.ndarray, threshold: float) -> Dict[str, float]:
@@ -112,9 +141,13 @@ def save_model_b(
     output_dir: Path,
     feature_columns: List[str],
     text_features_meta: Dict,
+    audio_features_meta: Optional[Dict],
     window_config: Dict,
     seed: int,
     threshold: float,
+    neg_weight: float,
+    boundary_weight: float,
+    boundary_tau: float,
     train_video_ids: List[str],
     eval_video_ids: List[str],
     eval_metrics: Dict[str, float],
@@ -140,7 +173,13 @@ def save_model_b(
             "ngram_range": text_features_meta.get("ngram_range", [2, 5]),
             "analyzer": text_features_meta.get("analyzer", "char_wb"),
         },
+        "audio_features": audio_features_meta,
         "window_config": window_config,
+        "training": {
+            "neg_weight": float(neg_weight),
+            "boundary_weight": float(boundary_weight),
+            "boundary_tau": float(boundary_tau),
+        },
         "versions": {
             "xgboost": xgb.__version__,
             "sklearn": sklearn.__version__,
@@ -165,9 +204,17 @@ def main() -> int:
     parser.add_argument("--data", type=Path, default=Path("data/call_segmenter/v2"))
     parser.add_argument("--seed", type=int, default=1337)
     parser.add_argument("--eval-frac", type=float, default=0.2)
+    parser.add_argument("--split-meta", type=Path, default=None,
+                        help="Use fixed train/eval split from an existing model meta.json")
     parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument("--neg-weight", type=float, default=None,
+                        help="Weight multiplier for y==0 windows (default: pos/neg in train split)")
+    parser.add_argument("--boundary-weight", type=float, default=0.0,
+                        help="Extra weight for windows near boundaries: 1 + w*exp(-|dist|/tau)")
+    parser.add_argument("--boundary-tau", type=float, default=10.0,
+                        help="Decay timescale (seconds) for boundary weighting")
     parser.add_argument("--no-text", action="store_true", help="Skip training Model B (text)")
-    parser.add_argument("--output-dir", type=Path, default=Path("data/call_segmenter/models/v1"),
+    parser.add_argument("--output-dir", type=Path, default=Path("data/call_segmenter/models/v2"),
                         help="Directory to save trained model artifacts")
     parser.add_argument("--no-save", action="store_true", help="Skip saving model artifacts")
     args = parser.parse_args()
@@ -195,15 +242,34 @@ def main() -> int:
     if missing:
         raise ValueError(f"Missing feature columns in parquet: {missing}")
 
-    train_df, eval_df, eval_vids = split_by_video(df, args.eval_frac, args.seed)
-    print(f"Split: train videos={train_df['video_id'].nunique()} eval videos={len(eval_vids)}")
+    if args.split_meta:
+        train_df, eval_df, eval_vids, train_vids = split_by_fixed_meta(df, args.split_meta)
+        print(f"Split (fixed): train videos={len(train_vids)} eval videos={len(eval_vids)}")
+    else:
+        train_df, eval_df, eval_vids = split_by_video(df, args.eval_frac, args.seed)
+        train_vids = sorted(train_df['video_id'].dropna().unique().tolist())
+        print(f"Split (random): train videos={train_df['video_id'].nunique()} eval videos={len(eval_vids)}")
+        print(f"Eval videos: {', '.join(eval_vids)}")
+
     print(f"Rows: train={len(train_df)} eval={len(eval_df)}")
-    print(f"Eval videos: {', '.join(eval_vids)}")
 
     X_train = train_df[feature_cols].to_numpy(dtype=np.float32)
     y_train = train_df["y"].to_numpy(dtype=int)
     X_eval = eval_df[feature_cols].to_numpy(dtype=np.float32)
     y_eval = eval_df["y"].to_numpy(dtype=int)
+
+    # Sample weights: emphasize negatives and boundary-adjacent windows to improve split quality.
+    pos = int(y_train.sum())
+    neg = int(len(y_train) - pos)
+    neg_weight = float(args.neg_weight) if args.neg_weight is not None else (pos / max(neg, 1))
+
+    w_train = np.ones(len(train_df), dtype=np.float32)
+    w_train[y_train == 0] *= neg_weight
+
+    if args.boundary_weight > 0.0 and "dist_to_boundary_s" in train_df.columns:
+        dist = train_df["dist_to_boundary_s"].to_numpy(dtype=np.float32)
+        dist = np.abs(dist)
+        w_train *= (1.0 + float(args.boundary_weight) * np.exp(-dist / float(args.boundary_tau)))
 
     # Model A (numeric)
     model_a = xgb.XGBClassifier(
@@ -220,7 +286,7 @@ def main() -> int:
         n_jobs=8,
         random_state=args.seed,
     )
-    model_a.fit(X_train, y_train)
+    model_a.fit(X_train, y_train, sample_weight=w_train)
     prob_a = model_a.predict_proba(X_eval)[:, 1]
 
     rep_a = classification_report(y_eval, prob_a, args.threshold)
@@ -266,7 +332,7 @@ def main() -> int:
         n_jobs=8,
         random_state=args.seed,
     )
-    model_b.fit(X_train_comb, y_train)
+    model_b.fit(X_train_comb, y_train, sample_weight=w_train)
     prob_b = model_b.predict_proba(X_eval_comb)[:, 1]
 
     rep_b = classification_report(y_eval, prob_b, args.threshold)
@@ -281,21 +347,25 @@ def main() -> int:
     # Save Model B artifacts
     if not args.no_save:
         text_features_meta = meta.get("text_features", {})
+        audio_features_meta = meta.get("config", {}).get("audio_features")
         window_config = {
             "win_s": meta["config"]["win_s"],
             "hop_s": meta["config"]["hop_s"],
             "ignore_s": meta["config"]["ignore_s"],
         }
-        train_video_ids = train_df["video_id"].unique().tolist()
         save_model_b(
             model=model_b,
             output_dir=args.output_dir,
             feature_columns=feature_cols,
             text_features_meta=text_features_meta,
+            audio_features_meta=audio_features_meta,
             window_config=window_config,
             seed=args.seed,
             threshold=args.threshold,
-            train_video_ids=train_video_ids,
+            neg_weight=neg_weight,
+            boundary_weight=args.boundary_weight,
+            boundary_tau=args.boundary_tau,
+            train_video_ids=train_vids,
             eval_video_ids=eval_vids,
             eval_metrics=rep_b,
         )
