@@ -101,6 +101,7 @@ def append_experiment_log(
     if best_params.decode_mode == "viterbi":
         lines.append(
             f"- decode=viterbi enter_cost={float(best_params.enter_cost):.2f}, exit_cost={float(best_params.exit_cost):.2f}, "
+            f"call_bias={float(best_params.call_bias or 0.0):.2f}, "
             f"min_seg={best_params.min_seg_s:.0f}"
         )
     else:
@@ -117,6 +118,7 @@ def append_experiment_log(
     if best_overall.decode_mode == "viterbi":
         lines.append(
             f"- decode=viterbi enter_cost={float(best_overall.enter_cost):.2f}, exit_cost={float(best_overall.exit_cost):.2f}, "
+            f"call_bias={float(best_overall.call_bias or 0.0):.2f}, "
             f"min_seg={best_overall.min_seg_s:.0f}"
         )
     else:
@@ -173,6 +175,8 @@ def main() -> int:
                         help="(viterbi) Comma-separated NO_CALL->CALL transition costs to sweep")
     parser.add_argument("--exit-cost-values", type=str, default="0.0,0.25,0.5,0.75,1.0,1.5,2.0",
                         help="(viterbi) Comma-separated CALL->NO_CALL transition costs to sweep")
+    parser.add_argument("--call-bias-values", type=str, default="0.0,0.5,1.0,2.0,3.0,4.0",
+                        help="(viterbi) Comma-separated per-step CALL bias costs to sweep (acts like a soft threshold)")
     parser.add_argument("--cache-dir", type=Path, default=None, help="Cache dir for sweep probabilities")
     parser.add_argument("--predictions-base-prefix", type=str, default="call_segmenter/predictions",
                         help="S3 key prefix base for predictions (within bucket)")
@@ -286,6 +290,7 @@ def main() -> int:
         if decode_mode == "viterbi":
             enter_vals = [float(x.strip()) for x in args.enter_cost_values.split(",") if x.strip()]
             exit_vals = [float(x.strip()) for x in args.exit_cost_values.split(",") if x.strip()]
+            bias_vals = [float(x.strip()) for x in args.call_bias_values.split(",") if x.strip()]
             train_results = sweep_call_segmenter.run_parameter_sweep(
                 prob_cache=train_cache,
                 ground_truth=train_gt,
@@ -303,6 +308,7 @@ def main() -> int:
                 decode_mode="viterbi",
                 enter_cost_values=enter_vals,
                 exit_cost_values=exit_vals,
+                call_bias_values=bias_vals,
                 calibration=calib,
             )
         else:
@@ -350,6 +356,7 @@ def main() -> int:
             gap_merge_stat=best_constrained.gap_merge_stat,
             enter_cost=best_constrained.enter_cost,
             exit_cost=best_constrained.exit_cost,
+            call_bias=best_constrained.call_bias,
             min_seg_s=best_constrained.min_seg_s,
             min_seg_short_s=best_constrained.min_seg_short_s,
             keep_short_p=best_constrained.keep_short_p,
@@ -378,6 +385,7 @@ def main() -> int:
                 f"{args.predictions_base_prefix}/{args.exp_name}_{ts}_"
                 f"viterbi_enter{int(round(float(best_constrained.enter_cost)*100)):03d}_"
                 f"exit{int(round(float(best_constrained.exit_cost)*100)):03d}_"
+                f"bias{int(round(float(best_constrained.call_bias or 0.0)*100)):03d}_"
                 f"min{int(round(best_constrained.min_seg_s)):02d}"
             )
         else:
@@ -416,6 +424,8 @@ def main() -> int:
                 str(best_constrained.enter_cost),
                 "--exit-cost",
                 str(best_constrained.exit_cost),
+                "--call-bias",
+                str(best_constrained.call_bias or 0.0),
             ]
         else:
             cmd += [

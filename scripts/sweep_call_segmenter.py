@@ -84,6 +84,7 @@ class SweepResult:
     # Viterbi decoder params (None when decode_mode="threshold")
     enter_cost: Optional[float]
     exit_cost: Optional[float]
+    call_bias: Optional[float]
     min_seg_s: float
     min_seg_short_s: Optional[float]
     keep_short_p: Optional[float]
@@ -390,6 +391,7 @@ def evaluate_params_on_videos(
     gap_merge_stat: Optional[str],
     enter_cost: Optional[float],
     exit_cost: Optional[float],
+    call_bias: Optional[float],
     min_seg_s: float,
     min_seg_short_s: Optional[float],
     keep_short_p: Optional[float],
@@ -441,6 +443,7 @@ def evaluate_params_on_videos(
             decode_mode=decode_mode,
             enter_cost=enter_cost,
             exit_cost=exit_cost,
+            call_bias=float(call_bias) if call_bias is not None else 0.0,
         )
 
         # Convert to Segment format for eval
@@ -540,6 +543,7 @@ def evaluate_params_on_videos(
         gap_merge_stat=gap_merge_stat,
         enter_cost=enter_cost,
         exit_cost=exit_cost,
+        call_bias=call_bias,
         min_seg_s=min_seg_s,
         min_seg_short_s=min_seg_short_s,
         keep_short_p=keep_short_p,
@@ -582,6 +586,7 @@ def run_parameter_sweep(
     decode_mode: str = "threshold",
     enter_cost_values: Optional[List[float]] = None,
     exit_cost_values: Optional[List[float]] = None,
+    call_bias_values: Optional[List[float]] = None,
     calibration: Optional[PlattCalibration] = None,
 ) -> List[SweepResult]:
     """Run sweep over all parameter combinations."""
@@ -646,6 +651,7 @@ def run_parameter_sweep(
                                             gap_merge_stat=gap_merge_stat,
                                             enter_cost=None,
                                             exit_cost=None,
+                                            call_bias=None,
                                             min_seg_s=min_seg_s,
                                             min_seg_short_s=min_seg_short_s,
                                             keep_short_p=keep_short_p,
@@ -657,18 +663,22 @@ def run_parameter_sweep(
     else:
         enter_vals = enter_cost_values or []
         exit_vals = exit_cost_values or []
+        bias_vals = call_bias_values or []
         if not enter_vals or not exit_vals:
             raise ValueError("enter_cost_values and exit_cost_values are required for decode_mode='viterbi'")
+        if not bias_vals:
+            raise ValueError("call_bias_values is required for decode_mode='viterbi'")
 
         total_combos = (
             len(enter_vals)
             * len(exit_vals)
+            * len(bias_vals)
             * len(min_seg_values)
             * len(min_seg_short_values)
             * len(keep_short_p_values)
         )
         logger.info(
-            f"Running sweep (viterbi): {len(enter_vals)} enter_cost x {len(exit_vals)} exit_cost x "
+            f"Running sweep (viterbi): {len(enter_vals)} enter_cost x {len(exit_vals)} exit_cost x {len(bias_vals)} call_bias x "
             f"{len(min_seg_values)} min_segs x {len(min_seg_short_values)} min_short x {len(keep_short_p_values)} keep_p = "
             f"{total_combos} combinations"
         )
@@ -676,36 +686,38 @@ def run_parameter_sweep(
         combo_idx = 0
         for enter_cost in enter_vals:
             for exit_cost in exit_vals:
-                for min_seg_s in min_seg_values:
-                    for min_seg_short_s in min_seg_short_values:
-                        for keep_short_p in keep_short_p_values:
-                            # Enforce pairing: either both None, or both set
-                            if (min_seg_short_s is None) ^ (keep_short_p is None):
-                                continue
+                for call_bias in bias_vals:
+                    for min_seg_s in min_seg_values:
+                        for min_seg_short_s in min_seg_short_values:
+                            for keep_short_p in keep_short_p_values:
+                                # Enforce pairing: either both None, or both set
+                                if (min_seg_short_s is None) ^ (keep_short_p is None):
+                                    continue
 
-                            combo_idx += 1
-                            if combo_idx % 200 == 0:
-                                logger.info(f"  Progress: {combo_idx}/{total_combos}")
+                                combo_idx += 1
+                                if combo_idx % 200 == 0:
+                                    logger.info(f"  Progress: {combo_idx}/{total_combos}")
 
-                            result = evaluate_params_on_videos(
-                                prob_cache=prob_cache,
-                                ground_truth=ground_truth,
-                                win_s=win_s,
-                                decode_mode="viterbi",
-                                threshold=None,
-                                threshold_off=None,
-                                gap_merge_s=None,
-                                gap_merge_min_p=None,
-                                gap_merge_stat=None,
-                                enter_cost=float(enter_cost),
-                                exit_cost=float(exit_cost),
-                                min_seg_s=min_seg_s,
-                                min_seg_short_s=min_seg_short_s,
-                                keep_short_p=keep_short_p,
-                                calibration=calibration,
-                            )
-                            if result:
-                                results.append(result)
+                                result = evaluate_params_on_videos(
+                                    prob_cache=prob_cache,
+                                    ground_truth=ground_truth,
+                                    win_s=win_s,
+                                    decode_mode="viterbi",
+                                    threshold=None,
+                                    threshold_off=None,
+                                    gap_merge_s=None,
+                                    gap_merge_min_p=None,
+                                    gap_merge_stat=None,
+                                    enter_cost=float(enter_cost),
+                                    exit_cost=float(exit_cost),
+                                    call_bias=float(call_bias),
+                                    min_seg_s=min_seg_s,
+                                    min_seg_short_s=min_seg_short_s,
+                                    keep_short_p=keep_short_p,
+                                    calibration=calibration,
+                                )
+                                if result:
+                                    results.append(result)
 
     return results
 
@@ -826,9 +838,14 @@ def select_best_params(results: List[SweepResult]) -> Tuple[SweepResult, SweepRe
         winner = max(fallback4, key=lambda r: r.score)
         return winner, best_overall
 
-    # Last resort: best score overall
-    logger.warning("No params meet seg_ratio constraints, using best overall")
-    return best_overall, best_overall
+    # Last resort: never violate no-call FP gate (critical safety requirement).
+    no_fp = [r for r in results if r.no_call_fp_videos <= no_call_fp_max]
+    if no_fp:
+        logger.warning("No params meet seg_ratio/time gates; using best among configs with no-call FP==0")
+        winner = max(no_fp, key=lambda r: r.score)
+        return winner, best_overall
+
+    raise ValueError("No sweep params satisfy the no-call FP==0 gate")
 
 
 # =============================================================================
@@ -854,8 +871,9 @@ def format_result_row(r: SweepResult) -> str:
     if r.decode_mode == "viterbi":
         enter = float(r.enter_cost) if r.enter_cost is not None else float("nan")
         exit_ = float(r.exit_cost) if r.exit_cost is not None else float("nan")
+        bias = float(r.call_bias) if r.call_bias is not None else float("nan")
         return (
-            f"{r.decode_mode:>8}  {enter:>7.2f}  {exit_:>7.2f}  "
+            f"{r.decode_mode:>8}  {enter:>7.2f}  {exit_:>7.2f}  {bias:>7.2f}  "
             f"{r.min_seg_s:>6.0f}  {min_short:>5}  {keep_p:>5}  "
             f"{r.f1:>7.4f}  {r.seg_f1:>7.4f}  {seg_ratio_str:>8}  {iou:>6}  {mae_s:>7}  {mae_e:>7}  "
             f"{r.unmatched_pred:>8}  {r.unmatched_truth:>8}  {no_call_fp:>8}  {no_call_dur:>9}  {r.score:>7.4f}"
@@ -882,7 +900,7 @@ def print_sweep_results(results: List[SweepResult], top_n: int, title: str) -> N
     mode = results[0].decode_mode if results else "threshold"
     if mode == "viterbi":
         print(
-            f"{'Mode':>8}  {'Enter':>7}  {'Exit':>7}  {'MinSeg':>6}  {'MinSh':>5}  {'KeepP':>5}  "
+            f"{'Mode':>8}  {'Enter':>7}  {'Exit':>7}  {'Bias':>7}  {'MinSeg':>6}  {'MinSh':>5}  {'KeepP':>5}  "
             f"{'TimeF1':>7}  {'SegF1':>7}  {'SegRatio':>8}  {'IoU':>6}  {'MAE-S':>7}  {'MAE-E':>7}  "
             f"{'UnmtchP':>8}  {'UnmtchT':>8}  {'NoCallFP':>8}  {'NoCallDur':>9}  {'Score':>7}"
         )
@@ -994,6 +1012,8 @@ def main() -> int:
                         help="(viterbi) Comma-separated NO_CALL->CALL transition costs to sweep")
     parser.add_argument("--exit-cost-values", type=str, default="0.0,0.25,0.5,0.75,1.0,1.5,2.0",
                         help="(viterbi) Comma-separated CALL->NO_CALL transition costs to sweep")
+    parser.add_argument("--call-bias-values", type=str, default="0.0,0.5,1.0,2.0,3.0,4.0",
+                        help="(viterbi) Comma-separated per-step CALL bias costs to sweep (acts like a soft threshold)")
     parser.add_argument("--gap-merge-values", type=str, default="0,1,2,5,10,20,30",
                         help="Comma-separated gap merge values (seconds)")
     parser.add_argument("--gap-merge-min-p-values", type=str, default="0,0.2,0.4,0.6,0.8",
@@ -1042,6 +1062,7 @@ def main() -> int:
     # Decoder-specific sweep dimensions.
     enter_cost_values: Optional[List[float]] = None
     exit_cost_values: Optional[List[float]] = None
+    call_bias_values: Optional[List[float]] = None
 
     if decode_mode == "threshold":
         thresh_parts = args.threshold_range.split(",")
@@ -1066,6 +1087,7 @@ def main() -> int:
     elif decode_mode == "viterbi":
         enter_cost_values = parse_float_list(args.enter_cost_values)
         exit_cost_values = parse_float_list(args.exit_cost_values)
+        call_bias_values = parse_float_list(args.call_bias_values)
         # Provide unused placeholders to satisfy the run_parameter_sweep interface.
         threshold_min, threshold_max, threshold_step = 0.0, 0.0, 1.0
         threshold_off_delta_values = [0.0]
@@ -1180,6 +1202,7 @@ def main() -> int:
         decode_mode=decode_mode,
         enter_cost_values=enter_cost_values,
         exit_cost_values=exit_cost_values,
+        call_bias_values=call_bias_values,
         calibration=calib,
     )
 
@@ -1200,12 +1223,14 @@ def main() -> int:
         print(
             f"BEST (constrained): mode=viterbi enter_cost={float(best_constrained.enter_cost):.2f} "
             f"exit_cost={float(best_constrained.exit_cost):.2f} "
+            f"call_bias={float(best_constrained.call_bias or 0.0):.2f} "
             f"min_seg={best_constrained.min_seg_s:.0f}, min_short={best_constrained.min_seg_short_s}, keep_p={best_constrained.keep_short_p}, "
             f"time_f1={best_constrained.f1:.4f}, seg_f1={best_constrained.seg_f1:.4f}, seg_ratio={best_constrained.seg_ratio:.2f}"
         )
         print(
             f"BEST (overall):     mode=viterbi enter_cost={float(best_overall.enter_cost):.2f} "
             f"exit_cost={float(best_overall.exit_cost):.2f} "
+            f"call_bias={float(best_overall.call_bias or 0.0):.2f} "
             f"min_seg={best_overall.min_seg_s:.0f}, min_short={best_overall.min_seg_short_s}, keep_p={best_overall.keep_short_p}, "
             f"time_f1={best_overall.f1:.4f}, seg_f1={best_overall.seg_f1:.4f}, seg_ratio={best_overall.seg_ratio:.2f}"
         )
@@ -1254,6 +1279,7 @@ def main() -> int:
                 gap_merge_stat=best_constrained.gap_merge_stat,
                 enter_cost=best_constrained.enter_cost,
                 exit_cost=best_constrained.exit_cost,
+                call_bias=best_constrained.call_bias,
                 min_seg_s=best_constrained.min_seg_s,
                 min_seg_short_s=best_constrained.min_seg_short_s,
                 keep_short_p=best_constrained.keep_short_p,
@@ -1269,7 +1295,7 @@ def main() -> int:
                 if best_constrained.decode_mode == "viterbi":
                     print(
                         f"EVAL SET (best params: mode=viterbi enter_cost={float(best_constrained.enter_cost):.2f}, "
-                        f"exit_cost={float(best_constrained.exit_cost):.2f}, "
+                        f"exit_cost={float(best_constrained.exit_cost):.2f}, call_bias={float(best_constrained.call_bias or 0.0):.2f}, "
                         f"min_seg={best_constrained.min_seg_s:.0f}, "
                         f"min_short={best_constrained.min_seg_short_s}, keep_p={best_constrained.keep_short_p})"
                     )
@@ -1311,6 +1337,7 @@ def main() -> int:
         print("      --decode-mode viterbi \\")
         print(f"      --enter-cost {float(best_constrained.enter_cost):.2f} \\")
         print(f"      --exit-cost {float(best_constrained.exit_cost):.2f} \\")
+        print(f"      --call-bias {float(best_constrained.call_bias or 0.0):.2f} \\")
         if best_constrained.min_seg_short_s is not None and best_constrained.keep_short_p is not None:
             print(f"      --min-seg-short-s {best_constrained.min_seg_short_s:.0f} \\")
             print(f"      --keep-short-p {best_constrained.keep_short_p:.2f} \\")

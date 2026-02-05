@@ -73,6 +73,7 @@ class PredictionResult:
     decode_mode: str
     enter_cost: Optional[float]
     exit_cost: Optional[float]
+    call_bias: Optional[float]
     threshold: float
     threshold_off: Optional[float]
     gap_merge_s: float
@@ -511,6 +512,7 @@ def probabilities_to_segments(
     decode_mode: str = "threshold",
     enter_cost: Optional[float] = None,
     exit_cost: Optional[float] = None,
+    call_bias: float = 0.0,
     viterbi_eps: float = 1e-6,
 ) -> List[PredictedSegment]:
     """Convert per-window probabilities to merged call segments.
@@ -530,6 +532,7 @@ def probabilities_to_segments(
         decode_mode: "threshold" (hysteresis + gap merge) or "viterbi" (2-state sequence decode)
         enter_cost: Viterbi NO_CALL->CALL transition cost (required for decode_mode="viterbi")
         exit_cost: Viterbi CALL->NO_CALL transition cost (required for decode_mode="viterbi")
+        call_bias: Viterbi per-step CALL bias cost (acts like a soft threshold; higher => fewer CALL windows)
         viterbi_eps: Clamp probs to [eps, 1-eps] before logs in Viterbi
 
     Returns:
@@ -588,6 +591,7 @@ def probabilities_to_segments(
         params = ViterbiParams(
             enter_cost=float(enter_cost),
             exit_cost=float(exit_cost),
+            call_bias=float(call_bias),
             eps=float(viterbi_eps),
         )
         active_mask, _best_cost = viterbi_decode_call_mask(probs, params)
@@ -697,6 +701,7 @@ def upload_prediction(s3_client, s3_prefix: str, result: PredictionResult) -> st
         "decode_mode": result.decode_mode,
         "enter_cost": result.enter_cost,
         "exit_cost": result.exit_cost,
+        "call_bias": result.call_bias,
         "threshold": result.threshold,
         "threshold_off": result.threshold_off,
         "gap_merge_s": result.gap_merge_s,
@@ -763,6 +768,8 @@ def main() -> int:
                         help="Viterbi NO_CALL->CALL transition cost (required for --decode-mode viterbi)")
     parser.add_argument("--exit-cost", type=float, default=None,
                         help="Viterbi CALL->NO_CALL transition cost (required for --decode-mode viterbi)")
+    parser.add_argument("--call-bias", type=float, default=0.0,
+                        help="Viterbi per-step CALL bias cost (acts like a soft threshold; higher => fewer CALL windows)")
     parser.add_argument("--gap-merge-s", type=float, default=1.0,
                         help="Merge segments with gaps smaller than this")
     parser.add_argument("--gap-merge-min-p", type=float, default=0.0,
@@ -915,12 +922,13 @@ def main() -> int:
             decode_mode=args.decode_mode,
             enter_cost=args.enter_cost,
             exit_cost=args.exit_cost,
+            call_bias=args.call_bias,
         )
 
         if args.decode_mode == "viterbi":
             logger.info(
                 f"  windows={len(df)} segments={len(predicted_segments)} "
-                f"decode=viterbi enter_cost={args.enter_cost} exit_cost={args.exit_cost}"
+                f"decode=viterbi enter_cost={args.enter_cost} exit_cost={args.exit_cost} call_bias={args.call_bias}"
             )
         else:
             if threshold_off is None:
@@ -940,6 +948,7 @@ def main() -> int:
             decode_mode=args.decode_mode,
             enter_cost=args.enter_cost,
             exit_cost=args.exit_cost,
+            call_bias=args.call_bias if args.decode_mode == "viterbi" else None,
             threshold=threshold,
             threshold_off=threshold_off,
             gap_merge_s=args.gap_merge_s,

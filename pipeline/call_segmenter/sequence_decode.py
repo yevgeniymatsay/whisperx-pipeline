@@ -22,6 +22,7 @@ class ViterbiParams:
 
     enter_cost: float  # NO_CALL -> CALL
     exit_cost: float  # CALL -> NO_CALL
+    call_bias: float = 0.0  # per-step bias added to CALL emission cost (acts like a soft threshold)
     eps: float = 1e-6  # clamp probs to [eps, 1-eps] for log stability
 
 
@@ -61,7 +62,8 @@ def viterbi_decode_call_mask(
     p = np.clip(p, eps, 1.0 - eps)
 
     # Emission costs
-    e_call = -np.log(p)
+    # call_bias acts like a prior/threshold: without transitions, CALL is preferred iff logit(p) >= call_bias.
+    e_call = -np.log(p) + float(params.call_bias)
     e_nocall = -np.log(1.0 - p)
 
     enter_cost = float(params.enter_cost)
@@ -117,4 +119,3 @@ def viterbi_decode_call_mask(
         state = int(bp1[i]) if state == 1 else int(bp0[i])
 
     return states.astype(bool), best_cost
-
