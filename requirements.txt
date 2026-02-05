@@ -14,5 +14,8 @@ pytest>=7.0.0
 # GenRM workbench
 streamlit>=1.30.0
 
+# Azure/OpenAI client (synthetic system prompt generation)
+openai>=1.40.0
+
 # Note: WhisperX pipeline has additional heavy dependencies (torch, whisperx, etc.)
 # that should be installed in Docker container - see docker/whisperx/requirements.txt
