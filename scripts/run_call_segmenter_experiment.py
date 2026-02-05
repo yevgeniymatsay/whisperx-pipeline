@@ -331,7 +331,7 @@ def main() -> int:
                 gap_merge_values=[0.0],
                 gap_merge_min_p_values=[0.0],
                 gap_merge_stat_values=["max"],
-                min_seg_values=[5, 10],
+                min_seg_values=[1, 3, 5, 10],
                 min_seg_short_values=[None],
                 keep_short_p_values=[None],
                 decode_mode="viterbi",
