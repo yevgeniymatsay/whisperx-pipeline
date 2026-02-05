@@ -247,6 +247,28 @@ def main() -> int:
             ]
         )
 
+    # Fit calibration (Platt scaling) unless explicitly disabled.
+    # This writes model_dir/calibration.json and is then picked up by sweep/predict.
+    if not args.no_calibration:
+        calib_path = model_dir / "calibration.json"
+        if not calib_path.exists():
+            if not dataset_dir.exists():
+                raise FileNotFoundError(
+                    f"Dataset dir not found for calibration: {dataset_dir} (rerun without --skip-build or pass --no-calibration)"
+                )
+            run(
+                [
+                    sys.executable,
+                    "scripts/calibrate_call_segmenter.py",
+                    "--model-dir",
+                    str(model_dir),
+                    "--data-dir",
+                    str(dataset_dir),
+                    "--split-meta",
+                    str(args.split_meta),
+                ]
+            )
+
     # Sweep params
     best_constrained = None
     best_overall = None
