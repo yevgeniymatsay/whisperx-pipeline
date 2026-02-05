@@ -102,6 +102,8 @@ class DatasetConfig:
 
     # Audio-derived features (computed from the source MP3; role-agnostic)
     include_audio_features: bool = True
+    audio_spectral_features: bool = True
+    audio_mfcc: bool = False
     audio_sr_hz: int = 16000
     audio_filter_order: int = 4
     audio_phone_low_hz: float = 300.0
@@ -631,6 +633,8 @@ def process_video(
                 enabled=True,
                 sr_hz=int(config.audio_sr_hz),
                 filter_order=int(config.audio_filter_order),
+                spectral_enabled=bool(config.audio_spectral_features),
+                mfcc_enabled=bool(config.audio_mfcc),
                 phone_low_hz=float(config.audio_phone_low_hz),
                 phone_high_hz=float(config.audio_phone_high_hz),
                 hf_low_hz=float(config.audio_hf_low_hz),
@@ -647,6 +651,18 @@ def process_video(
                 "ultra_hf_frac",
                 "hi_ratio_3p5_7k",
             ]
+            if config.audio_spectral_features:
+                audio_cols.extend([
+                    "spec_centroid_hz",
+                    "spec_centroid_z",
+                    "spec_rolloff_hz",
+                    "spec_rolloff_z",
+                ])
+            if config.audio_mfcc:
+                for k in range(13):
+                    audio_cols.append(f"mfcc_{k:02d}")
+                for k in range(13):
+                    audio_cols.append(f"mfcc_z_{k:02d}")
             feats = compute_audio_features_for_windows(
                 audio=audio,
                 t_starts=df["t_start"].to_numpy(),
@@ -755,12 +771,14 @@ def build_dataset_metadata(config: DatasetConfig) -> Dict:
         enabled=bool(config.include_audio_features),
         sr_hz=int(config.audio_sr_hz),
         filter_order=int(config.audio_filter_order),
+        spectral_enabled=bool(config.audio_spectral_features),
+        mfcc_enabled=bool(config.audio_mfcc),
         phone_low_hz=float(config.audio_phone_low_hz),
         phone_high_hz=float(config.audio_phone_high_hz),
         hf_low_hz=float(config.audio_hf_low_hz),
     )
     meta = {
-        "version": "v6",
+        "version": "v8",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "git_sha": get_git_sha(),
         "config": {
@@ -814,6 +832,16 @@ def build_dataset_metadata(config: DatasetConfig) -> Dict:
             "ultra_hf_frac",
             "hi_ratio_3p5_7k",
         ])
+        if config.audio_spectral_features:
+            meta["feature_columns"].extend([
+                "spec_centroid_hz",
+                "spec_centroid_z",
+                "spec_rolloff_hz",
+                "spec_rolloff_z",
+            ])
+        if config.audio_mfcc:
+            meta["feature_columns"].extend([f"mfcc_{k:02d}" for k in range(13)])
+            meta["feature_columns"].extend([f"mfcc_z_{k:02d}" for k in range(13)])
 
     if config.include_text:
         meta["text_features"] = {
@@ -935,6 +963,10 @@ def main() -> int:
                                 "Recommended when IDs may start with '-'")
     parser.add_argument("--no-text", action="store_true", help="Skip hashed text feature extraction")
     parser.add_argument("--no-audio-features", action="store_true", help="Skip audio-derived band-energy features")
+    parser.add_argument("--no-audio-spectral-features", action="store_true",
+                        help="Disable spectral centroid/rolloff features (still computes band-energy features unless --no-audio-features)")
+    parser.add_argument("--audio-mfcc", action="store_true",
+                        help="Include MFCC(13)+z-score features (slower; requires band-energy audio decode)")
     parser.add_argument("--text-n-features", type=int, default=2**12)
     parser.add_argument("--text-ngram-min", type=int, default=2)
     parser.add_argument("--text-ngram-max", type=int, default=5)
@@ -959,6 +991,8 @@ def main() -> int:
         text_context_s=args.text_context_s,
         text_max_chars=args.text_max_chars,
         include_audio_features=not args.no_audio_features,
+        audio_spectral_features=not args.no_audio_spectral_features,
+        audio_mfcc=bool(args.audio_mfcc),
     )
 
     s3 = get_s3_client()

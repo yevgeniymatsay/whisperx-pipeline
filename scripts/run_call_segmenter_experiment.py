@@ -166,6 +166,10 @@ def main() -> int:
     parser.add_argument("--video-list", type=Path, default=None, help="Optional video list file (one id per line). If omitted, uses split-meta ids.")
     parser.add_argument("--text-context-s", type=float, default=0.0)
     parser.add_argument("--text-max-chars", type=int, default=300)
+    parser.add_argument("--audio-mfcc", action="store_true",
+                        help="Enable MFCC features in dataset build (slower; adds mfcc_* columns)")
+    parser.add_argument("--no-audio-spectral-features", action="store_true",
+                        help="Disable spectral centroid/rolloff features in dataset build")
     parser.add_argument("--neg-weight", type=float, default=5.0)
     parser.add_argument("--no-call-video-weight", type=float, default=1.0)
     parser.add_argument("--no-calibration", action="store_true",
@@ -204,23 +208,26 @@ def main() -> int:
         video_list_path = write_video_list(all_vids)
 
     if not args.skip_build:
-        run(
-            [
-                sys.executable,
-                "scripts/build_call_segmenter_dataset.py",
-                "--labels-s3",
-                "--labels-s3-prefix",
-                args.labels_prefix,
-                "--output-dir",
-                str(dataset_dir),
-                "--video-list",
-                str(video_list_path),
-                "--text-context-s",
-                str(args.text_context_s),
-                "--text-max-chars",
-                str(args.text_max_chars),
-            ]
-        )
+        cmd = [
+            sys.executable,
+            "scripts/build_call_segmenter_dataset.py",
+            "--labels-s3",
+            "--labels-s3-prefix",
+            args.labels_prefix,
+            "--output-dir",
+            str(dataset_dir),
+            "--video-list",
+            str(video_list_path),
+            "--text-context-s",
+            str(args.text_context_s),
+            "--text-max-chars",
+            str(args.text_max_chars),
+        ]
+        if args.audio_mfcc:
+            cmd.append("--audio-mfcc")
+        if args.no_audio_spectral_features:
+            cmd.append("--no-audio-spectral-features")
+        run(cmd)
 
     if not args.skip_train:
         run(

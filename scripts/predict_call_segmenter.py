@@ -425,6 +425,15 @@ def generate_features_for_video(
         "ultra_hf_frac",
         "hi_ratio_3p5_7k",
     }
+    audio_feature_names.update({
+        "spec_centroid_hz",
+        "spec_centroid_z",
+        "spec_rolloff_hz",
+        "spec_rolloff_z",
+    })
+    for k in range(13):
+        audio_feature_names.add(f"mfcc_{k:02d}")
+        audio_feature_names.add(f"mfcc_z_{k:02d}")
     required_audio_cols = [c for c in feature_columns if c in audio_feature_names]
     needs_audio = len(required_audio_cols) > 0
 
