@@ -71,6 +71,13 @@ cd apps/speaker-labeler
 streamlit run scripts/genrm_workbench.py
 ```
 
+### Run System Prompt Workbench (synthetic system prompts + QA)
+```bash
+streamlit run scripts/system_prompt_workbench.py
+```
+Requires Azure env vars (see `.env.example`): `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT_GPT41`.
+The workbench will also load a local `.env` file automatically (gitignored) if present.
+
 ### Run WhisperX Pipeline
 ```bash
 python -m pipeline.cli --video-id VIDEO_ID --run-id RUN_ID --audio-key audio/pretraining/file.mp3
