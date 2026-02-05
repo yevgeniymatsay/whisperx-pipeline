@@ -99,7 +99,7 @@ def load_labels_for_video(s3_client, bucket: str, labels_prefix: str, video_id: 
 
 def load_predictions_for_video(
     s3_client, bucket: str, preds_prefix: str, video_id: str
-) -> Optional[List[Tuple[Segment, Optional[float]]]]:
+) -> Optional[Tuple[List[Tuple[Segment, Optional[float]]], Dict]]:
     key = f"{preds_prefix}{video_id}.json"
     try:
         resp = s3_client.get_object(Bucket=bucket, Key=key)
@@ -110,7 +110,29 @@ def load_predictions_for_video(
             mean_p = s.get("mean_p")
             out.append((seg, float(mean_p) if mean_p is not None else None))
         out.sort(key=lambda t: t[0].start_s)
-        return out
+        header_keys = [
+            "video_id",
+            "run_id",
+            "model_git_sha",
+            "predicted_at",
+            "calibration",
+            "calibration_applied",
+            "decode_mode",
+            "enter_cost",
+            "exit_cost",
+            "threshold",
+            "threshold_off",
+            "gap_merge_s",
+            "gap_merge_min_p",
+            "gap_merge_stat",
+            "min_seg_s",
+            "min_seg_short_s",
+            "keep_short_p",
+            "win_s",
+            "hop_s",
+        ]
+        header = {k: doc.get(k) for k in header_keys if k in doc}
+        return out, header
     except Exception:
         return None
 
@@ -172,6 +194,7 @@ def main() -> int:
     rows: List[Dict] = []
     missing_labels: List[str] = []
     missing_preds: List[str] = []
+    pred_meta: Optional[Dict] = None
 
     for vid in video_ids:
         truth = load_labels_for_video(s3, label_bucket, label_key_prefix, vid)
@@ -179,10 +202,15 @@ def main() -> int:
             missing_labels.append(vid)
             truth = []
 
-        preds = load_predictions_for_video(s3, pred_bucket, pred_key_prefix, vid)
-        if preds is None:
+        preds_pack = load_predictions_for_video(s3, pred_bucket, pred_key_prefix, vid)
+        if preds_pack is None:
             missing_preds.append(vid)
             preds = []
+            header = {}
+        else:
+            preds, header = preds_pack
+            if pred_meta is None and header:
+                pred_meta = header
 
         pred_segs = [p[0] for p in preds]
         time_m = compute_time_metrics(pred_segs, truth)
@@ -245,6 +273,23 @@ def main() -> int:
     md_lines.append(f"Bucket (pred): `{pred_bucket}`")
     md_lines.append(f"Predictions: `{args.pred_prefix}`")
     md_lines.append(f"Labels: `{args.labels_prefix}`")
+    if pred_meta:
+        md_lines.append("")
+        md_lines.append(f"Model git sha: `{pred_meta.get('model_git_sha', 'unknown')}`")
+        if pred_meta.get("calibration_applied"):
+            md_lines.append(f"Calibration: applied (`{pred_meta.get('calibration')}`)")
+        dm = str(pred_meta.get('decode_mode', 'threshold'))
+        if dm == "viterbi":
+            md_lines.append(
+                f"Decode: `viterbi` (enter_cost={pred_meta.get('enter_cost')}, exit_cost={pred_meta.get('exit_cost')}, "
+                f"min_seg_s={pred_meta.get('min_seg_s')})"
+            )
+        else:
+            md_lines.append(
+                f"Decode: `threshold` (thr_on={pred_meta.get('threshold')}, thr_off={pred_meta.get('threshold_off')}, "
+                f"gap_merge_s={pred_meta.get('gap_merge_s')}, gap_stat={pred_meta.get('gap_merge_stat')}, "
+                f"gap_min_p={pred_meta.get('gap_merge_min_p')}, min_seg_s={pred_meta.get('min_seg_s')})"
+            )
     md_lines.append("")
     md_lines.append("Format:")
     md_lines.append("- Truth boundaries are your manual call labels.")
@@ -321,6 +366,7 @@ def main() -> int:
         "bucket_labels": label_bucket,
         "pred_prefix": args.pred_prefix,
         "label_prefix": args.labels_prefix,
+        "pred_meta": pred_meta,
         "videos": rows,
         "missing_labels": missing_labels,
         "missing_predictions": missing_preds,

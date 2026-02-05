@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pipeline.config import S3_BUCKET
+from pipeline.call_segmenter.calibration import PlattCalibration, load_calibration
 
 import sweep_call_segmenter
 from eval_call_segmenter_predictions import (
@@ -97,20 +98,32 @@ def append_experiment_log(
     lines.append(f"- Split meta: `{split_meta}`")
     lines.append("")
     lines.append("Best sweep params (train, constrained):")
-    lines.append(
-        f"- thr_on={best_params.threshold:.2f}, thr_off={best_params.threshold_off:.2f}, "
-        f"gap={best_params.gap_merge_s:.0f}, gap_min_p={best_params.gap_merge_min_p:.2f}, min_seg={best_params.min_seg_s:.0f}"
-    )
+    if best_params.decode_mode == "viterbi":
+        lines.append(
+            f"- decode=viterbi enter_cost={float(best_params.enter_cost):.2f}, exit_cost={float(best_params.exit_cost):.2f}, "
+            f"min_seg={best_params.min_seg_s:.0f}"
+        )
+    else:
+        lines.append(
+            f"- decode=threshold thr_on={float(best_params.threshold):.2f}, thr_off={float(best_params.threshold_off):.2f}, "
+            f"gap={float(best_params.gap_merge_s):.0f}, gap_min_p={float(best_params.gap_merge_min_p):.2f}, min_seg={best_params.min_seg_s:.0f}"
+        )
     lines.append(
         f"- Train: TimeF1={best_params.f1:.4f}, SegF1={best_params.seg_f1:.4f}, SegRatio={best_params.seg_ratio:.2f}, "
         f"NoCallFPVideos={best_params.no_call_fp_videos}"
     )
     lines.append("")
     lines.append("Best sweep params (train, overall score):")
-    lines.append(
-        f"- thr_on={best_overall.threshold:.2f}, thr_off={best_overall.threshold_off:.2f}, "
-        f"gap={best_overall.gap_merge_s:.0f}, gap_min_p={best_overall.gap_merge_min_p:.2f}, min_seg={best_overall.min_seg_s:.0f}"
-    )
+    if best_overall.decode_mode == "viterbi":
+        lines.append(
+            f"- decode=viterbi enter_cost={float(best_overall.enter_cost):.2f}, exit_cost={float(best_overall.exit_cost):.2f}, "
+            f"min_seg={best_overall.min_seg_s:.0f}"
+        )
+    else:
+        lines.append(
+            f"- decode=threshold thr_on={float(best_overall.threshold):.2f}, thr_off={float(best_overall.threshold_off):.2f}, "
+            f"gap={float(best_overall.gap_merge_s):.0f}, gap_min_p={float(best_overall.gap_merge_min_p):.2f}, min_seg={best_overall.min_seg_s:.0f}"
+        )
     lines.append(
         f"- Train: TimeF1={best_overall.f1:.4f}, SegF1={best_overall.seg_f1:.4f}, SegRatio={best_overall.seg_ratio:.2f}, "
         f"NoCallFPVideos={best_overall.no_call_fp_videos}"
@@ -153,6 +166,13 @@ def main() -> int:
     parser.add_argument("--text-max-chars", type=int, default=300)
     parser.add_argument("--neg-weight", type=float, default=5.0)
     parser.add_argument("--no-call-video-weight", type=float, default=1.0)
+    parser.add_argument("--no-calibration", action="store_true",
+                        help="Disable probability calibration even if model_dir/calibration.json exists")
+    parser.add_argument("--decode-mode", type=str, default="threshold", choices=["threshold", "viterbi"])
+    parser.add_argument("--enter-cost-values", type=str, default="0.25,0.5,0.75,1.0,1.5,2.0,3.0,4.0",
+                        help="(viterbi) Comma-separated NO_CALL->CALL transition costs to sweep")
+    parser.add_argument("--exit-cost-values", type=str, default="0.0,0.25,0.5,0.75,1.0,1.5,2.0",
+                        help="(viterbi) Comma-separated CALL->NO_CALL transition costs to sweep")
     parser.add_argument("--cache-dir", type=Path, default=None, help="Cache dir for sweep probabilities")
     parser.add_argument("--predictions-base-prefix", type=str, default="call_segmenter/predictions",
                         help="S3 key prefix base for predictions (within bucket)")
@@ -237,6 +257,16 @@ def main() -> int:
         s3 = sweep_call_segmenter.get_s3_client()
         labels = load_ground_truth_s3(s3, prefix=args.labels_prefix)
 
+        # Optional calibration (kept consistent between sweep + prediction).
+        calib: Optional[PlattCalibration] = None
+        calib_path = model_dir / "calibration.json"
+        if not args.no_calibration and calib_path.exists():
+            try:
+                calib = load_calibration(calib_path)
+                print(f"Loaded calibration: {calib_path}")
+            except Exception as e:
+                print(f"WARNING: failed to load calibration.json (ignoring): {e}")
+
         # Cache probabilities (train)
         train_cache = sweep_call_segmenter.cache_all_probabilities(
             s3_client=s3,
@@ -252,21 +282,47 @@ def main() -> int:
 
         train_gt = {vid: labels.get(vid, []) for vid in train_vids}
 
-        train_results = sweep_call_segmenter.run_parameter_sweep(
-            prob_cache=train_cache,
-            ground_truth=train_gt,
-            win_s=float(window_cfg.win_s),
-            threshold_min=0.55,
-            threshold_max=0.95,
-            threshold_step=0.05,
-            threshold_off_delta_values=[0.0, 0.10, 0.20],
-            gap_merge_values=[0, 1, 2, 5, 10, 20, 30],
-            gap_merge_min_p_values=[0, 0.2, 0.4, 0.6, 0.8],
-            gap_merge_stat_values=["max", "mean", "p90"],
-            min_seg_values=[1, 3, 5, 10],
-            min_seg_short_values=[None],
-            keep_short_p_values=[None],
-        )
+        decode_mode = str(args.decode_mode).lower().strip()
+        if decode_mode == "viterbi":
+            enter_vals = [float(x.strip()) for x in args.enter_cost_values.split(",") if x.strip()]
+            exit_vals = [float(x.strip()) for x in args.exit_cost_values.split(",") if x.strip()]
+            train_results = sweep_call_segmenter.run_parameter_sweep(
+                prob_cache=train_cache,
+                ground_truth=train_gt,
+                win_s=float(window_cfg.win_s),
+                threshold_min=0.0,
+                threshold_max=0.0,
+                threshold_step=1.0,
+                threshold_off_delta_values=[0.0],
+                gap_merge_values=[0.0],
+                gap_merge_min_p_values=[0.0],
+                gap_merge_stat_values=["max"],
+                min_seg_values=[5, 10],
+                min_seg_short_values=[None],
+                keep_short_p_values=[None],
+                decode_mode="viterbi",
+                enter_cost_values=enter_vals,
+                exit_cost_values=exit_vals,
+                calibration=calib,
+            )
+        else:
+            train_results = sweep_call_segmenter.run_parameter_sweep(
+                prob_cache=train_cache,
+                ground_truth=train_gt,
+                win_s=float(window_cfg.win_s),
+                threshold_min=0.55,
+                threshold_max=0.95,
+                threshold_step=0.05,
+                threshold_off_delta_values=[0.0, 0.10, 0.20],
+                gap_merge_values=[0, 1, 2, 5, 10, 20, 30],
+                gap_merge_min_p_values=[0, 0.2, 0.4, 0.6, 0.8],
+                gap_merge_stat_values=["max", "mean", "p90"],
+                min_seg_values=[1, 3, 5, 10],
+                min_seg_short_values=[None],
+                keep_short_p_values=[None],
+                decode_mode="threshold",
+                calibration=calib,
+            )
         best_constrained, best_overall = sweep_call_segmenter.select_best_params(train_results)
 
         # Cache probabilities (eval) and evaluate chosen params.
@@ -286,14 +342,18 @@ def main() -> int:
             prob_cache=eval_cache,
             ground_truth=eval_gt,
             win_s=float(window_cfg.win_s),
+            decode_mode=best_constrained.decode_mode,
             threshold=best_constrained.threshold,
             threshold_off=best_constrained.threshold_off,
             gap_merge_s=best_constrained.gap_merge_s,
             gap_merge_min_p=best_constrained.gap_merge_min_p,
             gap_merge_stat=best_constrained.gap_merge_stat,
+            enter_cost=best_constrained.enter_cost,
+            exit_cost=best_constrained.exit_cost,
             min_seg_s=best_constrained.min_seg_s,
             min_seg_short_s=best_constrained.min_seg_short_s,
             keep_short_p=best_constrained.keep_short_p,
+            calibration=calib,
         )
 
         # Print a short sweep summary for convenience.
@@ -313,27 +373,54 @@ def main() -> int:
             raise ValueError("Need sweep results to predict; rerun without --skip-sweep")
 
         ts = now_stamp()
-        preds_key_prefix = (
-            f"{args.predictions_base_prefix}/{args.exp_name}_{ts}_"
-            f"thr{int(round(best_constrained.threshold*100)):02d}_"
-            f"off{int(round(best_constrained.threshold_off*100)):02d}_"
-            f"gap{int(round(best_constrained.gap_merge_s)):02d}_"
-            f"g{best_constrained.gap_merge_stat}_"
-            f"p{int(round(best_constrained.gap_merge_min_p*100)):02d}_"
-            f"min{int(round(best_constrained.min_seg_s)):02d}"
-        )
+        if best_constrained.decode_mode == "viterbi":
+            preds_key_prefix = (
+                f"{args.predictions_base_prefix}/{args.exp_name}_{ts}_"
+                f"viterbi_enter{int(round(float(best_constrained.enter_cost)*100)):03d}_"
+                f"exit{int(round(float(best_constrained.exit_cost)*100)):03d}_"
+                f"min{int(round(best_constrained.min_seg_s)):02d}"
+            )
+        else:
+            preds_key_prefix = (
+                f"{args.predictions_base_prefix}/{args.exp_name}_{ts}_"
+                f"thr{int(round(float(best_constrained.threshold)*100)):02d}_"
+                f"off{int(round(float(best_constrained.threshold_off)*100)):02d}_"
+                f"gap{int(round(float(best_constrained.gap_merge_s))):02d}_"
+                f"g{best_constrained.gap_merge_stat}_"
+                f"p{int(round(float(best_constrained.gap_merge_min_p)*100)):02d}_"
+                f"min{int(round(best_constrained.min_seg_s)):02d}"
+            )
         preds_s3_prefix = f"s3://{S3_BUCKET}/{preds_key_prefix}/"
 
-        run(
-            [
-                sys.executable,
-                "scripts/predict_call_segmenter.py",
-                "--video-list",
-                str(video_list_path),
-                "--model-dir",
-                str(model_dir),
-                "--s3-out-prefix",
-                preds_key_prefix,
+        cmd = [
+            sys.executable,
+            "scripts/predict_call_segmenter.py",
+            "--video-list",
+            str(video_list_path),
+            "--model-dir",
+            str(model_dir),
+            "--s3-out-prefix",
+            preds_key_prefix,
+            *(["--min-seg-short-s", str(best_constrained.min_seg_short_s)] if best_constrained.min_seg_short_s is not None else []),
+            *(["--keep-short-p", str(best_constrained.keep_short_p)] if best_constrained.keep_short_p is not None else []),
+            "--min-seg-s",
+            str(best_constrained.min_seg_s),
+        ]
+        if args.no_calibration:
+            cmd.append("--no-calibration")
+        if best_constrained.decode_mode == "viterbi":
+            cmd += [
+                "--decode-mode",
+                "viterbi",
+                "--enter-cost",
+                str(best_constrained.enter_cost),
+                "--exit-cost",
+                str(best_constrained.exit_cost),
+            ]
+        else:
+            cmd += [
+                "--decode-mode",
+                "threshold",
                 "--threshold",
                 str(best_constrained.threshold),
                 "--threshold-off",
@@ -344,12 +431,8 @@ def main() -> int:
                 str(best_constrained.gap_merge_stat),
                 "--gap-merge-min-p",
                 str(best_constrained.gap_merge_min_p),
-                *(["--min-seg-short-s", str(best_constrained.min_seg_short_s)] if best_constrained.min_seg_short_s is not None else []),
-                *(["--keep-short-p", str(best_constrained.keep_short_p)] if best_constrained.keep_short_p is not None else []),
-                "--min-seg-s",
-                str(best_constrained.min_seg_s),
             ]
-        )
+        run(cmd)
 
         # Evaluate on the same set (train+eval ids) so we can compare across experiments.
         s3 = get_eval_s3_client()

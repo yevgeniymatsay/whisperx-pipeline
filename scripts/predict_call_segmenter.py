@@ -38,6 +38,8 @@ from pipeline.audio_preprocess import decode_audio_stream_to_float32
 from pipeline.transcriber import DiarizationSegment
 from pipeline.call_segmenter.features import merge_adjacent_segments, compute_window_features
 from pipeline.call_segmenter.audio_features import AudioFeatureConfig, compute_audio_features_for_windows
+from pipeline.call_segmenter.calibration import PlattCalibration, apply_calibration, load_calibration
+from pipeline.call_segmenter.sequence_decode import ViterbiParams, viterbi_decode_call_mask
 from pipeline.call_segmenter.window_generator import WindowConfig, generate_window_times
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -66,6 +68,11 @@ class PredictionResult:
     video_id: str
     run_id: str
     model_git_sha: str
+    calibration: Optional[Dict]
+    calibration_applied: bool
+    decode_mode: str
+    enter_cost: Optional[float]
+    exit_cost: Optional[float]
     threshold: float
     threshold_off: Optional[float]
     gap_merge_s: float
@@ -500,6 +507,11 @@ def probabilities_to_segments(
     min_seg_short_s: Optional[float] = None,
     keep_short_p: Optional[float] = None,
     mp3_duration_s: Optional[float] = None,
+    *,
+    decode_mode: str = "threshold",
+    enter_cost: Optional[float] = None,
+    exit_cost: Optional[float] = None,
+    viterbi_eps: float = 1e-6,
 ) -> List[PredictedSegment]:
     """Convert per-window probabilities to merged call segments.
 
@@ -515,6 +527,10 @@ def probabilities_to_segments(
         min_seg_short_s: Optional shorter min duration to keep high-confidence short segments
         keep_short_p: If set alongside min_seg_short_s, keep short segments when mean_p >= keep_short_p
         mp3_duration_s: Clamp segments to this duration (if known)
+        decode_mode: "threshold" (hysteresis + gap merge) or "viterbi" (2-state sequence decode)
+        enter_cost: Viterbi NO_CALL->CALL transition cost (required for decode_mode="viterbi")
+        exit_cost: Viterbi CALL->NO_CALL transition cost (required for decode_mode="viterbi")
+        viterbi_eps: Clamp probs to [eps, 1-eps] before logs in Viterbi
 
     Returns:
         List of PredictedSegment with start_s, end_s, mean_p
@@ -527,17 +543,9 @@ def probabilities_to_segments(
     t_mids = t_mids[order]
     probs = probs[order]
 
-    # Hysteresis thresholding: start when >= threshold, stay active while >= threshold_off.
-    # When threshold_off == threshold, this reduces to single-threshold behavior.
-    thr_off = threshold if threshold_off is None else float(threshold_off)
-    if thr_off > threshold:
-        raise ValueError(f"threshold_off ({thr_off}) must be <= threshold ({threshold})")
-    gap_merge_min_p = float(gap_merge_min_p)
-    if gap_merge_min_p < 0.0 or gap_merge_min_p > 1.0:
-        raise ValueError("gap_merge_min_p must be in [0, 1]")
-    gap_merge_stat = str(gap_merge_stat).lower()
-    if gap_merge_stat not in {"max", "mean", "p90"}:
-        raise ValueError("gap_merge_stat must be one of: max, mean, p90")
+    decode_mode = str(decode_mode).lower().strip()
+    if decode_mode not in {"threshold", "viterbi"}:
+        raise ValueError("decode_mode must be one of: threshold, viterbi")
 
     if (min_seg_short_s is None) ^ (keep_short_p is None):
         raise ValueError("min_seg_short_s and keep_short_p must be set together (or both None)")
@@ -549,18 +557,40 @@ def probabilities_to_segments(
         if keep_short_p < 0.0 or keep_short_p > 1.0:
             raise ValueError("keep_short_p must be in [0, 1]")
 
-    active_mask = np.zeros_like(probs, dtype=bool)
-    in_seg = False
-    for i, p in enumerate(probs):
-        if not in_seg:
-            if p >= threshold:
-                in_seg = True
-                active_mask[i] = True
-        else:
-            if p >= thr_off:
-                active_mask[i] = True
+    if decode_mode == "threshold":
+        # Hysteresis thresholding: start when >= threshold, stay active while >= threshold_off.
+        # When threshold_off == threshold, this reduces to single-threshold behavior.
+        thr_off = threshold if threshold_off is None else float(threshold_off)
+        if thr_off > threshold:
+            raise ValueError(f"threshold_off ({thr_off}) must be <= threshold ({threshold})")
+        gap_merge_min_p = float(gap_merge_min_p)
+        if gap_merge_min_p < 0.0 or gap_merge_min_p > 1.0:
+            raise ValueError("gap_merge_min_p must be in [0, 1]")
+        gap_merge_stat = str(gap_merge_stat).lower()
+        if gap_merge_stat not in {"max", "mean", "p90"}:
+            raise ValueError("gap_merge_stat must be one of: max, mean, p90")
+
+        active_mask = np.zeros_like(probs, dtype=bool)
+        in_seg = False
+        for i, p in enumerate(probs):
+            if not in_seg:
+                if p >= threshold:
+                    in_seg = True
+                    active_mask[i] = True
             else:
-                in_seg = False
+                if p >= thr_off:
+                    active_mask[i] = True
+                else:
+                    in_seg = False
+    else:
+        if enter_cost is None or exit_cost is None:
+            raise ValueError("enter_cost and exit_cost are required for decode_mode='viterbi'")
+        params = ViterbiParams(
+            enter_cost=float(enter_cost),
+            exit_cost=float(exit_cost),
+            eps=float(viterbi_eps),
+        )
+        active_mask, _best_cost = viterbi_decode_call_mask(probs, params)
 
     # Build raw runs as contiguous True spans (store indices so we can conditionally merge gaps).
     half_win = win_s / 2.0
@@ -584,32 +614,35 @@ def probabilities_to_segments(
     def run_end_s(ei: int) -> float:
         return float(t_mids[ei] + half_win)
 
-    merged_runs: List[Tuple[int, int]] = []
-    cur_si, cur_ei = raw_runs[0]
+    if decode_mode == "viterbi":
+        merged_runs = list(raw_runs)
+    else:
+        merged_runs = []
+        cur_si, cur_ei = raw_runs[0]
 
-    for next_si, next_ei in raw_runs[1:]:
-        gap_s = run_start_s(next_si) - run_end_s(cur_ei)
+        for next_si, next_ei in raw_runs[1:]:
+            gap_s = run_start_s(next_si) - run_end_s(cur_ei)
 
-        should_merge = gap_s <= gap_merge_s
-        if should_merge and gap_merge_min_p > 0.0:
-            gap_probs = probs[cur_ei + 1: next_si]
-            if not gap_probs.size:
-                gap_val = 1.0
-            elif gap_merge_stat == "max":
-                gap_val = float(gap_probs.max())
-            elif gap_merge_stat == "mean":
-                gap_val = float(gap_probs.mean())
-            else:  # p90
-                gap_val = float(np.quantile(gap_probs, 0.9))
-            should_merge = gap_val >= gap_merge_min_p
+            should_merge = gap_s <= gap_merge_s
+            if should_merge and gap_merge_min_p > 0.0:
+                gap_probs = probs[cur_ei + 1: next_si]
+                if not gap_probs.size:
+                    gap_val = 1.0
+                elif gap_merge_stat == "max":
+                    gap_val = float(gap_probs.max())
+                elif gap_merge_stat == "mean":
+                    gap_val = float(gap_probs.mean())
+                else:  # p90
+                    gap_val = float(np.quantile(gap_probs, 0.9))
+                should_merge = gap_val >= gap_merge_min_p
 
-        if should_merge:
-            cur_ei = next_ei
-        else:
-            merged_runs.append((cur_si, cur_ei))
-            cur_si, cur_ei = next_si, next_ei
+            if should_merge:
+                cur_ei = next_ei
+            else:
+                merged_runs.append((cur_si, cur_ei))
+                cur_si, cur_ei = next_si, next_ei
 
-    merged_runs.append((cur_si, cur_ei))
+        merged_runs.append((cur_si, cur_ei))
 
     # Filter by minimum duration and clamp to bounds
     result: List[PredictedSegment] = []
@@ -659,6 +692,11 @@ def upload_prediction(s3_client, s3_prefix: str, result: PredictionResult) -> st
         "video_id": result.video_id,
         "run_id": result.run_id,
         "model_git_sha": result.model_git_sha,
+        "calibration": result.calibration,
+        "calibration_applied": result.calibration_applied,
+        "decode_mode": result.decode_mode,
+        "enter_cost": result.enter_cost,
+        "exit_cost": result.exit_cost,
         "threshold": result.threshold,
         "threshold_off": result.threshold_off,
         "gap_merge_s": result.gap_merge_s,
@@ -715,10 +753,16 @@ def main() -> int:
                         help="Directory containing model_b.ubj and meta.json")
     parser.add_argument("--s3-out-prefix", type=str, default="call_segmenter/predictions/v1",
                         help="S3 prefix for output predictions")
+    parser.add_argument("--decode-mode", type=str, default="threshold", choices=["threshold", "viterbi"],
+                        help="Decoder for converting per-window probabilities to segments")
     parser.add_argument("--threshold", type=float, default=None,
                         help="Classification threshold (default: from meta.json)")
     parser.add_argument("--threshold-off", type=float, default=None,
                         help="Hysteresis: keep call active while prob >= threshold-off (default: same as --threshold)")
+    parser.add_argument("--enter-cost", type=float, default=None,
+                        help="Viterbi NO_CALL->CALL transition cost (required for --decode-mode viterbi)")
+    parser.add_argument("--exit-cost", type=float, default=None,
+                        help="Viterbi CALL->NO_CALL transition cost (required for --decode-mode viterbi)")
     parser.add_argument("--gap-merge-s", type=float, default=1.0,
                         help="Merge segments with gaps smaller than this")
     parser.add_argument("--gap-merge-min-p", type=float, default=0.0,
@@ -733,6 +777,8 @@ def main() -> int:
                         help="If set alongside --min-seg-short-s, keep short segments when mean_p >= this value")
     parser.add_argument("--exclude-video-ids", type=str, default=None,
                         help="Comma-separated video IDs to skip")
+    parser.add_argument("--no-calibration", action="store_true",
+                        help="Disable probability calibration even if model_dir/calibration.json exists")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print actions without uploading to S3")
 
@@ -761,15 +807,30 @@ def main() -> int:
     # Use threshold from args or meta.json
     threshold = args.threshold if args.threshold is not None else meta.get("default_threshold", 0.5)
     threshold_off = args.threshold_off
-    if threshold_off is not None and threshold_off > threshold:
-        logger.error(f"--threshold-off ({threshold_off}) must be <= --threshold ({threshold})")
-        return 1
+    if args.decode_mode == "threshold":
+        if threshold_off is not None and threshold_off > threshold:
+            logger.error(f"--threshold-off ({threshold_off}) must be <= --threshold ({threshold})")
+            return 1
     if (args.min_seg_short_s is None) ^ (args.keep_short_p is None):
         logger.error("--min-seg-short-s and --keep-short-p must be set together (or both omitted)")
         return 1
     if args.keep_short_p is not None and (args.keep_short_p < 0.0 or args.keep_short_p > 1.0):
         logger.error("--keep-short-p must be in [0, 1]")
         return 1
+    if args.decode_mode == "viterbi":
+        if args.enter_cost is None or args.exit_cost is None:
+            logger.error("--enter-cost and --exit-cost are required for --decode-mode viterbi")
+            return 1
+
+    # Optional probability calibration (helps thresholding + Viterbi emissions).
+    calib: Optional[PlattCalibration] = None
+    calib_path = args.model_dir / "calibration.json"
+    if not args.no_calibration and calib_path.exists():
+        try:
+            calib = load_calibration(calib_path)
+            logger.info(f"Loaded calibration from {calib_path}")
+        except Exception as e:
+            logger.warning(f"Failed to load calibration.json (ignoring): {e}")
 
     # Build window config
     window_config = WindowConfig(
@@ -834,7 +895,8 @@ def main() -> int:
             continue
 
         # Predict
-        probs = model.predict_proba(X_combined)[:, 1]
+        probs_raw = model.predict_proba(X_combined)[:, 1]
+        probs = apply_calibration(probs_raw, calib)
 
         # Convert to segments
         predicted_segments = probabilities_to_segments(
@@ -850,18 +912,34 @@ def main() -> int:
             min_seg_short_s=args.min_seg_short_s,
             keep_short_p=args.keep_short_p,
             mp3_duration_s=mp3_duration_s,
+            decode_mode=args.decode_mode,
+            enter_cost=args.enter_cost,
+            exit_cost=args.exit_cost,
         )
 
-        if threshold_off is None:
-            logger.info(f"  windows={len(df)} segments={len(predicted_segments)} threshold={threshold}")
+        if args.decode_mode == "viterbi":
+            logger.info(
+                f"  windows={len(df)} segments={len(predicted_segments)} "
+                f"decode=viterbi enter_cost={args.enter_cost} exit_cost={args.exit_cost}"
+            )
         else:
-            logger.info(f"  windows={len(df)} segments={len(predicted_segments)} thr_on={threshold} thr_off={threshold_off}")
+            if threshold_off is None:
+                logger.info(f"  windows={len(df)} segments={len(predicted_segments)} threshold={threshold}")
+            else:
+                logger.info(
+                    f"  windows={len(df)} segments={len(predicted_segments)} thr_on={threshold} thr_off={threshold_off}"
+                )
 
         # Build result
         result = PredictionResult(
             video_id=video_id,
             run_id=run_id,
             model_git_sha=model_git_sha,
+            calibration=calib.to_dict() if calib is not None else None,
+            calibration_applied=bool(calib is not None),
+            decode_mode=args.decode_mode,
+            enter_cost=args.enter_cost,
+            exit_cost=args.exit_cost,
             threshold=threshold,
             threshold_off=threshold_off,
             gap_merge_s=args.gap_merge_s,

@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pipeline.call_segmenter.window_generator import WindowConfig
+from pipeline.call_segmenter.calibration import PlattCalibration, apply_calibration, load_calibration
 
 # Import from sibling scripts (not package) to ensure identical logic
 from predict_call_segmenter import (  # type: ignore[import-not-found]
@@ -73,11 +74,16 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SweepResult:
     """Result for a single parameter combination."""
-    threshold: float
-    threshold_off: float
-    gap_merge_s: float
-    gap_merge_min_p: float
-    gap_merge_stat: str
+    decode_mode: str  # "threshold" or "viterbi"
+    # Threshold decoder params (None when decode_mode="viterbi")
+    threshold: Optional[float]
+    threshold_off: Optional[float]
+    gap_merge_s: Optional[float]
+    gap_merge_min_p: Optional[float]
+    gap_merge_stat: Optional[str]
+    # Viterbi decoder params (None when decode_mode="threshold")
+    enter_cost: Optional[float]
+    exit_cost: Optional[float]
     min_seg_s: float
     min_seg_short_s: Optional[float]
     keep_short_p: Optional[float]
@@ -375,14 +381,19 @@ def evaluate_params_on_videos(
     prob_cache: Dict[str, Tuple[str, np.ndarray, np.ndarray, Optional[float]]],
     ground_truth: Dict[str, List[Segment]],
     win_s: float,
-    threshold: float,
-    threshold_off: float,
-    gap_merge_s: float,
-    gap_merge_min_p: float,
-    gap_merge_stat: str,
+    *,
+    decode_mode: str,
+    threshold: Optional[float],
+    threshold_off: Optional[float],
+    gap_merge_s: Optional[float],
+    gap_merge_min_p: Optional[float],
+    gap_merge_stat: Optional[str],
+    enter_cost: Optional[float],
+    exit_cost: Optional[float],
     min_seg_s: float,
     min_seg_short_s: Optional[float],
     keep_short_p: Optional[float],
+    calibration: Optional[PlattCalibration] = None,
 ) -> Optional[SweepResult]:
     """Evaluate parameter combination on a set of videos."""
     # Collect all predictions and truths
@@ -408,19 +419,28 @@ def evaluate_params_on_videos(
         truth_segments = ground_truth[video_id]
 
         # Convert probabilities to segments with current params
+        probs_use = apply_calibration(probs, calibration)
+        threshold_call = float(threshold) if threshold is not None else 0.5
+        threshold_off_call = float(threshold_off) if threshold_off is not None else None
+        gap_merge_s_call = float(gap_merge_s) if gap_merge_s is not None else 0.0
+        gap_merge_min_p_call = float(gap_merge_min_p) if gap_merge_min_p is not None else 0.0
+        gap_merge_stat_call = str(gap_merge_stat) if gap_merge_stat is not None else "max"
         pred_segments_raw = probabilities_to_segments(
             t_mids=t_mids,
-            probs=probs,
+            probs=probs_use,
             win_s=win_s,
-            threshold=threshold,
-            threshold_off=threshold_off,
-            gap_merge_s=gap_merge_s,
+            threshold=threshold_call,
+            threshold_off=threshold_off_call,
+            gap_merge_s=gap_merge_s_call,
             min_seg_s=min_seg_s,
-            gap_merge_min_p=gap_merge_min_p,
-            gap_merge_stat=gap_merge_stat,
+            gap_merge_min_p=gap_merge_min_p_call,
+            gap_merge_stat=gap_merge_stat_call,
             min_seg_short_s=min_seg_short_s,
             keep_short_p=keep_short_p,
             mp3_duration_s=mp3_duration_s,
+            decode_mode=decode_mode,
+            enter_cost=enter_cost,
+            exit_cost=exit_cost,
         )
 
         # Convert to Segment format for eval
@@ -512,11 +532,14 @@ def evaluate_params_on_videos(
         seg_f1 = 0.0
 
     return SweepResult(
+        decode_mode=str(decode_mode),
         threshold=threshold,
         threshold_off=threshold_off,
         gap_merge_s=gap_merge_s,
         gap_merge_min_p=gap_merge_min_p,
         gap_merge_stat=gap_merge_stat,
+        enter_cost=enter_cost,
+        exit_cost=exit_cost,
         min_seg_s=min_seg_s,
         min_seg_short_s=min_seg_short_s,
         keep_short_p=keep_short_p,
@@ -555,68 +578,134 @@ def run_parameter_sweep(
     min_seg_values: List[float],
     min_seg_short_values: List[Optional[float]],
     keep_short_p_values: List[Optional[float]],
+    *,
+    decode_mode: str = "threshold",
+    enter_cost_values: Optional[List[float]] = None,
+    exit_cost_values: Optional[List[float]] = None,
+    calibration: Optional[PlattCalibration] = None,
 ) -> List[SweepResult]:
     """Run sweep over all parameter combinations."""
     results: List[SweepResult] = []
 
-    # Build threshold list (MAX-inclusive using while loop)
-    thresholds: List[float] = []
-    t = threshold_min
-    while t <= threshold_max + 1e-9:
-        thresholds.append(round(t, 4))
-        t += threshold_step
+    decode_mode = str(decode_mode).lower().strip()
+    if decode_mode not in {"threshold", "viterbi"}:
+        raise ValueError("decode_mode must be one of: threshold, viterbi")
 
-    total_combos = (
-        len(thresholds)
-        * len(threshold_off_delta_values)
-        * len(gap_merge_values)
-        * len(gap_merge_min_p_values)
-        * len(gap_merge_stat_values)
-        * len(min_seg_values)
-        * len(min_seg_short_values)
-        * len(keep_short_p_values)
-    )
-    logger.info(
-        f"Running sweep: {len(thresholds)} thresholds x {len(threshold_off_delta_values)} off-deltas x "
-        f"{len(gap_merge_values)} gaps x {len(gap_merge_min_p_values)} gap-min-p x {len(gap_merge_stat_values)} gap-stats x "
-        f"{len(min_seg_values)} min_segs x {len(min_seg_short_values)} min_short x {len(keep_short_p_values)} keep_p = "
-        f"{total_combos} combinations"
-    )
+    if decode_mode == "threshold":
+        # Build threshold list (MAX-inclusive using while loop)
+        thresholds: List[float] = []
+        t = threshold_min
+        while t <= threshold_max + 1e-9:
+            thresholds.append(round(t, 4))
+            t += threshold_step
 
-    combo_idx = 0
-    for threshold in thresholds:
-        for off_delta in threshold_off_delta_values:
-            threshold_off = max(0.0, threshold - off_delta)
-            for gap_merge_s in gap_merge_values:
-                for gap_merge_min_p in gap_merge_min_p_values:
-                    for gap_merge_stat in gap_merge_stat_values:
-                        for min_seg_s in min_seg_values:
-                            for min_seg_short_s in min_seg_short_values:
-                                for keep_short_p in keep_short_p_values:
-                                    # Enforce pairing: either both None, or both set
-                                    if (min_seg_short_s is None) ^ (keep_short_p is None):
-                                        continue
+        total_combos = (
+            len(thresholds)
+            * len(threshold_off_delta_values)
+            * len(gap_merge_values)
+            * len(gap_merge_min_p_values)
+            * len(gap_merge_stat_values)
+            * len(min_seg_values)
+            * len(min_seg_short_values)
+            * len(keep_short_p_values)
+        )
+        logger.info(
+            f"Running sweep (threshold): {len(thresholds)} thresholds x {len(threshold_off_delta_values)} off-deltas x "
+            f"{len(gap_merge_values)} gaps x {len(gap_merge_min_p_values)} gap-min-p x {len(gap_merge_stat_values)} gap-stats x "
+            f"{len(min_seg_values)} min_segs x {len(min_seg_short_values)} min_short x {len(keep_short_p_values)} keep_p = "
+            f"{total_combos} combinations"
+        )
 
-                                    combo_idx += 1
-                                    if combo_idx % 200 == 0:
-                                        logger.info(f"  Progress: {combo_idx}/{total_combos}")
+        combo_idx = 0
+        for threshold in thresholds:
+            for off_delta in threshold_off_delta_values:
+                threshold_off = max(0.0, threshold - off_delta)
+                for gap_merge_s in gap_merge_values:
+                    for gap_merge_min_p in gap_merge_min_p_values:
+                        for gap_merge_stat in gap_merge_stat_values:
+                            for min_seg_s in min_seg_values:
+                                for min_seg_short_s in min_seg_short_values:
+                                    for keep_short_p in keep_short_p_values:
+                                        # Enforce pairing: either both None, or both set
+                                        if (min_seg_short_s is None) ^ (keep_short_p is None):
+                                            continue
 
-                                    result = evaluate_params_on_videos(
-                                        prob_cache=prob_cache,
-                                        ground_truth=ground_truth,
-                                        win_s=win_s,
-                                        threshold=threshold,
-                                        threshold_off=threshold_off,
-                                        gap_merge_s=gap_merge_s,
-                                        gap_merge_min_p=gap_merge_min_p,
-                                        gap_merge_stat=gap_merge_stat,
-                                        min_seg_s=min_seg_s,
-                                        min_seg_short_s=min_seg_short_s,
-                                        keep_short_p=keep_short_p,
-                                    )
+                                        combo_idx += 1
+                                        if combo_idx % 200 == 0:
+                                            logger.info(f"  Progress: {combo_idx}/{total_combos}")
 
-                                    if result:
-                                        results.append(result)
+                                        result = evaluate_params_on_videos(
+                                            prob_cache=prob_cache,
+                                            ground_truth=ground_truth,
+                                            win_s=win_s,
+                                            decode_mode="threshold",
+                                            threshold=threshold,
+                                            threshold_off=threshold_off,
+                                            gap_merge_s=gap_merge_s,
+                                            gap_merge_min_p=gap_merge_min_p,
+                                            gap_merge_stat=gap_merge_stat,
+                                            enter_cost=None,
+                                            exit_cost=None,
+                                            min_seg_s=min_seg_s,
+                                            min_seg_short_s=min_seg_short_s,
+                                            keep_short_p=keep_short_p,
+                                            calibration=calibration,
+                                        )
+
+                                        if result:
+                                            results.append(result)
+    else:
+        enter_vals = enter_cost_values or []
+        exit_vals = exit_cost_values or []
+        if not enter_vals or not exit_vals:
+            raise ValueError("enter_cost_values and exit_cost_values are required for decode_mode='viterbi'")
+
+        total_combos = (
+            len(enter_vals)
+            * len(exit_vals)
+            * len(min_seg_values)
+            * len(min_seg_short_values)
+            * len(keep_short_p_values)
+        )
+        logger.info(
+            f"Running sweep (viterbi): {len(enter_vals)} enter_cost x {len(exit_vals)} exit_cost x "
+            f"{len(min_seg_values)} min_segs x {len(min_seg_short_values)} min_short x {len(keep_short_p_values)} keep_p = "
+            f"{total_combos} combinations"
+        )
+
+        combo_idx = 0
+        for enter_cost in enter_vals:
+            for exit_cost in exit_vals:
+                for min_seg_s in min_seg_values:
+                    for min_seg_short_s in min_seg_short_values:
+                        for keep_short_p in keep_short_p_values:
+                            # Enforce pairing: either both None, or both set
+                            if (min_seg_short_s is None) ^ (keep_short_p is None):
+                                continue
+
+                            combo_idx += 1
+                            if combo_idx % 200 == 0:
+                                logger.info(f"  Progress: {combo_idx}/{total_combos}")
+
+                            result = evaluate_params_on_videos(
+                                prob_cache=prob_cache,
+                                ground_truth=ground_truth,
+                                win_s=win_s,
+                                decode_mode="viterbi",
+                                threshold=None,
+                                threshold_off=None,
+                                gap_merge_s=None,
+                                gap_merge_min_p=None,
+                                gap_merge_stat=None,
+                                enter_cost=float(enter_cost),
+                                exit_cost=float(exit_cost),
+                                min_seg_s=min_seg_s,
+                                min_seg_short_s=min_seg_short_s,
+                                keep_short_p=keep_short_p,
+                                calibration=calibration,
+                            )
+                            if result:
+                                results.append(result)
 
     return results
 
@@ -762,8 +851,23 @@ def format_result_row(r: SweepResult) -> str:
         no_call_fp = "-"
         no_call_dur = "-"
 
+    if r.decode_mode == "viterbi":
+        enter = float(r.enter_cost) if r.enter_cost is not None else float("nan")
+        exit_ = float(r.exit_cost) if r.exit_cost is not None else float("nan")
+        return (
+            f"{r.decode_mode:>8}  {enter:>7.2f}  {exit_:>7.2f}  "
+            f"{r.min_seg_s:>6.0f}  {min_short:>5}  {keep_p:>5}  "
+            f"{r.f1:>7.4f}  {r.seg_f1:>7.4f}  {seg_ratio_str:>8}  {iou:>6}  {mae_s:>7}  {mae_e:>7}  "
+            f"{r.unmatched_pred:>8}  {r.unmatched_truth:>8}  {no_call_fp:>8}  {no_call_dur:>9}  {r.score:>7.4f}"
+        )
+
+    thr_on = float(r.threshold) if r.threshold is not None else float("nan")
+    thr_off = float(r.threshold_off) if r.threshold_off is not None else float("nan")
+    gap = float(r.gap_merge_s) if r.gap_merge_s is not None else float("nan")
+    gminp = float(r.gap_merge_min_p) if r.gap_merge_min_p is not None else float("nan")
+    gstat = str(r.gap_merge_stat) if r.gap_merge_stat is not None else "-"
     return (
-        f"{r.threshold:>6.2f}  {r.threshold_off:>6.2f}  {r.gap_merge_s:>5.0f}  {r.gap_merge_stat:>5}  {r.gap_merge_min_p:>7.2f}  "
+        f"{r.decode_mode:>8}  {thr_on:>6.2f}  {thr_off:>6.2f}  {gap:>5.0f}  {gstat:>5}  {gminp:>7.2f}  "
         f"{r.min_seg_s:>6.0f}  {min_short:>5}  {keep_p:>5}  "
         f"{r.f1:>7.4f}  {r.seg_f1:>7.4f}  {seg_ratio_str:>8}  {iou:>6}  {mae_s:>7}  {mae_e:>7}  "
         f"{r.unmatched_pred:>8}  {r.unmatched_truth:>8}  {no_call_fp:>8}  {no_call_dur:>9}  {r.score:>7.4f}"
@@ -775,11 +879,19 @@ def print_sweep_results(results: List[SweepResult], top_n: int, title: str) -> N
     print(f"\n{'=' * 100}")
     print(f"{title}")
     print("=" * 100)
-    print(
-        f"{'ThrOn':>6}  {'ThrOff':>6}  {'Gap':>5}  {'GStat':>5}  {'GapMinP':>7}  {'MinSeg':>6}  {'MinSh':>5}  {'KeepP':>5}  "
-        f"{'TimeF1':>7}  {'SegF1':>7}  {'SegRatio':>8}  {'IoU':>6}  {'MAE-S':>7}  {'MAE-E':>7}  "
-        f"{'UnmtchP':>8}  {'UnmtchT':>8}  {'NoCallFP':>8}  {'NoCallDur':>9}  {'Score':>7}"
-    )
+    mode = results[0].decode_mode if results else "threshold"
+    if mode == "viterbi":
+        print(
+            f"{'Mode':>8}  {'Enter':>7}  {'Exit':>7}  {'MinSeg':>6}  {'MinSh':>5}  {'KeepP':>5}  "
+            f"{'TimeF1':>7}  {'SegF1':>7}  {'SegRatio':>8}  {'IoU':>6}  {'MAE-S':>7}  {'MAE-E':>7}  "
+            f"{'UnmtchP':>8}  {'UnmtchT':>8}  {'NoCallFP':>8}  {'NoCallDur':>9}  {'Score':>7}"
+        )
+    else:
+        print(
+            f"{'Mode':>8}  {'ThrOn':>6}  {'ThrOff':>6}  {'Gap':>5}  {'GStat':>5}  {'GapMinP':>7}  {'MinSeg':>6}  {'MinSh':>5}  {'KeepP':>5}  "
+            f"{'TimeF1':>7}  {'SegF1':>7}  {'SegRatio':>8}  {'IoU':>6}  {'MAE-S':>7}  {'MAE-E':>7}  "
+            f"{'UnmtchP':>8}  {'UnmtchT':>8}  {'NoCallFP':>8}  {'NoCallDur':>9}  {'Score':>7}"
+        )
     print("-" * 100)
 
     # Sort by score descending
@@ -796,6 +908,9 @@ def save_results_csv(results: List[SweepResult], output_path: Path) -> None:
     rows = []
     for r in results:
         rows.append({
+            "decode_mode": r.decode_mode,
+            "enter_cost": r.enter_cost,
+            "exit_cost": r.exit_cost,
             "threshold": r.threshold,
             "threshold_off": r.threshold_off,
             "gap_merge_s": r.gap_merge_s,
@@ -866,11 +981,19 @@ def main() -> int:
                         help="Directory to cache (t_mids, probs) as .npz files")
     parser.add_argument("--force-recompute", action="store_true",
                         help="Ignore existing cache, re-extract all")
+    parser.add_argument("--no-calibration", action="store_true",
+                        help="Disable probability calibration even if model_dir/calibration.json exists")
+    parser.add_argument("--decode-mode", type=str, default="threshold", choices=["threshold", "viterbi"],
+                        help="Decoder used to convert per-window probabilities to segments")
     parser.add_argument("--threshold-range", type=str, default="0.35,0.75,0.05",
                         help="Threshold sweep: min,max,step (inclusive of max)")
     parser.add_argument("--threshold-off-delta-values", type=str, default="0.0,0.05,0.10,0.15,0.20",
                         help="Comma-separated list of (threshold - threshold_off) deltas to sweep. "
                              "0.0 means no hysteresis (threshold_off == threshold).")
+    parser.add_argument("--enter-cost-values", type=str, default="0.25,0.5,0.75,1.0,1.5,2.0,3.0,4.0",
+                        help="(viterbi) Comma-separated NO_CALL->CALL transition costs to sweep")
+    parser.add_argument("--exit-cost-values", type=str, default="0.0,0.25,0.5,0.75,1.0,1.5,2.0",
+                        help="(viterbi) Comma-separated CALL->NO_CALL transition costs to sweep")
     parser.add_argument("--gap-merge-values", type=str, default="0,1,2,5,10,20,30",
                         help="Comma-separated gap merge values (seconds)")
     parser.add_argument("--gap-merge-min-p-values", type=str, default="0,0.2,0.4,0.6,0.8",
@@ -891,31 +1014,16 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    # Parse parameter ranges
-    thresh_parts = args.threshold_range.split(",")
-    if len(thresh_parts) != 3:
-        logger.error("Invalid --threshold-range format. Use: min,max,step")
-        return 1
-    threshold_min, threshold_max, threshold_step = map(float, thresh_parts)
+    decode_mode = str(args.decode_mode).lower().strip()
 
-    gap_merge_values = parse_float_list(args.gap_merge_values)
-    gap_merge_min_p_values = parse_float_list(args.gap_merge_min_p_values)
-    gap_merge_stat_values = [s.lower() for s in parse_str_list(args.gap_merge_stat_values)]
+    # Parse parameter ranges (some are mode-specific).
     min_seg_values = parse_float_list(args.min_seg_values)
-    threshold_off_delta_values = parse_float_list(args.threshold_off_delta_values)
 
     try:
         min_seg_short_values = parse_optional_float_list(args.min_seg_short_values)
         keep_short_p_values = parse_optional_float_list(args.keep_short_p_values)
     except Exception as e:
         logger.error(f"Failed to parse short-seg args: {e}")
-        return 1
-
-    # Validate gap stat values early
-    allowed_stats = {"max", "mean", "p90"}
-    bad_stats = [s for s in gap_merge_stat_values if s not in allowed_stats]
-    if bad_stats:
-        logger.error(f"Invalid --gap-merge-stat-values entries: {bad_stats}. Allowed: {sorted(allowed_stats)}")
         return 1
 
     # Optional short-seg sweeping: require both lists to be enabled together.
@@ -931,6 +1039,45 @@ def main() -> int:
         if keep_short_p_values != [None]:
             keep_short_p_values = [None] + keep_short_p_values
 
+    # Decoder-specific sweep dimensions.
+    enter_cost_values: Optional[List[float]] = None
+    exit_cost_values: Optional[List[float]] = None
+
+    if decode_mode == "threshold":
+        thresh_parts = args.threshold_range.split(",")
+        if len(thresh_parts) != 3:
+            logger.error("Invalid --threshold-range format. Use: min,max,step")
+            return 1
+        threshold_min, threshold_max, threshold_step = map(float, thresh_parts)
+
+        gap_merge_values = parse_float_list(args.gap_merge_values)
+        gap_merge_min_p_values = parse_float_list(args.gap_merge_min_p_values)
+        gap_merge_stat_values = [s.lower() for s in parse_str_list(args.gap_merge_stat_values)]
+        threshold_off_delta_values = parse_float_list(args.threshold_off_delta_values)
+
+        # Validate gap stat values early
+        allowed_stats = {"max", "mean", "p90"}
+        bad_stats = [s for s in gap_merge_stat_values if s not in allowed_stats]
+        if bad_stats:
+            logger.error(
+                f"Invalid --gap-merge-stat-values entries: {bad_stats}. Allowed: {sorted(allowed_stats)}"
+            )
+            return 1
+    elif decode_mode == "viterbi":
+        enter_cost_values = parse_float_list(args.enter_cost_values)
+        exit_cost_values = parse_float_list(args.exit_cost_values)
+        # Provide unused placeholders to satisfy the run_parameter_sweep interface.
+        threshold_min, threshold_max, threshold_step = 0.0, 0.0, 1.0
+        threshold_off_delta_values = [0.0]
+        gap_merge_values = [0.0]
+        gap_merge_min_p_values = [0.0]
+        gap_merge_stat_values = ["max"]
+    else:
+        logger.error("--decode-mode must be one of: threshold, viterbi")
+        return 1
+
+    # At this point, all mode-specific sweep dims are parsed.
+
     # Load model and metadata
     try:
         import xgboost as xgb
@@ -938,6 +1085,16 @@ def main() -> int:
     except Exception as e:
         logger.error(f"Failed to load model: {e}")
         return 1
+
+    # Optional calibration layer for probabilities (helps thresholding + Viterbi emissions).
+    calib: Optional[PlattCalibration] = None
+    calib_path = args.model_dir / "calibration.json"
+    if not args.no_calibration and calib_path.exists():
+        try:
+            calib = load_calibration(calib_path)
+            logger.info(f"Loaded calibration from {calib_path}")
+        except Exception as e:
+            logger.warning(f"Failed to load calibration.json (ignoring): {e}")
 
     # Get train/eval video IDs from meta.json
     train_video_ids = meta.get("train_video_ids", [])
@@ -1020,6 +1177,10 @@ def main() -> int:
         min_seg_values=min_seg_values,
         min_seg_short_values=min_seg_short_values,
         keep_short_p_values=keep_short_p_values,
+        decode_mode=decode_mode,
+        enter_cost_values=enter_cost_values,
+        exit_cost_values=exit_cost_values,
+        calibration=calib,
     )
 
     if not train_results:
@@ -1035,18 +1196,32 @@ def main() -> int:
     print("\n" + "=" * 100)
     print("BEST PARAMETERS")
     print("=" * 100)
-    print(
-        f"BEST (constrained): thr_on={best_constrained.threshold:.2f}, thr_off={best_constrained.threshold_off:.2f}, "
-        f"gap={best_constrained.gap_merge_s:.0f}, gap_min_p={best_constrained.gap_merge_min_p:.2f}, gap_stat={best_constrained.gap_merge_stat}, "
-        f"min_seg={best_constrained.min_seg_s:.0f}, min_short={best_constrained.min_seg_short_s}, keep_p={best_constrained.keep_short_p}, "
-        f"time_f1={best_constrained.f1:.4f}, seg_f1={best_constrained.seg_f1:.4f}, seg_ratio={best_constrained.seg_ratio:.2f}"
-    )
-    print(
-        f"BEST (overall):     thr_on={best_overall.threshold:.2f}, thr_off={best_overall.threshold_off:.2f}, "
-        f"gap={best_overall.gap_merge_s:.0f}, gap_min_p={best_overall.gap_merge_min_p:.2f}, gap_stat={best_overall.gap_merge_stat}, "
-        f"min_seg={best_overall.min_seg_s:.0f}, min_short={best_overall.min_seg_short_s}, keep_p={best_overall.keep_short_p}, "
-        f"time_f1={best_overall.f1:.4f}, seg_f1={best_overall.seg_f1:.4f}, seg_ratio={best_overall.seg_ratio:.2f}"
-    )
+    if best_constrained.decode_mode == "viterbi":
+        print(
+            f"BEST (constrained): mode=viterbi enter_cost={float(best_constrained.enter_cost):.2f} "
+            f"exit_cost={float(best_constrained.exit_cost):.2f} "
+            f"min_seg={best_constrained.min_seg_s:.0f}, min_short={best_constrained.min_seg_short_s}, keep_p={best_constrained.keep_short_p}, "
+            f"time_f1={best_constrained.f1:.4f}, seg_f1={best_constrained.seg_f1:.4f}, seg_ratio={best_constrained.seg_ratio:.2f}"
+        )
+        print(
+            f"BEST (overall):     mode=viterbi enter_cost={float(best_overall.enter_cost):.2f} "
+            f"exit_cost={float(best_overall.exit_cost):.2f} "
+            f"min_seg={best_overall.min_seg_s:.0f}, min_short={best_overall.min_seg_short_s}, keep_p={best_overall.keep_short_p}, "
+            f"time_f1={best_overall.f1:.4f}, seg_f1={best_overall.seg_f1:.4f}, seg_ratio={best_overall.seg_ratio:.2f}"
+        )
+    else:
+        print(
+            f"BEST (constrained): thr_on={float(best_constrained.threshold):.2f}, thr_off={float(best_constrained.threshold_off):.2f}, "
+            f"gap={float(best_constrained.gap_merge_s):.0f}, gap_min_p={float(best_constrained.gap_merge_min_p):.2f}, gap_stat={best_constrained.gap_merge_stat}, "
+            f"min_seg={best_constrained.min_seg_s:.0f}, min_short={best_constrained.min_seg_short_s}, keep_p={best_constrained.keep_short_p}, "
+            f"time_f1={best_constrained.f1:.4f}, seg_f1={best_constrained.seg_f1:.4f}, seg_ratio={best_constrained.seg_ratio:.2f}"
+        )
+        print(
+            f"BEST (overall):     thr_on={float(best_overall.threshold):.2f}, thr_off={float(best_overall.threshold_off):.2f}, "
+            f"gap={float(best_overall.gap_merge_s):.0f}, gap_min_p={float(best_overall.gap_merge_min_p):.2f}, gap_stat={best_overall.gap_merge_stat}, "
+            f"min_seg={best_overall.min_seg_s:.0f}, min_short={best_overall.min_seg_short_s}, keep_p={best_overall.keep_short_p}, "
+            f"time_f1={best_overall.f1:.4f}, seg_f1={best_overall.seg_f1:.4f}, seg_ratio={best_overall.seg_ratio:.2f}"
+        )
 
     # Evaluate on eval set with best params
     if eval_videos_with_gt:
@@ -1071,14 +1246,18 @@ def main() -> int:
                 prob_cache=eval_prob_cache,
                 ground_truth=ground_truth,
                 win_s=window_config.win_s,
+                decode_mode=best_constrained.decode_mode,
                 threshold=best_constrained.threshold,
                 threshold_off=best_constrained.threshold_off,
                 gap_merge_s=best_constrained.gap_merge_s,
                 gap_merge_min_p=best_constrained.gap_merge_min_p,
                 gap_merge_stat=best_constrained.gap_merge_stat,
+                enter_cost=best_constrained.enter_cost,
+                exit_cost=best_constrained.exit_cost,
                 min_seg_s=best_constrained.min_seg_s,
                 min_seg_short_s=best_constrained.min_seg_short_s,
                 keep_short_p=best_constrained.keep_short_p,
+                calibration=calib,
             )
 
             if eval_result:
@@ -1087,11 +1266,21 @@ def main() -> int:
                 seg_ratio_str = f"{eval_result.seg_ratio:.2f}" if eval_result.seg_ratio != float("inf") else "inf"
 
                 print("\n" + "=" * 100)
-                print(f"EVAL SET (best params: thr_on={best_constrained.threshold:.2f}, "
-                      f"thr_off={best_constrained.threshold_off:.2f}, gap={best_constrained.gap_merge_s:.0f}, "
-                      f"gap_stat={best_constrained.gap_merge_stat}, gap_min_p={best_constrained.gap_merge_min_p:.2f}, "
-                      f"min_seg={best_constrained.min_seg_s:.0f}, "
-                      f"min_short={best_constrained.min_seg_short_s}, keep_p={best_constrained.keep_short_p})")
+                if best_constrained.decode_mode == "viterbi":
+                    print(
+                        f"EVAL SET (best params: mode=viterbi enter_cost={float(best_constrained.enter_cost):.2f}, "
+                        f"exit_cost={float(best_constrained.exit_cost):.2f}, "
+                        f"min_seg={best_constrained.min_seg_s:.0f}, "
+                        f"min_short={best_constrained.min_seg_short_s}, keep_p={best_constrained.keep_short_p})"
+                    )
+                else:
+                    print(
+                        f"EVAL SET (best params: thr_on={float(best_constrained.threshold):.2f}, "
+                        f"thr_off={float(best_constrained.threshold_off):.2f}, gap={float(best_constrained.gap_merge_s):.0f}, "
+                        f"gap_stat={best_constrained.gap_merge_stat}, gap_min_p={float(best_constrained.gap_merge_min_p):.2f}, "
+                        f"min_seg={best_constrained.min_seg_s:.0f}, "
+                        f"min_short={best_constrained.min_seg_short_s}, keep_p={best_constrained.keep_short_p})"
+                    )
                 print("=" * 100)
                 iou_str = f"{eval_result.mean_iou:.3f}" if eval_result.mean_iou is not None else "N/A"
                 print(f"TimeF1: {eval_result.f1:.4f}  SegF1: {eval_result.seg_f1:.4f}  "
@@ -1118,15 +1307,24 @@ def main() -> int:
     print("Re-run predictions with best params:")
     print(f"  python scripts/predict_call_segmenter.py \\")
     print(f"      --video-list /tmp/call_segmenter_videos.txt \\")
-    print(f"      --threshold {best_constrained.threshold:.2f} \\")
-    print(f"      --threshold-off {best_constrained.threshold_off:.2f} \\")
-    print(f"      --gap-merge-s {best_constrained.gap_merge_s:.0f} \\")
-    print(f"      --gap-merge-stat {best_constrained.gap_merge_stat} \\")
-    print(f"      --gap-merge-min-p {best_constrained.gap_merge_min_p:.2f} \\")
-    if best_constrained.min_seg_short_s is not None and best_constrained.keep_short_p is not None:
-        print(f"      --min-seg-short-s {best_constrained.min_seg_short_s:.0f} \\")
-        print(f"      --keep-short-p {best_constrained.keep_short_p:.2f} \\")
-    print(f"      --min-seg-s {best_constrained.min_seg_s:.0f}")
+    if best_constrained.decode_mode == "viterbi":
+        print("      --decode-mode viterbi \\")
+        print(f"      --enter-cost {float(best_constrained.enter_cost):.2f} \\")
+        print(f"      --exit-cost {float(best_constrained.exit_cost):.2f} \\")
+        if best_constrained.min_seg_short_s is not None and best_constrained.keep_short_p is not None:
+            print(f"      --min-seg-short-s {best_constrained.min_seg_short_s:.0f} \\")
+            print(f"      --keep-short-p {best_constrained.keep_short_p:.2f} \\")
+        print(f"      --min-seg-s {best_constrained.min_seg_s:.0f}")
+    else:
+        print(f"      --threshold {float(best_constrained.threshold):.2f} \\")
+        print(f"      --threshold-off {float(best_constrained.threshold_off):.2f} \\")
+        print(f"      --gap-merge-s {float(best_constrained.gap_merge_s):.0f} \\")
+        print(f"      --gap-merge-stat {best_constrained.gap_merge_stat} \\")
+        print(f"      --gap-merge-min-p {float(best_constrained.gap_merge_min_p):.2f} \\")
+        if best_constrained.min_seg_short_s is not None and best_constrained.keep_short_p is not None:
+            print(f"      --min-seg-short-s {best_constrained.min_seg_short_s:.0f} \\")
+            print(f"      --keep-short-p {best_constrained.keep_short_p:.2f} \\")
+        print(f"      --min-seg-s {best_constrained.min_seg_s:.0f}")
     print()
     print("Then evaluate:")
     print("  python scripts/eval_call_segmenter_predictions.py \\")
