@@ -186,3 +186,134 @@ Full labeled-set eval (45 videos; no-call FP==0):
 Notes:
 - Big jump in segment IoU-F1 vs exp_v5c_neg5 (~0.40 -> ~0.47) while keeping 0/10 no-call false positives.
 - Remaining failure mode is still imperfect call splitting on a handful of long/multi-call videos; next step is to widen text context (v6b).
+
+---
+
+## 2026-02-05: exp_v8a_spectral
+
+- Dataset: `data/call_segmenter/exp_v8a_spectral`
+- Model dir: `data/call_segmenter/models/exp_v8a_spectral`
+- Split meta: `data/call_segmenter/split_meta_v1_plus3_plus10nocall.json`
+
+Best sweep params (train, constrained):
+- decode=threshold thr_on=0.65, thr_off=0.55, gap=30, gap_min_p=0.20, min_seg=10
+- Train: TimeF1=0.9427, SegF1=0.5316, SegRatio=0.93, NoCallFPVideos=0
+
+Best sweep params (train, overall score):
+- decode=threshold thr_on=0.65, thr_off=0.55, gap=30, gap_min_p=0.20, min_seg=10
+- Train: TimeF1=0.9427, SegF1=0.5316, SegRatio=0.93, NoCallFPVideos=0
+
+Holdout eval (6 videos) using best constrained params:
+- TimeF1=0.8421, SegF1=0.3733, SegRatio=1.21, Pred=41, Truth=34
+
+Full labeled-set eval (train+eval ids; no-call FP==0 required):
+- Predictions prefix: `s3://rezora-whisperx-us-east-1-864981718771/call_segmenter/predictions/exp_v8a_spectral_20260205_232428_thr65_off55_gap30_gp90_p20_min10/`
+- TimeF1(micro)=0.9251, SegF1(IoU micro)=0.4936, Pred=155, Truth=157, NoCallFPVideos=0
+
+Side-by-side report:
+- `artifacts/s3_audit/call_segmenter/exp_v8a_spectral_20260205_232859/side_by_side.md`
+- `artifacts/s3_audit/call_segmenter/exp_v8a_spectral_20260205_232859/side_by_side.json`
+---
+
+## 2026-02-05: exp_v8b_mfcc
+
+- Dataset: `data/call_segmenter/exp_v8b_mfcc`
+- Model dir: `data/call_segmenter/models/exp_v8b_mfcc`
+- Split meta: `data/call_segmenter/split_meta_v1_plus3_plus10nocall.json`
+
+Best sweep params (train, constrained):
+- decode=threshold thr_on=0.55, thr_off=0.45, gap=10, gap_min_p=0.00, min_seg=5
+- Train: TimeF1=0.9649, SegF1=0.5812, SegRatio=0.90, NoCallFPVideos=0
+
+Best sweep params (train, overall score):
+- decode=threshold thr_on=0.55, thr_off=0.35, gap=10, gap_min_p=0.00, min_seg=10
+- Train: TimeF1=0.9658, SegF1=0.6182, SegRatio=0.79, NoCallFPVideos=0
+
+Holdout eval (6 videos) using best constrained params:
+- TimeF1=0.8263, SegF1=0.2697, SegRatio=1.62, Pred=55, Truth=34
+
+Full labeled-set eval (train+eval ids; no-call FP==0 required):
+- Predictions prefix: `s3://rezora-whisperx-us-east-1-864981718771/call_segmenter/predictions/exp_v8b_mfcc_20260205_234409_thr55_off45_gap10_gmax_p00_min05/`
+- TimeF1(micro)=0.9401, SegF1(IoU micro)=0.4954, Pred=166, Truth=157, NoCallFPVideos=0
+
+Side-by-side report:
+- `artifacts/s3_audit/call_segmenter/exp_v8b_mfcc_20260205_234908/side_by_side.md`
+- `artifacts/s3_audit/call_segmenter/exp_v8b_mfcc_20260205_234908/side_by_side.json`
+---
+
+## 2026-02-06: exp_v8a_spectral_viterbi
+
+- Dataset: `data/call_segmenter/exp_v8a_spectral`
+- Model dir: `data/call_segmenter/models/exp_v8a_spectral`
+- Split meta: `data/call_segmenter/split_meta_v1_plus3_plus10nocall.json`
+
+Best sweep params (train, constrained):
+- decode=viterbi enter_cost=4.00, exit_cost=2.00, call_bias=0.50, min_seg=10
+- Train: TimeF1=0.9388, SegF1=0.3818, SegRatio=1.85, NoCallFPVideos=0
+
+Best sweep params (train, overall score):
+- decode=viterbi enter_cost=4.00, exit_cost=2.00, call_bias=0.50, min_seg=10
+- Train: TimeF1=0.9388, SegF1=0.3818, SegRatio=1.85, NoCallFPVideos=0
+
+Holdout eval (6 videos) using best constrained params:
+- TimeF1=0.8236, SegF1=0.2883, SegRatio=2.26, Pred=77, Truth=34
+
+Full labeled-set eval (train+eval ids; no-call FP==0 required):
+- Predictions prefix: `s3://rezora-whisperx-us-east-1-864981718771/call_segmenter/predictions/exp_v8a_spectral_viterbi_20260205_235628_viterbi_enter400_exit200_bias050_min10/`
+- TimeF1(micro)=0.9200, SegF1(IoU micro)=0.3593, Pred=305, Truth=157, NoCallFPVideos=0
+
+Side-by-side report:
+- `artifacts/s3_audit/call_segmenter/exp_v8a_spectral_viterbi_20260206_000143/side_by_side.md`
+- `artifacts/s3_audit/call_segmenter/exp_v8a_spectral_viterbi_20260206_000143/side_by_side.json`
+---
+
+## 2026-02-06: exp_v8c_text5
+
+- Dataset: `data/call_segmenter/exp_v8c_text5`
+- Model dir: `data/call_segmenter/models/exp_v8c_text5`
+- Split meta: `data/call_segmenter/split_meta_v1_plus3_plus10nocall.json`
+
+Best sweep params (train, constrained):
+- decode=threshold thr_on=0.60, thr_off=0.40, gap=1, gap_min_p=0.00, min_seg=3
+- Train: TimeF1=0.9812, SegF1=0.8426, SegRatio=0.91, NoCallFPVideos=0
+
+Best sweep params (train, overall score):
+- decode=threshold thr_on=0.60, thr_off=0.40, gap=1, gap_min_p=0.00, min_seg=3
+- Train: TimeF1=0.9812, SegF1=0.8426, SegRatio=0.91, NoCallFPVideos=0
+
+Holdout eval (6 videos) using best constrained params:
+- TimeF1=0.7974, SegF1=0.1837, SegRatio=4.76, Pred=162, Truth=34
+
+Full labeled-set eval (train+eval ids; no-call FP==0 required):
+- Predictions prefix: `s3://rezora-whisperx-us-east-1-864981718771/call_segmenter/predictions/exp_v8c_text5_20260206_002647_thr60_off40_gap01_gmax_p00_min03/`
+- TimeF1(micro)=0.9526, SegF1(IoU micro)=0.5429, Pred=274, Truth=157, NoCallFPVideos=0
+
+Side-by-side report:
+- `artifacts/s3_audit/call_segmenter/exp_v8c_text5_20260206_003216/side_by_side.md`
+- `artifacts/s3_audit/call_segmenter/exp_v8c_text5_20260206_003216/side_by_side.json`
+---
+
+## 2026-02-06: exp_v8d_boundary1
+
+- Dataset: `data/call_segmenter/exp_v8a_spectral`
+- Model dir: `data/call_segmenter/models/exp_v8d_boundary1`
+- Split meta: `data/call_segmenter/split_meta_v1_plus3_plus10nocall.json`
+
+Best sweep params (train, constrained):
+- decode=threshold thr_on=0.70, thr_off=0.60, gap=30, gap_min_p=0.20, min_seg=10
+- Train: TimeF1=0.9478, SegF1=0.5407, SegRatio=1.20, NoCallFPVideos=0
+
+Best sweep params (train, overall score):
+- decode=threshold thr_on=0.70, thr_off=0.60, gap=30, gap_min_p=0.20, min_seg=10
+- Train: TimeF1=0.9478, SegF1=0.5407, SegRatio=1.20, NoCallFPVideos=0
+
+Holdout eval (6 videos) using best constrained params:
+- TimeF1=0.8377, SegF1=0.3448, SegRatio=1.56, Pred=53, Truth=34
+
+Full labeled-set eval (train+eval ids; no-call FP==0 required):
+- Predictions prefix: `s3://rezora-whisperx-us-east-1-864981718771/call_segmenter/predictions/exp_v8d_boundary1_20260206_004443_thr70_off60_gap30_gmean_p20_min10/`
+- TimeF1(micro)=0.9290, SegF1(IoU micro)=0.4930, Pred=200, Truth=157, NoCallFPVideos=0
+
+Side-by-side report:
+- `artifacts/s3_audit/call_segmenter/exp_v8d_boundary1_20260206_004922/side_by_side.md`
+- `artifacts/s3_audit/call_segmenter/exp_v8d_boundary1_20260206_004922/side_by_side.json`
