@@ -172,6 +172,10 @@ def main() -> int:
                         help="Disable spectral centroid/rolloff features in dataset build")
     parser.add_argument("--neg-weight", type=float, default=5.0)
     parser.add_argument("--no-call-video-weight", type=float, default=1.0)
+    parser.add_argument("--boundary-weight", type=float, default=0.0,
+                        help="Training-only: extra weight for windows near truth boundaries")
+    parser.add_argument("--boundary-tau", type=float, default=10.0,
+                        help="Training-only: decay timescale (seconds) for boundary weighting")
     parser.add_argument("--no-calibration", action="store_true",
                         help="Disable probability calibration even if model_dir/calibration.json exists")
     parser.add_argument("--decode-mode", type=str, default="threshold", choices=["threshold", "viterbi"])
@@ -242,6 +246,10 @@ def main() -> int:
                 str(args.neg_weight),
                 "--no-call-video-weight",
                 str(args.no_call_video_weight),
+                "--boundary-weight",
+                str(args.boundary_weight),
+                "--boundary-tau",
+                str(args.boundary_tau),
                 "--output-dir",
                 str(model_dir),
             ]
