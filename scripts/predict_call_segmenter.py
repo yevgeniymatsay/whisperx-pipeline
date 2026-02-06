@@ -40,6 +40,12 @@ from pipeline.call_segmenter.features import merge_adjacent_segments, compute_wi
 from pipeline.call_segmenter.audio_features import AudioFeatureConfig, compute_audio_features_for_windows
 from pipeline.call_segmenter.calibration import PlattCalibration, apply_calibration, load_calibration
 from pipeline.call_segmenter.sequence_decode import ViterbiParams, viterbi_decode_call_mask
+from pipeline.call_segmenter.upstream import (
+    load_azure_merged_local,
+    load_azure_merged_s3,
+    parse_azure_merged_diarized,
+    azure_run_id_for_source,
+)
 from pipeline.call_segmenter.window_generator import WindowConfig, generate_window_times
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -100,6 +106,11 @@ def load_model_and_meta(model_dir: Path) -> Tuple["xgb.XGBClassifier", Dict]:
     import xgboost as xgb
 
     model_path = model_dir / "model_b.ubj"
+    if not model_path.exists():
+        # Numeric-only experiments may save Model A as model_a.ubj.
+        alt = model_dir / "model_a.ubj"
+        if alt.exists():
+            model_path = alt
     meta_path = model_dir / "meta.json"
 
     if not model_path.exists():
@@ -120,8 +131,10 @@ def load_model_and_meta(model_dir: Path) -> Tuple["xgb.XGBClassifier", Dict]:
     return model, meta
 
 
-def create_text_vectorizer(text_hashing: Dict) -> HashingVectorizer:
-    """Create HashingVectorizer with exact params from training."""
+def create_text_vectorizer(text_hashing: Dict) -> Optional[HashingVectorizer]:
+    """Create HashingVectorizer with exact params from training (or None if disabled)."""
+    if not bool(text_hashing.get("enabled", True)):
+        return None
     ngram_range = tuple(text_hashing.get("ngram_range", [2, 5]))
     return HashingVectorizer(
         n_features=text_hashing.get("n_features", 4096),
@@ -330,6 +343,10 @@ def load_video_data_for_inference(
     s3_client,
     video_id: str,
     merge_gap_s: float = 0.2,
+    *,
+    upstream: str = "whisperx",
+    azure_merged_local_root: Optional[Path] = None,
+    azure_merged_s3_prefix: Optional[str] = None,
 ) -> Optional[
     Tuple[
         str,
@@ -346,30 +363,59 @@ def load_video_data_for_inference(
     Returns:
         Tuple of (run_id, segments, words, processed_end_s, mp3_duration_s) or None if failed.
     """
-    run_id = load_latest_run_id(s3_client, video_id)
-    if not run_id:
-        logger.error(f"No latest run for {video_id}")
-        return None
+    upstream = str(upstream).lower().strip()
+    if upstream not in {"whisperx", "azure"}:
+        raise ValueError("--upstream must be one of: whisperx, azure")
 
-    chunk_ids = list_chunks(s3_client, video_id, run_id)
-    if not chunk_ids:
-        logger.error(f"No chunks found for {video_id}/{run_id}")
-        return None
+    run_id = ""
+    if upstream == "whisperx":
+        run_id = load_latest_run_id(s3_client, video_id)
+        if not run_id:
+            logger.error(f"No latest run for {video_id}")
+            return None
+
+        chunk_ids = list_chunks(s3_client, video_id, run_id)
+        if not chunk_ids:
+            logger.error(f"No chunks found for {video_id}/{run_id}")
+            return None
+    else:
+        run_id = azure_run_id_for_source(
+            merged_local_root=azure_merged_local_root,
+            merged_s3_prefix=azure_merged_s3_prefix,
+        )
 
     all_segments: List[DiarizationSegment] = []
     all_words: List[dict] = []
     processed_end_s = 0.0
     coverage_ints: List[Tuple[float, float]] = []
 
-    for chunk_id in chunk_ids:
-        meta = load_chunk_metadata(s3_client, video_id, run_id, chunk_id)
-        if meta:
-            chunk_end = float(meta["chunk_time_offset_s"]) + float(meta["duration_s"])
-            processed_end_s = max(processed_end_s, chunk_end)
-            coverage_ints.append((float(meta["chunk_time_offset_s"]), float(chunk_end)))
+    if upstream == "whisperx":
+        for chunk_id in chunk_ids:
+            meta = load_chunk_metadata(s3_client, video_id, run_id, chunk_id)
+            if meta:
+                chunk_end = float(meta["chunk_time_offset_s"]) + float(meta["duration_s"])
+                processed_end_s = max(processed_end_s, chunk_end)
+                coverage_ints.append((float(meta["chunk_time_offset_s"]), float(chunk_end)))
 
-        all_segments.extend(load_diarization_segments(s3_client, video_id, run_id, chunk_id))
-        all_words.extend(load_words(s3_client, video_id, run_id, chunk_id))
+            all_segments.extend(load_diarization_segments(s3_client, video_id, run_id, chunk_id))
+            all_words.extend(load_words(s3_client, video_id, run_id, chunk_id))
+    else:
+        # Azure merged diarization (local or S3). Words are intentionally empty in the first pass
+        # to avoid confounding A/B comparisons with lexical shortcuts.
+        doc: Optional[Dict] = None
+        if azure_merged_local_root is not None:
+            doc = load_azure_merged_local(Path(azure_merged_local_root), video_id)
+        elif azure_merged_s3_prefix is not None:
+            doc = load_azure_merged_s3(s3_client, str(azure_merged_s3_prefix), video_id)
+        else:
+            logger.error("Azure upstream requires --azure-merged-local-root or --azure-merged-s3-prefix")
+            return None
+
+        all_segments = parse_azure_merged_diarized(doc)
+        all_words = []
+        max_end = max((s.t1_abs for s in all_segments), default=0.0)
+        processed_end_s = float(max_end)
+        coverage_ints = [(0.0, processed_end_s)]
 
     all_segments.sort(key=lambda s: s.t0_abs)
     if merge_gap_s > 0:
@@ -378,6 +424,11 @@ def load_video_data_for_inference(
     # Get MP3 key + duration for clamping / audio features.
     mp3_key = get_mp3_key_for_video(s3_client, video_id)
     mp3_duration_s = get_mp3_duration_s(s3_client, mp3_key) if mp3_key else None
+
+    # For non-WhisperX upstreams, prefer clamping the timeline to the MP3 duration when known.
+    if upstream != "whisperx" and mp3_duration_s is not None:
+        processed_end_s = float(mp3_duration_s)
+        coverage_ints = [(0.0, processed_end_s)]
 
     chunk_coverage = merge_intervals(coverage_ints)
 
@@ -390,7 +441,7 @@ def generate_features_for_video(
     timeline_end: float,
     window_config: WindowConfig,
     feature_columns: List[str],
-    vectorizer: HashingVectorizer,
+    vectorizer: Optional[HashingVectorizer],
     text_context_s: float = 0.0,
     text_max_chars: int = 300,
     *,
@@ -407,11 +458,13 @@ def generate_features_for_video(
     rows: List[Dict] = []
     window_texts: List[str] = []
 
-    text_extractor = WindowTextExtractor(
-        words,
-        context_s=float(text_context_s),
-        max_chars=int(text_max_chars),
-    )
+    text_extractor: Optional[WindowTextExtractor] = None
+    if vectorizer is not None:
+        text_extractor = WindowTextExtractor(
+            words,
+            context_s=float(text_context_s),
+            max_chars=int(text_max_chars),
+        )
 
     audio_feature_names = {
         "rms_energy",
@@ -460,13 +513,16 @@ def generate_features_for_video(
             **feats.to_dict(),
         }
         rows.append(row)
-        window_texts.append(text_extractor.text_for_window(t_start, t_end))
+        if text_extractor is not None:
+            window_texts.append(text_extractor.text_for_window(t_start, t_end))
 
     df = pd.DataFrame(rows)
     if df.empty:
         # Avoid KeyErrors downstream when selecting feature columns.
         df = pd.DataFrame(columns=["t_start", "t_end", "t_mid", *feature_columns])
         X_numeric = np.zeros((0, len(feature_columns)), dtype=np.float32)
+        if vectorizer is None:
+            return df, sparse.csr_matrix(X_numeric)
         X_text = vectorizer.transform([]).tocsr()
         return df, sparse.hstack([sparse.csr_matrix(X_numeric), X_text], format="csr")
 
@@ -492,6 +548,9 @@ def generate_features_for_video(
 
     # Ensure feature columns are in correct order
     X_numeric = df[feature_columns].to_numpy(dtype=np.float32)
+
+    if vectorizer is None:
+        return df, sparse.csr_matrix(X_numeric)
 
     # Extract text features
     X_text = vectorizer.transform(window_texts).tocsr()
@@ -765,6 +824,12 @@ def main() -> int:
                         help="File with video IDs (one per line)")
     parser.add_argument("--model-dir", type=Path, default=Path("data/call_segmenter/models/v1"),
                         help="Directory containing model_b.ubj and meta.json")
+    parser.add_argument("--upstream", type=str, default="whisperx", choices=["whisperx", "azure"],
+                        help="Upstream source for diarization/text timing")
+    parser.add_argument("--azure-merged-local-root", type=Path, default=None,
+                        help="(azure upstream) Local root containing <video_id>/merged.diarized.json")
+    parser.add_argument("--azure-merged-s3-prefix", type=str, default=None,
+                        help="(azure upstream) S3 key prefix containing <video_id>.json merged diarize outputs")
     parser.add_argument("--s3-out-prefix", type=str, default="call_segmenter/predictions/v1",
                         help="S3 prefix for output predictions")
     parser.add_argument("--decode-mode", type=str, default="threshold", choices=["threshold", "viterbi"],
@@ -855,7 +920,7 @@ def main() -> int:
         ignore_s=window_config_dict.get("ignore_s", 0.75),
     )
 
-    # Create text vectorizer with exact training params
+    # Create text vectorizer with exact training params (may be disabled)
     vectorizer = create_text_vectorizer(text_hashing)
 
     # Load video IDs
@@ -876,7 +941,13 @@ def main() -> int:
         logger.info(f"[{idx + 1}/{len(video_ids)}] {video_id}")
 
         # Load video data
-        video_data = load_video_data_for_inference(s3, video_id)
+        video_data = load_video_data_for_inference(
+            s3,
+            video_id,
+            upstream=args.upstream,
+            azure_merged_local_root=args.azure_merged_local_root,
+            azure_merged_s3_prefix=args.azure_merged_s3_prefix,
+        )
         if video_data is None:
             logger.warning(f"  Skipping {video_id}: failed to load data")
             skipped.append(video_id)

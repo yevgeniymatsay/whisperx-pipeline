@@ -201,6 +201,71 @@ def save_model_b(
     print(f"  meta.json: {meta_path}")
 
 
+def save_model_a(
+    model,
+    output_dir: Path,
+    feature_columns: List[str],
+    text_features_meta: Dict,
+    audio_features_meta: Optional[Dict],
+    window_config: Dict,
+    seed: int,
+    threshold: float,
+    neg_weight: float,
+    boundary_weight: float,
+    boundary_tau: float,
+    train_video_ids: List[str],
+    eval_video_ids: List[str],
+    eval_metrics: Dict[str, float],
+) -> None:
+    """Save Model A (numeric-only) artifacts for inference."""
+    import xgboost as xgb
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    model_path = output_dir / "model_a.ubj"
+    model.save_model(str(model_path))
+
+    # Keep schema compatible with predict/sweep code: include text_hashing, but mark disabled.
+    meta = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "git_sha": get_git_sha(),
+        "seed": seed,
+        "default_threshold": threshold,
+        "model_variant": "a",
+        "feature_columns": feature_columns,
+        "text_hashing": {
+            "enabled": False,
+            "n_features": int(text_features_meta.get("n_features", 4096)),
+            "ngram_range": text_features_meta.get("ngram_range", [2, 5]),
+            "analyzer": text_features_meta.get("analyzer", "char_wb"),
+            "context_s": float(text_features_meta.get("context_s", 0.0)),
+            "max_chars": int(text_features_meta.get("max_chars", 300)),
+        },
+        "audio_features": audio_features_meta,
+        "window_config": window_config,
+        "training": {
+            "neg_weight": float(neg_weight),
+            "boundary_weight": float(boundary_weight),
+            "boundary_tau": float(boundary_tau),
+        },
+        "versions": {
+            "xgboost": xgb.__version__,
+            "sklearn": sklearn.__version__,
+            "scipy": scipy.__version__,
+        },
+        "train_video_ids": sorted(train_video_ids),
+        "eval_video_ids": sorted(eval_video_ids),
+        "eval_metrics": eval_metrics,
+    }
+
+    meta_path = output_dir / "meta.json"
+    meta_path.write_text(json.dumps(meta, indent=2) + "\n")
+
+    print(f"\nSaved Model A artifacts to {output_dir}/")
+    print(f"  model_a.ubj: {model_path.stat().st_size / 1024:.1f} KB")
+    print(f"  meta.json: {meta_path}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Train call segmenter (XGBoost) on v2 dataset")
     parser.add_argument("--data", type=Path, default=Path("data/call_segmenter/v2"))
@@ -314,12 +379,60 @@ def main() -> int:
 
     # Model B (numeric + text)
     if args.no_text:
+        if not args.no_save:
+            text_features_meta = meta.get("text_features", {}) or {}
+            audio_features_meta = meta.get("config", {}).get("audio_features")
+            window_config = {
+                "win_s": meta["config"]["win_s"],
+                "hop_s": meta["config"]["hop_s"],
+                "ignore_s": meta["config"]["ignore_s"],
+            }
+            save_model_a(
+                model=model_a,
+                output_dir=args.output_dir,
+                feature_columns=feature_cols,
+                text_features_meta=text_features_meta,
+                audio_features_meta=audio_features_meta,
+                window_config=window_config,
+                seed=args.seed,
+                threshold=args.threshold,
+                neg_weight=neg_weight,
+                boundary_weight=args.boundary_weight,
+                boundary_tau=args.boundary_tau,
+                train_video_ids=train_vids,
+                eval_video_ids=eval_vids,
+                eval_metrics=rep_a,
+            )
         return 0
 
     try:
         X_text_all, text_row_ids = load_text_features(args.data)
     except Exception as e:
         print(f"\nSkipping Model B: {e}")
+        if not args.no_save:
+            text_features_meta = meta.get("text_features", {}) or {}
+            audio_features_meta = meta.get("config", {}).get("audio_features")
+            window_config = {
+                "win_s": meta["config"]["win_s"],
+                "hop_s": meta["config"]["hop_s"],
+                "ignore_s": meta["config"]["ignore_s"],
+            }
+            save_model_a(
+                model=model_a,
+                output_dir=args.output_dir,
+                feature_columns=feature_cols,
+                text_features_meta=text_features_meta,
+                audio_features_meta=audio_features_meta,
+                window_config=window_config,
+                seed=args.seed,
+                threshold=args.threshold,
+                neg_weight=neg_weight,
+                boundary_weight=args.boundary_weight,
+                boundary_tau=args.boundary_tau,
+                train_video_ids=train_vids,
+                eval_video_ids=eval_vids,
+                eval_metrics=rep_a,
+            )
         return 0
 
     # Align text features with train/eval rows using row_id join.

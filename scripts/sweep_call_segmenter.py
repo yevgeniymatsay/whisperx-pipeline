@@ -42,6 +42,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pipeline.call_segmenter.window_generator import WindowConfig
 from pipeline.call_segmenter.calibration import PlattCalibration, apply_calibration, load_calibration
+from pipeline.call_segmenter.upstream import azure_run_id_for_source
 
 # Import from sibling scripts (not package) to ensure identical logic
 from predict_call_segmenter import (  # type: ignore[import-not-found]
@@ -250,12 +251,16 @@ def extract_video_probabilities(
     s3_client,
     video_id: str,
     model: "xgb.XGBClassifier",
-    vectorizer: HashingVectorizer,
+    vectorizer: Optional[HashingVectorizer],
     window_config: WindowConfig,
     feature_columns: List[str],
     text_context_s: float,
     text_max_chars: int,
     audio_features_meta: Optional[Dict] = None,
+    *,
+    upstream: str = "whisperx",
+    azure_merged_local_root: Optional[Path] = None,
+    azure_merged_s3_prefix: Optional[str] = None,
 ) -> Optional[Tuple[str, np.ndarray, np.ndarray, Optional[float]]]:
     """Extract probabilities for a video using the trained model.
 
@@ -263,7 +268,13 @@ def extract_video_probabilities(
         Tuple of (run_id, t_mids, probs, mp3_duration_s) or None if failed.
     """
     # Load video data
-    video_data = load_video_data_for_inference(s3_client, video_id)
+    video_data = load_video_data_for_inference(
+        s3_client,
+        video_id,
+        upstream=upstream,
+        azure_merged_local_root=azure_merged_local_root,
+        azure_merged_s3_prefix=azure_merged_s3_prefix,
+    )
     if video_data is None:
         return None
 
@@ -304,11 +315,15 @@ def cache_all_probabilities(
     video_ids: List[str],
     model: "xgb.XGBClassifier",
     meta: Dict,
-    vectorizer: HashingVectorizer,
+    vectorizer: Optional[HashingVectorizer],
     window_config: WindowConfig,
     feature_columns: List[str],
     cache_dir: Optional[Path],
     force_recompute: bool,
+    *,
+    upstream: str = "whisperx",
+    azure_merged_local_root: Optional[Path] = None,
+    azure_merged_s3_prefix: Optional[str] = None,
 ) -> Dict[str, Tuple[str, np.ndarray, np.ndarray, Optional[float]]]:
     """Extract or load cached probabilities for all videos.
 
@@ -327,8 +342,14 @@ def cache_all_probabilities(
         run_id = None
         if cache_dir and not force_recompute:
             # Try to find existing cache file (need to know run_id first)
-            from predict_call_segmenter import load_latest_run_id
-            run_id = load_latest_run_id(s3_client, video_id)
+            if str(upstream).lower().strip() == "whisperx":
+                from predict_call_segmenter import load_latest_run_id
+                run_id = load_latest_run_id(s3_client, video_id)
+            else:
+                run_id = azure_run_id_for_source(
+                    merged_local_root=azure_merged_local_root,
+                    merged_s3_prefix=azure_merged_s3_prefix,
+                )
 
             if run_id:
                 cache_file = cache_dir / make_cache_filename(video_id, run_id)
@@ -354,6 +375,9 @@ def cache_all_probabilities(
             text_context_s=float(meta["text_hashing"].get("context_s", 0.0)),
             text_max_chars=int(meta["text_hashing"].get("max_chars", 300)),
             audio_features_meta=meta.get("audio_features"),
+            upstream=upstream,
+            azure_merged_local_root=azure_merged_local_root,
+            azure_merged_s3_prefix=azure_merged_s3_prefix,
         )
 
         if result is None:
@@ -995,6 +1019,12 @@ def main() -> int:
     )
     parser.add_argument("--model-dir", type=Path, default=Path("data/call_segmenter/models/v1"),
                         help="Directory containing model_b.ubj and meta.json")
+    parser.add_argument("--upstream", type=str, default="whisperx", choices=["whisperx", "azure"],
+                        help="Upstream source for diarization/text timing")
+    parser.add_argument("--azure-merged-local-root", type=Path, default=None,
+                        help="(azure upstream) Local root containing <video_id>/merged.diarized.json")
+    parser.add_argument("--azure-merged-s3-prefix", type=str, default=None,
+                        help="(azure upstream) S3 key prefix containing <video_id>.json merged diarize outputs")
     parser.add_argument("--cache-dir", type=Path, default=None,
                         help="Directory to cache (t_mids, probs) as .npz files")
     parser.add_argument("--force-recompute", action="store_true",
@@ -1174,6 +1204,9 @@ def main() -> int:
         feature_columns=feature_columns,
         cache_dir=args.cache_dir,
         force_recompute=args.force_recompute,
+        upstream=args.upstream,
+        azure_merged_local_root=args.azure_merged_local_root,
+        azure_merged_s3_prefix=args.azure_merged_s3_prefix,
     )
 
     if not train_prob_cache:
@@ -1264,6 +1297,9 @@ def main() -> int:
             feature_columns=feature_columns,
             cache_dir=args.cache_dir,
             force_recompute=args.force_recompute,
+            upstream=args.upstream,
+            azure_merged_local_root=args.azure_merged_local_root,
+            azure_merged_s3_prefix=args.azure_merged_s3_prefix,
         )
 
         if eval_prob_cache:

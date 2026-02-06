@@ -30,7 +30,7 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -47,6 +47,12 @@ from pipeline.audio_preprocess import decode_audio_stream_to_float32
 from pipeline.transcriber import DiarizationSegment
 from pipeline.call_segmenter.features import merge_adjacent_segments, compute_window_features
 from pipeline.call_segmenter.audio_features import AudioFeatureConfig, compute_audio_features_for_windows
+from pipeline.call_segmenter.upstream import (
+    load_azure_merged_local,
+    load_azure_merged_s3,
+    parse_azure_merged_diarized,
+    azure_run_id_for_source,
+)
 from pipeline.call_segmenter.window_generator import WindowConfig, CallBoundary, assign_labels, generate_window_times
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -456,35 +462,72 @@ def load_video_data(
     video_id: str,
     labels: Dict[str, List[CallBoundary]],
     config: DatasetConfig,
+    *,
+    upstream: str = "whisperx",
+    azure_merged_local_root: Optional[Path] = None,
+    azure_merged_s3_prefix: Optional[str] = None,
 ) -> Optional[VideoData]:
-    run_id = load_latest_run_id(s3_client, video_id)
-    if not run_id:
-        logger.error(f"No latest run for {video_id}")
-        return None
+    upstream = str(upstream).lower().strip()
+    if upstream not in {"whisperx", "azure"}:
+        raise ValueError("--upstream must be one of: whisperx, azure")
+
+    run_id = ""
+    if upstream == "whisperx":
+        run_id = load_latest_run_id(s3_client, video_id)
+        if not run_id:
+            logger.error(f"No latest run for {video_id}")
+            return None
+    else:
+        run_id = azure_run_id_for_source(
+            merged_local_root=azure_merged_local_root,
+            merged_s3_prefix=azure_merged_s3_prefix,
+        )
 
     mp3_key = get_mp3_key_for_video(s3_client, video_id) or f"audio/pretraining/unknown - {video_id}.mp3"
     creator_id = extract_creator_id(mp3_key)
 
     mp3_duration_s = get_mp3_duration_s(s3_client, mp3_key) if mp3_key else None
 
-    chunk_ids = list_chunks(s3_client, video_id, run_id)
-    if not chunk_ids:
-        logger.error(f"No chunks found for {video_id}/{run_id}")
-        return None
-
     chunks: List[ChunkMetadata] = []
     coverage_ints: List[Tuple[float, float]] = []
     all_segments: List[DiarizationSegment] = []
     all_words: List[dict] = []
 
-    for chunk_id in chunk_ids:
-        meta = load_chunk_metadata(s3_client, video_id, run_id, chunk_id)
-        if meta:
-            chunks.append(meta)
-            coverage_ints.append((meta.start_abs, meta.end_abs))
+    if upstream == "whisperx":
+        chunk_ids = list_chunks(s3_client, video_id, run_id)
+        if not chunk_ids:
+            logger.error(f"No chunks found for {video_id}/{run_id}")
+            return None
 
-        all_segments.extend(load_diarization_segments(s3_client, video_id, run_id, chunk_id))
-        all_words.extend(load_words(s3_client, video_id, run_id, chunk_id))
+        for chunk_id in chunk_ids:
+            meta = load_chunk_metadata(s3_client, video_id, run_id, chunk_id)
+            if meta:
+                chunks.append(meta)
+                coverage_ints.append((meta.start_abs, meta.end_abs))
+
+            all_segments.extend(load_diarization_segments(s3_client, video_id, run_id, chunk_id))
+            all_words.extend(load_words(s3_client, video_id, run_id, chunk_id))
+    else:
+        # Azure merged diarization (local or S3). We do not load transcript words in the first pass:
+        # A/B testing upstream diarization should not be confounded by text.
+        doc: Optional[Dict[str, Any]] = None
+        if azure_merged_local_root is not None:
+            doc = load_azure_merged_local(Path(azure_merged_local_root), video_id)
+        elif azure_merged_s3_prefix is not None:
+            doc = load_azure_merged_s3(s3_client, str(azure_merged_s3_prefix), video_id)
+        else:
+            logger.error("Azure upstream requires --azure-merged-local-root or --azure-merged-s3-prefix")
+            return None
+
+        all_segments = parse_azure_merged_diarized(doc)
+        all_words = []
+
+        # Full coverage (no VAD holes) for Azure: emit windows across the whole mp3 when possible.
+        if mp3_duration_s is not None:
+            coverage_ints = [(0.0, float(mp3_duration_s))]
+        else:
+            max_end = max((s.t1_abs for s in all_segments), default=0.0)
+            coverage_ints = [(0.0, float(max_end))]
 
     chunks.sort(key=lambda c: c.start_abs)
     all_segments.sort(key=lambda s: s.t0_abs)
@@ -492,7 +535,10 @@ def load_video_data(
     if config.merge_gap_s > 0:
         all_segments = merge_adjacent_segments(all_segments, max_gap_s=config.merge_gap_s)
 
-    processed_end_s = max((c.end_abs for c in chunks), default=0.0)
+    if upstream == "whisperx":
+        processed_end_s = max((c.end_abs for c in chunks), default=0.0)
+    else:
+        processed_end_s = float(mp3_duration_s) if mp3_duration_s is not None else max((s.t1_abs for s in all_segments), default=0.0)
     chunk_coverage = merge_intervals(coverage_ints)
 
     return VideoData(
@@ -950,6 +996,12 @@ def main() -> int:
     parser.add_argument("--labels", type=Path, help="Path to local labels file (labels.json or corrected_boundaries.csv)")
     parser.add_argument("--labels-s3", action="store_true", help="Load labels from S3 boundary store")
     parser.add_argument("--labels-s3-prefix", type=str, default="labeling/corrected_boundaries/v1/")
+    parser.add_argument("--upstream", type=str, default="whisperx", choices=["whisperx", "azure"],
+                        help="Upstream source for diarization/text timing")
+    parser.add_argument("--azure-merged-local-root", type=Path, default=None,
+                        help="(azure upstream) Local root containing <video_id>/merged.diarized.json")
+    parser.add_argument("--azure-merged-s3-prefix", type=str, default=None,
+                        help="(azure upstream) S3 key prefix containing <video_id>.json merged diarize outputs")
     parser.add_argument("--output-dir", type=Path, default=Path("data/call_segmenter/v2"))
     parser.add_argument("--win-s", type=float, default=1.0)
     parser.add_argument("--hop-s", type=float, default=0.5)
@@ -1058,7 +1110,15 @@ def main() -> int:
     for idx, video_id in enumerate(video_ids):
         logger.info(f"[{idx+1}/{len(video_ids)}] {video_id}")
 
-        vd = load_video_data(s3, video_id, labels, cfg)
+        vd = load_video_data(
+            s3,
+            video_id,
+            labels,
+            cfg,
+            upstream=args.upstream,
+            azure_merged_local_root=args.azure_merged_local_root,
+            azure_merged_s3_prefix=args.azure_merged_s3_prefix,
+        )
         if vd is None:
             logger.error(f"  Failed to load video data for {video_id}")
             continue
@@ -1130,6 +1190,12 @@ def main() -> int:
         logger.info(f"Wrote {report_path}")
 
         meta = build_dataset_metadata(cfg)
+        meta["upstream"] = {
+            "type": str(args.upstream),
+            "azure_merged_s3_prefix": str(args.azure_merged_s3_prefix) if args.azure_merged_s3_prefix else None,
+            # Keep local path only as a hint; it may not be portable across machines.
+            "azure_merged_local_root": str(args.azure_merged_local_root) if args.azure_merged_local_root else None,
+        }
         meta_path = args.output_dir / "dataset_meta.json"
         with open(meta_path, "w") as f:
             json.dump(meta, f, indent=2, cls=NumpyEncoder)

@@ -161,9 +161,17 @@ def main() -> int:
     parser.add_argument("--exp-name", type=str, required=True, help="Experiment name (used for dirs/prefixes)")
     parser.add_argument("--split-meta", type=Path, required=True, help="Fixed split meta JSON (train/eval ids)")
     parser.add_argument("--labels-prefix", type=str, default="labeling/corrected_boundaries/v1/", help="S3 key prefix for labels")
+    parser.add_argument("--upstream", type=str, default="whisperx", choices=["whisperx", "azure"],
+                        help="Upstream source for diarization/text timing")
+    parser.add_argument("--azure-merged-local-root", type=Path, default=None,
+                        help="(azure upstream) Local root containing <video_id>/merged.diarized.json")
+    parser.add_argument("--azure-merged-s3-prefix", type=str, default=None,
+                        help="(azure upstream) S3 key prefix containing <video_id>.json merged diarize outputs")
     parser.add_argument("--dataset-dir", type=Path, default=None, help="Output dataset dir (default: data/call_segmenter/<exp-name>)")
     parser.add_argument("--model-dir", type=Path, default=None, help="Output model dir (default: data/call_segmenter/models/<exp-name>)")
     parser.add_argument("--video-list", type=Path, default=None, help="Optional video list file (one id per line). If omitted, uses split-meta ids.")
+    parser.add_argument("--no-text", action="store_true",
+                        help="Disable hashed text features for this experiment (numeric-only model)")
     parser.add_argument("--text-context-s", type=float, default=0.0)
     parser.add_argument("--text-max-chars", type=int, default=300)
     parser.add_argument("--audio-mfcc", action="store_true",
@@ -218,6 +226,8 @@ def main() -> int:
             "--labels-s3",
             "--labels-s3-prefix",
             args.labels_prefix,
+            "--upstream",
+            str(args.upstream),
             "--output-dir",
             str(dataset_dir),
             "--video-list",
@@ -227,6 +237,12 @@ def main() -> int:
             "--text-max-chars",
             str(args.text_max_chars),
         ]
+        if args.azure_merged_local_root is not None:
+            cmd.extend(["--azure-merged-local-root", str(args.azure_merged_local_root)])
+        if args.azure_merged_s3_prefix is not None:
+            cmd.extend(["--azure-merged-s3-prefix", str(args.azure_merged_s3_prefix)])
+        if args.no_text:
+            cmd.append("--no-text")
         if args.audio_mfcc:
             cmd.append("--audio-mfcc")
         if args.no_audio_spectral_features:
@@ -234,8 +250,7 @@ def main() -> int:
         run(cmd)
 
     if not args.skip_train:
-        run(
-            [
+        train_cmd = [
                 sys.executable,
                 "scripts/train_call_segmenter.py",
                 "--data",
@@ -252,8 +267,10 @@ def main() -> int:
                 str(args.boundary_tau),
                 "--output-dir",
                 str(model_dir),
-            ]
-        )
+        ]
+        if args.no_text:
+            train_cmd.append("--no-text")
+        run(train_cmd)
 
     # Fit calibration (Platt scaling) unless explicitly disabled.
     # This writes model_dir/calibration.json and is then picked up by sweep/predict.
@@ -319,6 +336,9 @@ def main() -> int:
             feature_columns=feature_columns,
             cache_dir=cache_dir,
             force_recompute=False,
+            upstream=args.upstream,
+            azure_merged_local_root=args.azure_merged_local_root,
+            azure_merged_s3_prefix=args.azure_merged_s3_prefix,
         )
 
         train_gt = {vid: labels.get(vid, []) for vid in train_vids}
@@ -379,6 +399,9 @@ def main() -> int:
             feature_columns=feature_columns,
             cache_dir=cache_dir,
             force_recompute=False,
+            upstream=args.upstream,
+            azure_merged_local_root=args.azure_merged_local_root,
+            azure_merged_s3_prefix=args.azure_merged_s3_prefix,
         )
         eval_gt = {vid: labels.get(vid, []) for vid in eval_vids}
         eval_sweep = sweep_call_segmenter.evaluate_params_on_videos(
@@ -444,6 +467,8 @@ def main() -> int:
             str(video_list_path),
             "--model-dir",
             str(model_dir),
+            "--upstream",
+            str(args.upstream),
             "--s3-out-prefix",
             preds_key_prefix,
             *(["--min-seg-short-s", str(best_constrained.min_seg_short_s)] if best_constrained.min_seg_short_s is not None else []),
@@ -451,6 +476,10 @@ def main() -> int:
             "--min-seg-s",
             str(best_constrained.min_seg_s),
         ]
+        if args.azure_merged_local_root is not None:
+            cmd.extend(["--azure-merged-local-root", str(args.azure_merged_local_root)])
+        if args.azure_merged_s3_prefix is not None:
+            cmd.extend(["--azure-merged-s3-prefix", str(args.azure_merged_s3_prefix)])
         if args.no_calibration:
             cmd.append("--no-calibration")
         if best_constrained.decode_mode == "viterbi":
