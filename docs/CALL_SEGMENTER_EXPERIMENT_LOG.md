@@ -317,3 +317,55 @@ Full labeled-set eval (train+eval ids; no-call FP==0 required):
 Side-by-side report:
 - `artifacts/s3_audit/call_segmenter/exp_v8d_boundary1_20260206_004922/side_by_side.md`
 - `artifacts/s3_audit/call_segmenter/exp_v8d_boundary1_20260206_004922/side_by_side.json`
+---
+
+## 2026-02-06: ab_pilot9_wx_notext_spectral
+
+- Dataset: `data/call_segmenter/ab_pilot9_wx_notext_spectral`
+- Model dir: `data/call_segmenter/models/ab_pilot9_wx_notext_spectral`
+- Split meta: `data/call_segmenter/split_meta_azure_pilot9.json`
+
+Best sweep params (train, constrained):
+- decode=threshold thr_on=0.95, thr_off=0.95, gap=5, gap_min_p=0.60, min_seg=1
+- Train: TimeF1=0.9926, SegF1=0.9600, SegRatio=1.08, NoCallFPVideos=0
+
+Best sweep params (train, overall score):
+- decode=threshold thr_on=0.95, thr_off=0.95, gap=5, gap_min_p=0.60, min_seg=1
+- Train: TimeF1=0.9926, SegF1=0.9600, SegRatio=1.08, NoCallFPVideos=0
+
+Holdout eval (6 videos) using best constrained params:
+- TimeF1=0.6414, SegF1=0.0000, SegRatio=19.50, Pred=156, Truth=8
+
+Full labeled-set eval (train+eval ids; no-call FP==0 required):
+- Predictions prefix: `s3://rezora-whisperx-us-east-1-864981718771/call_segmenter/predictions/ab_pilot9_wx_notext_spectral_20260206_042020_thr95_off95_gap05_gmean_p60_min01/`
+- TimeF1(micro)=0.9018, SegF1(IoU micro)=0.1270, Pred=169, Truth=20, NoCallFPVideos=1
+
+Side-by-side report:
+- `artifacts/s3_audit/call_segmenter/ab_pilot9_wx_notext_spectral_20260206_042102/side_by_side.md`
+- `artifacts/s3_audit/call_segmenter/ab_pilot9_wx_notext_spectral_20260206_042102/side_by_side.json`
+---
+
+## 2026-02-06: ab_pilot9_az_notext_spectral
+
+- Dataset: `data/call_segmenter/ab_pilot9_az_notext_spectral`
+- Model dir: `data/call_segmenter/models/ab_pilot9_az_notext_spectral`
+- Split meta: `data/call_segmenter/split_meta_azure_pilot9.json`
+
+Best sweep params (train, constrained):
+- decode=threshold thr_on=0.55, thr_off=0.45, gap=2, gap_min_p=0.00, min_seg=3
+- Train: TimeF1=0.9954, SegF1=0.8800, SegRatio=1.08, NoCallFPVideos=0
+
+Best sweep params (train, overall score):
+- decode=threshold thr_on=0.80, thr_off=0.80, gap=2, gap_min_p=0.00, min_seg=1
+- Train: TimeF1=0.9949, SegF1=0.8889, SegRatio=1.25, NoCallFPVideos=0
+
+Holdout eval (6 videos) using best constrained params:
+- TimeF1=0.6630, SegF1=0.1587, SegRatio=6.88, Pred=55, Truth=8
+
+Full labeled-set eval (train+eval ids; no-call FP==0 required):
+- Predictions prefix: `s3://rezora-whisperx-us-east-1-864981718771/call_segmenter/predictions/ab_pilot9_az_notext_spectral_20260206_042222_thr55_off45_gap02_gmax_p00_min03/`
+- TimeF1(micro)=0.8926, SegF1(IoU micro)=0.3636, Pred=68, Truth=20, NoCallFPVideos=1
+
+Side-by-side report:
+- `artifacts/s3_audit/call_segmenter/ab_pilot9_az_notext_spectral_20260206_042246/side_by_side.md`
+- `artifacts/s3_audit/call_segmenter/ab_pilot9_az_notext_spectral_20260206_042246/side_by_side.json`
