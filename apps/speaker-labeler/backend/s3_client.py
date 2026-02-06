@@ -1,10 +1,27 @@
 """S3 client for loading calls and audio."""
 import json
-from typing import List, Dict, Any, Optional
+from pathlib import Path
+from typing import List, Dict, Any, Optional, Set
 import boto3
 from botocore.exceptions import ClientError
 
 from config import S3_BUCKET, AWS_REGION, S3_PREFIX
+
+# Path to selected videos list (relative to repo root)
+SELECTED_VIDEOS_PATH = Path(__file__).parent.parent.parent.parent / "data" / "selected_videos.txt"
+
+
+def load_selected_video_ids() -> Set[str]:
+    """Load video IDs from selected_videos.txt."""
+    if not SELECTED_VIDEOS_PATH.exists():
+        return set()
+
+    video_ids = set()
+    for line in SELECTED_VIDEOS_PATH.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            video_ids.add(line)
+    return video_ids
 
 
 def get_s3_client():
@@ -67,35 +84,45 @@ def get_audio_url(video_id: str, call_id: str, run_id: str) -> Optional[str]:
 
 
 def list_videos() -> List[Dict[str, Any]]:
-    """List all videos that have been processed."""
+    """List all videos from selected_videos.txt, with processing status."""
     s3 = get_s3_client()
     paginator = s3.get_paginator("list_objects_v2")
 
-    # Get unique video IDs from runs/ prefix
-    video_ids = set()
+    # Load selected video IDs from txt file
+    selected_ids = load_selected_video_ids()
+
+    # Get video IDs that have been processed (have runs/ entries)
+    processed_ids = set()
     for page in paginator.paginate(Bucket=S3_BUCKET, Prefix="runs/", Delimiter="/"):
         for prefix in page.get("CommonPrefixes", []):
             # prefix looks like "runs/VIDEO_ID/"
             parts = prefix["Prefix"].rstrip("/").split("/")
             if len(parts) == 2:
-                video_ids.add(parts[1])
+                processed_ids.add(parts[1])
+
+    # Use selected_ids if available, otherwise fall back to processed_ids
+    video_ids = selected_ids if selected_ids else processed_ids
 
     # Build video info list
     videos = []
     for video_id in sorted(video_ids):
-        # Count calls for this video
+        is_processed = video_id in processed_ids
+
+        # Count calls for this video (only if processed)
         call_count = 0
-        for page in paginator.paginate(
-            Bucket=S3_BUCKET,
-            Prefix=f"runs/{video_id}/",
-        ):
-            for obj in page.get("Contents", []):
-                if obj["Key"].endswith("spk_turns.json"):
-                    call_count += 1
+        if is_processed:
+            for page in paginator.paginate(
+                Bucket=S3_BUCKET,
+                Prefix=f"runs/{video_id}/",
+            ):
+                for obj in page.get("Contents", []):
+                    if obj["Key"].endswith("spk_turns.json"):
+                        call_count += 1
 
         videos.append({
             "video_id": video_id,
             "call_count": call_count,
+            "is_processed": is_processed,
         })
 
     return videos
