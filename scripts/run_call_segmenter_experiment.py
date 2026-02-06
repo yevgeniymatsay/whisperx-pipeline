@@ -90,6 +90,11 @@ def append_experiment_log(
 ) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    try:
+        split_doc = json.loads(split_meta.read_text())
+        eval_n = len(split_doc.get("eval_video_ids", []) or [])
+    except Exception:
+        eval_n = None
 
     lines: List[str] = []
     lines.append(f"\n---\n\n## {ts}: {exp_name}\n")
@@ -133,7 +138,10 @@ def append_experiment_log(
 
     if eval_result is not None:
         lines.append("")
-        lines.append("Holdout eval (6 videos) using best constrained params:")
+        if eval_n is not None:
+            lines.append(f"Holdout eval ({eval_n} videos) using best constrained params:")
+        else:
+            lines.append("Holdout eval using best constrained params:")
         lines.append(
             f"- TimeF1={eval_result.f1:.4f}, SegF1={eval_result.seg_f1:.4f}, SegRatio={eval_result.seg_ratio:.2f}, "
             f"Pred={eval_result.total_pred}, Truth={eval_result.total_truth}"
