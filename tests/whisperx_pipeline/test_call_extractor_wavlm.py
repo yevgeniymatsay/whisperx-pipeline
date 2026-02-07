@@ -1,0 +1,70 @@
+from __future__ import annotations
+
+import numpy as np
+
+from pipeline.call_extractor_wavlm.decode import DecodeConfig, probabilities_to_segments
+from pipeline.call_extractor_wavlm.labels import TargetConfig, make_targets_for_frames
+from pipeline.call_extractor_wavlm.metrics import compute_gate_metrics
+from pipeline.call_extractor_wavlm.types import CallBoundary
+
+
+def test_targets_allow_zero_gap_boundary_events() -> None:
+    boundaries = [
+        CallBoundary(start_s=10.0, end_s=20.0),
+        CallBoundary(start_s=20.0, end_s=30.0),
+    ]
+    t = np.arange(19.7, 20.3, 0.02, dtype=np.float32)
+    in_call, start, end = make_targets_for_frames(t, boundaries=boundaries, cfg=TargetConfig(0.20, 0.20))
+
+    assert in_call.max() == 1.0
+    assert start.max() == 1.0
+    assert end.max() == 1.0
+
+
+def test_decoder_drops_multiple_starts_before_end() -> None:
+    times = np.arange(0.0, 10.0, 1.0, dtype=np.float32)
+    in_call = np.ones_like(times, dtype=np.float32)
+    start = np.zeros_like(times, dtype=np.float32)
+    end = np.zeros_like(times, dtype=np.float32)
+
+    start[1] = 0.95
+    start[3] = 0.90
+    end[8] = 0.95
+
+    cfg = DecodeConfig(start_peak_threshold=0.8, end_peak_threshold=0.8, in_call_mean_min=0.5, min_duration_s=1.0)
+    segs = probabilities_to_segments(times_s=times, in_call_p=in_call, start_p=start, end_p=end, cfg=cfg)
+    assert segs == []
+
+
+def test_decoder_allows_zero_gap_adjacent_calls() -> None:
+    times = np.arange(0.0, 12.0, 1.0, dtype=np.float32)
+    in_call = np.ones_like(times, dtype=np.float32)
+    start = np.zeros_like(times, dtype=np.float32)
+    end = np.zeros_like(times, dtype=np.float32)
+
+    start[0] = 0.95
+    end[5] = 0.95
+    start[5] = 0.95
+    end[10] = 0.95
+
+    cfg = DecodeConfig(start_peak_threshold=0.8, end_peak_threshold=0.8, in_call_mean_min=0.5, min_duration_s=1.0)
+    segs = probabilities_to_segments(times_s=times, in_call_p=in_call, start_p=start, end_p=end, cfg=cfg)
+    assert len(segs) == 2
+    assert segs[0]["start_s"] == 0.0
+    assert segs[0]["end_s"] == 5.0
+    assert segs[1]["start_s"] == 5.0
+    assert segs[1]["end_s"] == 10.0
+
+
+def test_metrics_merge_and_oversplit_detection() -> None:
+    gt = [CallBoundary(0.0, 5.0), CallBoundary(5.0, 10.0)]
+    pred_merge = [CallBoundary(0.0, 10.0)]
+    m1 = compute_gate_metrics(gt=gt, pred=pred_merge)
+    assert m1.merges == 1
+    assert m1.oversplits == 0
+
+    pred_oversplit = [CallBoundary(0.0, 3.0), CallBoundary(3.0, 5.0)]
+    m2 = compute_gate_metrics(gt=[CallBoundary(0.0, 5.0)], pred=pred_oversplit)
+    assert m2.merges == 0
+    assert m2.oversplits == 1
+

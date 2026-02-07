@@ -1,0 +1,7 @@
+{
+  "local_artifacts_dir": "artifacts/call_extractor/wavlm_large_v1",
+  "local_cache_dir": ".cache/call_extractor_wavlm",
+  "s3_output_prefix": "call_extractor/wavlm_large_v1",
+  "version": "output_wavlm_large_v1"
+}
+
