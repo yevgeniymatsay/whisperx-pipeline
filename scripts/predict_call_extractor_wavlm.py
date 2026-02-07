@@ -46,7 +46,11 @@ def _load_model(model_dir: Path, *, device: str) -> tuple[Any, torch.nn.Module]:
     model_cfg = WavLMFrameClassifierConfig(base_model_name=str(model_dir), freeze_feature_encoder=False)
     model = WavLMFrameClassifier(model_cfg)
     state = torch.load(model_dir / "frame_heads.pt", map_location="cpu")
-    model.load_state_dict(state, strict=True)
+    if isinstance(state, dict) and set(state.keys()) <= {"weight", "bias"}:
+        model.classifier.load_state_dict(state, strict=True)
+    else:
+        # Backwards-compatible with older checkpoints that saved the full model state_dict.
+        model.load_state_dict(state, strict=True)
     model.eval()
     model.to(device)
     return feature_extractor, model

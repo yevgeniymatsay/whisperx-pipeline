@@ -397,7 +397,7 @@ def main() -> int:
     best_dir.mkdir(parents=True, exist_ok=True)
     model.wavlm.save_pretrained(best_dir)
     feature_extractor.save_pretrained(best_dir)
-    torch.save(model.state_dict(), best_dir / "frame_heads.pt")
+    torch.save(model.classifier.state_dict(), best_dir / "frame_heads.pt")
 
     s3_prefix = str(out_cfg.get("s3_output_prefix", "call_extractor/wavlm_large_v1/")).rstrip("/")
     model_prefix = f"{s3_prefix}/models/{run_id}"
