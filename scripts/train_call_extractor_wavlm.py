@@ -378,6 +378,7 @@ def main() -> int:
         save_total_limit=int(cfg.get("save_total_limit", 3)),
         fp16=bool(cfg.get("fp16", True)),
         dataloader_num_workers=int(cfg.get("dataloader_num_workers", 2)),
+        remove_unused_columns=False,
         report_to=[],
         seed=int(seed),
     )
