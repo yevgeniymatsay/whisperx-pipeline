@@ -15,7 +15,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from transformers import (
-    AutoProcessor,
+    AutoFeatureExtractor,
     TrainingArguments,
     Trainer,
 )
@@ -101,12 +101,12 @@ class Collator:
     def __init__(
         self,
         *,
-        processor,
+        feature_extractor,
         sr_hz: int,
         target_cfg: TargetConfig,
         model_config,
     ):
-        self.processor = processor
+        self.feature_extractor = feature_extractor
         self.sr_hz = int(sr_hz)
         self.target_cfg = target_cfg
         self.model_config = model_config
@@ -115,7 +115,7 @@ class Collator:
 
     def __call__(self, batch: list[dict]) -> dict:
         audios = [b["audio"] for b in batch]
-        inputs = self.processor(
+        inputs = self.feature_extractor(
             audios,
             sampling_rate=int(self.sr_hz),
             return_tensors="pt",
@@ -337,7 +337,7 @@ def main() -> int:
         )
     logger.info(f"Eval examples: {len(eval_examples)} from {len(eval_video_ids)} videos")
 
-    processor = AutoProcessor.from_pretrained(str(cfg.get("base_model_name", "microsoft/wavlm-large")))
+    feature_extractor = AutoFeatureExtractor.from_pretrained(str(cfg.get("base_model_name", "microsoft/wavlm-large")))
 
     model_cfg = WavLMFrameClassifierConfig(
         base_model_name=str(cfg.get("base_model_name", "microsoft/wavlm-large")),
@@ -354,7 +354,7 @@ def main() -> int:
         end_tolerance_s=float(cfg.get("end_tolerance_s", 0.20)),
     )
     collator = Collator(
-        processor=processor,
+        feature_extractor=feature_extractor,
         sr_hz=sr_hz,
         target_cfg=target_cfg,
         model_config=model.wavlm.config,
@@ -388,7 +388,6 @@ def main() -> int:
         data_collator=collator,
         train_dataset=train_ds,
         eval_dataset=eval_ds,
-        tokenizer=processor,
     )
 
     trainer.train()
@@ -396,7 +395,7 @@ def main() -> int:
     best_dir = local_artifacts_dir / "best_model"
     best_dir.mkdir(parents=True, exist_ok=True)
     model.wavlm.save_pretrained(best_dir)
-    processor.save_pretrained(best_dir)
+    feature_extractor.save_pretrained(best_dir)
     torch.save(model.state_dict(), best_dir / "frame_heads.pt")
 
     s3_prefix = str(out_cfg.get("s3_output_prefix", "call_extractor/wavlm_large_v1/")).rstrip("/")
@@ -426,4 +425,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

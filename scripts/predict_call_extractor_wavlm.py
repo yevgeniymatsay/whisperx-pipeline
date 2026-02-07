@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import torch
-from transformers import AutoProcessor
+from transformers import AutoFeatureExtractor
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -42,14 +42,14 @@ def _load_decode_cfg(path: Path) -> DecodeConfig:
 
 
 def _load_model(model_dir: Path, *, device: str) -> tuple[Any, torch.nn.Module]:
-    processor = AutoProcessor.from_pretrained(str(model_dir))
+    feature_extractor = AutoFeatureExtractor.from_pretrained(str(model_dir))
     model_cfg = WavLMFrameClassifierConfig(base_model_name=str(model_dir), freeze_feature_encoder=False)
     model = WavLMFrameClassifier(model_cfg)
     state = torch.load(model_dir / "frame_heads.pt", map_location="cpu")
     model.load_state_dict(state, strict=True)
     model.eval()
     model.to(device)
-    return processor, model
+    return feature_extractor, model
 
 
 @torch.inference_mode()
@@ -58,7 +58,7 @@ def _predict_video(
     video_id: str,
     audio_path: Path,
     model,
-    processor,
+    feature_extractor,
     sr_hz: int,
     chunk_cfg: ChunkingConfig,
     device: str,
@@ -80,7 +80,7 @@ def _predict_video(
             duration_s=float(spec.chunk_total_s),
             sr_hz=int(sr_hz),
         )
-        inputs = processor(audio, sampling_rate=int(sr_hz), return_tensors="pt", padding=True)
+        inputs = feature_extractor(audio, sampling_rate=int(sr_hz), return_tensors="pt", padding=True)
         input_values = inputs["input_values"].to(device)
         attention_mask = inputs.get("attention_mask")
         if attention_mask is not None:
@@ -161,7 +161,7 @@ def main() -> int:
     audio_cache_dir = cache_dir / "audio"
     audio_cache_dir.mkdir(parents=True, exist_ok=True)
 
-    processor, model = _load_model(args.model_dir, device=args.device)
+    feature_extractor, model = _load_model(args.model_dir, device=args.device)
     chunk_cfg = ChunkingConfig(
         chunk_total_s=float(args.chunk_total_s),
         core_s=float(args.core_s),
@@ -184,7 +184,7 @@ def main() -> int:
             video_id=str(vid),
             audio_path=audio_path,
             model=model,
-            processor=processor,
+            feature_extractor=feature_extractor,
             sr_hz=int(args.sr_hz),
             chunk_cfg=chunk_cfg,
             device=str(args.device),
@@ -224,4 +224,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

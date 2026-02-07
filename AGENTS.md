@@ -25,7 +25,7 @@ Extract “real call” conversation segments from long MP3s **without ever merg
 
 ### HF / Transformers requirements (follow `WavLM.md`)
 - Backbone: `transformers.WavLMModel`
-- Feature extraction: `transformers.AutoProcessor` (or `Wav2Vec2Processor`), operating on raw float waveform arrays.
+- Feature extraction: `transformers.AutoFeatureExtractor` (or `Wav2Vec2FeatureExtractor`), operating on raw float waveform arrays.
 - Do **not** use tokenizers for this task.
 - Training harness (v1): `transformers.Trainer` + `TrainingArguments` (Accelerate installed for distributed setup if needed).
 
@@ -50,4 +50,3 @@ Preferred: GitHub PAT stored in AWS Secrets Manager (region `us-east-1`) as secr
   - decoder drop-on-ambiguity behavior
   - merge/oversplit metrics on toy segments
 - Run `pytest` locally before pushing changes when feasible.
-
