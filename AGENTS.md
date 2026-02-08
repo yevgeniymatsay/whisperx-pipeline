@@ -1,5 +1,15 @@
 ## WavLM-Large audio-only call extractor (v1)
 
+### Agent operating procedure (required)
+This repo expects extremely high traceability and conservatism. For any code/config/docs change:
+- **History-first (no edits yet):** identify the exact files/symbols you will touch; review recent related commits (`git log -n 20 -- <paths>`) and diffs; summarize any recent failures in the same area.
+- **Plan gate (no edits yet):** write a step-by-step plan with goal + success criteria (explicit metrics/gates), risks/failure modes (especially merge/oversplit risk), exact files to change, and exact checks/tests you will run.
+- **Research gate (no edits yet):** verify uncertain/unstable assumptions via primary sources (Context7 and/or official docs + web when needed). If verification is inconclusive, choose the conservative path: **drop ambiguous** / output nothing rather than risk merges/oversplits.
+- **Implement one atomic change:** make only the smallest cohesive change that can be validated end-to-end.
+- **Verify locally (before commit):** run the narrowest relevant checks first (usually a targeted `pytest` subset) and record them in the commit message.
+- **Commit + push immediately:** every atomic change = 1 commit pushed to `main`. If push/auth is blocked, stop and resolve it before making further changes.
+- **Retrospective:** record what worked/failed and the next hypothesis in the commit message (template below).
+
 ### Objective (non-negotiable)
 Extract “real call” conversation segments from long MP3s **without ever merging calls** and **without over-splitting calls** for any **kept** outputs. If separation is uncertain, **drop ambiguous** (output nothing) rather than output wrong segments.
 
@@ -31,14 +41,34 @@ Extract “real call” conversation segments from long MP3s **without ever merg
 - Training harness (v1): `transformers.Trainer` + `TrainingArguments` (Accelerate installed for distributed setup if needed).
 
 ### “Never assume” rule
-If a training cycle does not improve gates, stop and research (Context7 + web search) before making the next change. Do not keep optimizing an approach that is structurally unable to satisfy the gates.
+If a change (training, inference, decoding, metrics, data I/O, etc.) does not improve gates or contradicts prior results, stop and research before making the next change:
+- Review git history for the relevant code (`git show`, `git log`, `git blame`) and summarize what prior commits attempted.
+- Verify the key assumption(s) via primary sources (Context7 + official docs + web search when needed).
+- Write an updated plan/hypothesis, then implement the next **atomic** change.
+Do not keep optimizing an approach that is structurally unable to satisfy the gates.
 
 ### Versioning discipline (main branch only)
 - Work only on `main`.
+- **No uncommitted work:** keep the working tree clean between atomic changes.
+- **Atomic commits only:** each commit must be a complete, reviewable unit (code + tests/docs needed for that unit).
+- **Push every commit immediately** to `main` for full traceability.
+- **Do not push knowingly broken commits:** run the relevant local checks first (or document why they are `n/a` in `Checks:`).
 - Before any EC2 run: commit+push code/config to `main`.
 - After each EC2 run: append results to `docs/CALL_EXTRACTOR_WAVLM_RUNS.md`, commit+push to `main`.
 - **Never commit model weights**; upload weights/artifacts to S3 only.
 - Run ID format: `run_{YYYYMMDD_HHMMSS}_{gitsha}`
+
+### Commit message template (required)
+Use:
+- `<type>(scope): <summary>`
+- `Problem: ...`
+- `Hypothesis: ...`
+- `Approach: ...`
+- `Checks: ...` (exact commands run, or `n/a`)
+- `Outcome: ...` (pass/fail + key numbers if applicable)
+- `Next: ...` (the next smallest experiment/change if outcome is negative)
+
+Types: `fix`, `refactor`, `test`, `docs`, `chore`.
 
 ### EC2 git push auth (required)
 Preferred: GitHub PAT stored in AWS Secrets Manager (region `us-east-1`) as secret name `github-token`.
@@ -50,4 +80,4 @@ Preferred: GitHub PAT stored in AWS Secrets Manager (region `us-east-1`) as secr
   - label alignment (including 0-gap adjacent calls)
   - decoder drop-on-ambiguity behavior
   - merge/oversplit metrics on toy segments
-- Run `pytest` locally before pushing changes when feasible.
+- Run targeted `pytest` locally before each commit+push (or explicitly document why not in `Checks:`).
