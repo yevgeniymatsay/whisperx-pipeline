@@ -28,11 +28,20 @@ def main() -> int:
     args = parser.parse_args()
 
     ckpt_bin = args.checkpoint_dir / "pytorch_model.bin"
-    if not ckpt_bin.exists():
-        raise FileNotFoundError(f"Missing {ckpt_bin}")
+    ckpt_safe = args.checkpoint_dir / "model.safetensors"
+    if not ckpt_safe.exists() and not ckpt_bin.exists():
+        raise FileNotFoundError(f"Missing checkpoint weights (expected {ckpt_safe} or {ckpt_bin})")
 
-    logger.info(f"Load checkpoint: {ckpt_bin}")
-    state = torch.load(ckpt_bin, map_location="cpu")
+    if ckpt_safe.exists():
+        logger.info(f"Load checkpoint (safetensors): {ckpt_safe}")
+        try:
+            from safetensors.torch import load_file
+        except Exception as e:  # pragma: no cover
+            raise RuntimeError("safetensors is required to load model.safetensors: pip install safetensors") from e
+        state = load_file(str(ckpt_safe))
+    else:
+        logger.info(f"Load checkpoint: {ckpt_bin}")
+        state = torch.load(ckpt_bin, map_location="cpu")
 
     feature_extractor = AutoFeatureExtractor.from_pretrained(str(args.base_model_name))
     model_cfg = WavLMFrameClassifierConfig(base_model_name=str(args.base_model_name), freeze_feature_encoder=False)
@@ -50,4 +59,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
