@@ -11,13 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pipeline.config import AWS_REGION, S3_BUCKET
-from pipeline.call_extractor_wavlm.io import (
-    build_audio_index,
-    s3_download_if_missing,
-    s3_read_json,
-    s3_upload_file,
-    write_flac_segment,
-)
+from pipeline.call_extractor_wavlm.audio_cache import ensure_flac_cached, write_flac_segment_from_cached_flac
+from pipeline.call_extractor_wavlm.io import build_audio_index, s3_download_if_missing, s3_upload_file
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -32,10 +27,22 @@ def main() -> int:
     parser.add_argument("--split-config", type=Path, default=Path("configs/call_extractor/split_v1.config.json"))
     parser.add_argument("--output-config", type=Path, default=Path("configs/call_extractor/output_wavlm_large_v1.config.json"))
     parser.add_argument(
+        "--s3-prefix",
+        type=str,
+        default=None,
+        help="Override S3 prefix for downloading segments and uploading clips (default: output-config's s3_output_prefix)",
+    )
+    parser.add_argument(
         "--segments-dir",
         type=Path,
         default=None,
         help="Local directory containing {video_id}.json (default: <local_artifacts_dir>/predictions)",
+    )
+    parser.add_argument(
+        "--video-ids-file",
+        type=Path,
+        default=None,
+        help="Optional newline-delimited video_id list to process (overrides --subset/split-config lists)",
     )
     parser.add_argument(
         "--subset",
@@ -50,24 +57,28 @@ def main() -> int:
 
     split_cfg = _load_json(args.split_config)
     out_cfg = _load_json(args.output_config)
-    s3_prefix = str(out_cfg.get("s3_output_prefix", "call_extractor/wavlm_large_v1/")).rstrip("/")
+    s3_prefix = str(args.s3_prefix or out_cfg.get("s3_output_prefix", "call_extractor/wavlm_large_v1/")).rstrip("/")
 
     cache_dir = Path(out_cfg.get("local_cache_dir", ".cache/call_extractor_wavlm"))
     audio_cache_dir = cache_dir / "audio"
+    flac_cache_dir = cache_dir / "audio_flac"
     audio_cache_dir.mkdir(parents=True, exist_ok=True)
+    flac_cache_dir.mkdir(parents=True, exist_ok=True)
 
     segments_dir = args.segments_dir
     if segments_dir is None:
         segments_dir = Path(out_cfg.get("local_artifacts_dir", "artifacts/call_extractor/wavlm_large_v1")) / "predictions"
     segments_dir.mkdir(parents=True, exist_ok=True)
 
-    video_ids: list[str] = []
-    if args.subset == "eval":
-        video_ids = list(split_cfg["eval_video_ids"])
-    elif args.subset == "train":
-        video_ids = list(split_cfg["train_video_ids"])
+    if args.video_ids_file:
+        video_ids = [ln.strip() for ln in args.video_ids_file.read_text().splitlines() if ln.strip() != ""]
     else:
-        video_ids = list(split_cfg["eval_video_ids"]) + list(split_cfg["train_video_ids"])
+        if args.subset == "eval":
+            video_ids = list(split_cfg["eval_video_ids"])
+        elif args.subset == "train":
+            video_ids = list(split_cfg["train_video_ids"])
+        else:
+            video_ids = list(split_cfg["eval_video_ids"]) + list(split_cfg["train_video_ids"])
 
     audio_index = build_audio_index(S3_BUCKET, list(split_cfg["audio_prefixes"]), region=AWS_REGION)
 
@@ -83,6 +94,9 @@ def main() -> int:
 
             audio_path = audio_cache_dir / f"{vid}.mp3"
             s3_download_if_missing(S3_BUCKET, audio_key, audio_path, region=AWS_REGION)
+
+            flac_path = flac_cache_dir / f"{vid}.flac"
+            ensure_flac_cached(mp3_path=audio_path, flac_path=flac_path, sr_hz=16000)
 
             seg_path = segments_dir / f"{vid}.json"
             if not seg_path.exists():
@@ -100,7 +114,13 @@ def main() -> int:
 
                 local_clip_dir = Path(out_cfg.get("local_artifacts_dir", "artifacts/call_extractor/wavlm_large_v1")) / "clips" / vid
                 local_clip_path = local_clip_dir / name
-                write_flac_segment(audio_path, start_s=start_s, end_s=end_s, output_path=local_clip_path, sr_hz=16000)
+                write_flac_segment_from_cached_flac(
+                    flac_path,
+                    start_s=float(start_s),
+                    end_s=float(end_s),
+                    output_path=local_clip_path,
+                    sr_hz=16000,
+                )
 
                 clip_key = f"{s3_prefix}/clips/{vid}/{name}"
                 if args.upload:
@@ -124,4 +144,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -81,3 +81,26 @@ def read_flac_segment_float32(
         raise ValueError(f"Decoded 0 samples from {flac_path} @ start={start_s} dur={duration_s}")
     return audio
 
+
+def write_flac_segment_from_cached_flac(
+    flac_path: Path,
+    *,
+    start_s: float,
+    end_s: float,
+    output_path: Path,
+    sr_hz: int = 16000,
+) -> None:
+    """Write a FLAC clip using sample-accurate slicing from the cached FLAC."""
+    if end_s <= start_s:
+        raise ValueError(f"end_s must be > start_s (got start_s={start_s}, end_s={end_s})")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    duration_s = float(end_s - start_s)
+    audio = read_flac_segment_float32(flac_path, start_s=float(start_s), duration_s=float(duration_s), sr_hz=int(sr_hz))
+
+    try:
+        import soundfile as sf
+    except Exception as e:  # pragma: no cover
+        raise RuntimeError("soundfile is required for FLAC writing: pip install soundfile") from e
+
+    sf.write(str(output_path), audio, int(sr_hz), format="FLAC", subtype="PCM_16")
