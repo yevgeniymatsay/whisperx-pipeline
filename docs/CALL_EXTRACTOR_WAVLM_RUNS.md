@@ -47,20 +47,20 @@ Append one block per training cycle. Keep this file short and factual.
 ### run_20260208_005759_fd0ddb6
 - Date (UTC): 2026-02-08
 - Git SHA: fd0ddb6
-- Base model: 
-- Train config: 
-- Decode config: 
-- Eval split:  (10 videos, 79 calls)
+- Base model: `microsoft/wavlm-large`
+- Train config: `configs/call_extractor/train_wavlm_large_v1.config.json`
+- Decode config: `configs/call_extractor/decode_wavlm_large_v1.config.json`
+- Eval split: `configs/call_extractor/split_v1.config.json` (10 videos, 79 calls)
 - Eval gates:
   - merges: 0
   - oversplits: 0
   - keep_rate: 0.000 (0/79 calls kept)
   - false_positives (no-call vids): 0 segments
 - Artifacts (S3):
-  - model: 
-  - segments:  (all empty in this run)
+  - model: `call_extractor/wavlm_large_v1/models/run_20260208_005759_fd0ddb6/`
+  - segments: `call_extractor/wavlm_large_v1/segments/{video_id}.json` (all empty in this run)
   - clips: none
 - Notes:
   - Training completed and uploaded; inference produced 0 segments on eval with current decoder.
   - Decode sweep (strict gates) picked start_thr=0.6, end_thr=0.6, in_call_mean_min=0.5, but keep_rate remained 0.
-  - Next: inspect prob peak distributions () and adjust decode strategy or training objective before Cycle #2.
+  - Next: inspect prob peak distributions (`call_extractor/wavlm_large_v1/probs/{video_id}.npz`) and adjust decode strategy or training objective before Cycle #2.
