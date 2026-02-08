@@ -92,3 +92,25 @@ Append one block per training cycle. Keep this file short and factual.
   - Exported `checkpoint-209` → `export_checkpoint-209/` and evaluated that snapshot.
   - Boundary heads show real signal (start/end AP ~0.06/0.12 at tolerance 0.4s on eval), enabling non-zero keep under strict gates.
   - `checkpoint-418` was more "peaky" and did not improve strict-gates keep; viterbi sweep found no config satisfying strict gates on eval.
+
+### run_20260208_081007_8ab6a30
+- Date (UTC): 2026-02-08
+- Git SHA: 8ab6a30 (weights) / d7de478 (eval scripts)
+- Base model: `microsoft/wavlm-large`
+- Train config: `configs/call_extractor/train_wavlm_large_v3.config.json` (triangle start/end targets; boundary_k=10; tol=0.4s)
+- Decode config: best strict-gates peaks sweep on eval (v2)
+  - start_thr=0.60, end_thr=0.70, in_call_mean_min=0.62
+  - internal_peak_drop_threshold=0.90, nms_min_sep_s=0.35
+- Eval split: `configs/call_extractor/split_v1.config.json` (10 videos, 79 calls)
+- Eval gates (strict: merges=0, oversplits=0, FP=0):
+  - merges: 0
+  - oversplits: 0
+  - keep_rate: 0.177 (14/79 calls kept)
+  - false_positives (including call videos): 0 segments
+- Artifacts (S3):
+  - model: `call_extractor/wavlm_large_v1/models/run_20260208_081007_8ab6a30/`
+  - eval (probs/segments/reports): `call_extractor/wavlm_large_v1/models/run_20260208_081007_8ab6a30/eval_20260208_092231/`
+  - clips: none
+- Notes:
+  - Frame metrics (eval; tolerance=0.4s): start AP≈0.069, end AP≈0.119; in_call AP≈0.847 (pos_frac≈0.75).
+  - Peaks decoding is currently the only mode used for strict-gates selection; viterbi remains too risky until in_call separation improves.
