@@ -32,6 +32,34 @@ def parse_video_labels(data: Dict[str, Any]) -> VideoLabels:
 class TargetConfig:
     start_tolerance_s: float = 0.20
     end_tolerance_s: float = 0.20
+    boundary_target_shape: str = "binary"  # "binary" | "triangle"
+
+
+def _event_targets(
+    t: np.ndarray,
+    *,
+    event_times_s: np.ndarray,
+    tolerance_s: float,
+    shape: str,
+) -> np.ndarray:
+    if event_times_s.size == 0:
+        return np.zeros((t.shape[0],), dtype=np.float32)
+
+    tol = float(tolerance_s)
+    if tol <= 0:
+        raise ValueError(f"tolerance_s must be > 0 (got {tolerance_s})")
+
+    shape_n = str(shape).strip().lower()
+    if shape_n == "binary":
+        return np.any(np.abs(t[:, None] - event_times_s[None, :]) <= tol, axis=1).astype(np.float32)
+    if shape_n == "triangle":
+        # Soft peak target in [0, 1], with a maximum of 1.0 at the boundary time and
+        # linearly decaying to 0.0 at |dt| >= tolerance_s.
+        d = np.min(np.abs(t[:, None] - event_times_s[None, :]), axis=1)
+        y = 1.0 - (d / tol)
+        return np.clip(y, 0.0, 1.0).astype(np.float32)
+
+    raise ValueError(f"Unknown boundary_target_shape: {shape!r}")
 
 
 def make_targets_for_frames(
@@ -52,8 +80,18 @@ def make_targets_for_frames(
     starts = np.array([b.start_s for b in boundaries], dtype=np.float32)
     ends = np.array([b.end_s for b in boundaries], dtype=np.float32)
 
-    start[:] = np.any(np.abs(t[:, None] - starts[None, :]) <= float(cfg.start_tolerance_s), axis=1).astype(np.float32)
-    end[:] = np.any(np.abs(t[:, None] - ends[None, :]) <= float(cfg.end_tolerance_s), axis=1).astype(np.float32)
+    start[:] = _event_targets(
+        t,
+        event_times_s=starts,
+        tolerance_s=float(cfg.start_tolerance_s),
+        shape=str(cfg.boundary_target_shape),
+    )
+    end[:] = _event_targets(
+        t,
+        event_times_s=ends,
+        tolerance_s=float(cfg.end_tolerance_s),
+        shape=str(cfg.boundary_target_shape),
+    )
 
     for b in boundaries:
         in_call[(t >= float(b.start_s)) & (t <= float(b.end_s))] = 1.0
@@ -68,4 +106,3 @@ def make_core_mask(
     core_end_abs_s: float,
 ) -> np.ndarray:
     return (frame_times_abs_s >= float(core_start_abs_s)) & (frame_times_abs_s < float(core_end_abs_s))
-

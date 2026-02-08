@@ -171,6 +171,7 @@ def main() -> int:
     target_cfg = TargetConfig(
         start_tolerance_s=float(cfg.get("start_tolerance_s", 0.20)),
         end_tolerance_s=float(cfg.get("end_tolerance_s", 0.20)),
+        boundary_target_shape=str(cfg.get("boundary_target_shape", "binary")),
     )
     collator = Collator(
         feature_extractor=feature_extractor,
