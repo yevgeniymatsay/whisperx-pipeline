@@ -43,3 +43,24 @@ Append one block per training cycle. Keep this file short and factual.
 - Notes:
   - End-to-end EC2 training + predict + eval works; decoder is conservatively dropping everything (expected for smoke).
   - Follow-up: enable git clone/push on EC2 (Secrets Manager `github-token`) so run IDs include git SHA and we can commit run logs from the instance.
+
+### run_20260208_005759_fd0ddb6
+- Date (UTC): 2026-02-08
+- Git SHA: fd0ddb6
+- Base model: 
+- Train config: 
+- Decode config: 
+- Eval split:  (10 videos, 79 calls)
+- Eval gates:
+  - merges: 0
+  - oversplits: 0
+  - keep_rate: 0.000 (0/79 calls kept)
+  - false_positives (no-call vids): 0 segments
+- Artifacts (S3):
+  - model: 
+  - segments:  (all empty in this run)
+  - clips: none
+- Notes:
+  - Training completed and uploaded; inference produced 0 segments on eval with current decoder.
+  - Decode sweep (strict gates) picked start_thr=0.6, end_thr=0.6, in_call_mean_min=0.5, but keep_rate remained 0.
+  - Next: inspect prob peak distributions () and adjust decode strategy or training objective before Cycle #2.
