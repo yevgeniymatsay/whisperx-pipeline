@@ -6,6 +6,7 @@ import itertools
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -72,6 +73,12 @@ def main() -> int:
     parser.add_argument("--viterbi-min-off-s", type=str, default="0.0")
     parser.add_argument("--viterbi-smooth-win-s", type=str, default="0.0,0.1,0.2")
     parser.add_argument("--write-best", type=Path, default=None, help="Write best DecodeConfig JSON here")
+    parser.add_argument(
+        "--log-every",
+        type=int,
+        default=0,
+        help="Log progress every N configs (0 disables; useful for long silent sweeps)",
+    )
     args = parser.parse_args()
 
     split_cfg = _load_json(args.split_config)
@@ -130,6 +137,7 @@ def main() -> int:
 
     if mode == "peaks":
         grid_iter = itertools.product(start_grid, end_grid, in_call_grid)
+        total = len(start_grid) * len(end_grid) * len(in_call_grid)
     else:
         grid_iter = itertools.product(
             vit_off_on_grid,
@@ -141,8 +149,19 @@ def main() -> int:
             vit_smooth_grid,
             in_call_grid,
         )
+        total = (
+            len(vit_off_on_grid)
+            * len(vit_on_off_grid)
+            * len(vit_start_scale_grid)
+            * len(vit_end_scale_grid)
+            * len(vit_min_on_grid)
+            * len(vit_min_off_grid)
+            * len(vit_smooth_grid)
+            * len(in_call_grid)
+        )
 
-    for vals in grid_iter:
+    t0 = time.monotonic()
+    for sweep_i, vals in enumerate(grid_iter, start=1):
         if mode == "peaks":
             s_thr, e_thr, ic_min = vals
             cfg = DecodeConfig(
@@ -200,21 +219,29 @@ def main() -> int:
 
         keep_rate = (matched / gt_calls) if gt_calls > 0 else 0.0
         ok = (merges == 0) and (oversplits == 0) and (fps == 0)
-        if not ok:
-            continue
+        if ok:
+            cand = {
+                "cfg": cfg,
+                "keep_rate": float(keep_rate),
+                "matched": int(matched),
+                "gt_calls": int(gt_calls),
+                "pred_calls": int(pred_calls),
+                "merges": int(merges),
+                "oversplits": int(oversplits),
+                "fps": int(fps),
+            }
+            if best is None or float(cand["keep_rate"]) > float(best["keep_rate"]):
+                best = cand
 
-        cand = {
-            "cfg": cfg,
-            "keep_rate": float(keep_rate),
-            "matched": int(matched),
-            "gt_calls": int(gt_calls),
-            "pred_calls": int(pred_calls),
-            "merges": int(merges),
-            "oversplits": int(oversplits),
-            "fps": int(fps),
-        }
-        if best is None or float(cand["keep_rate"]) > float(best["keep_rate"]):
-            best = cand
+        log_every = int(args.log_every)
+        if log_every > 0 and (sweep_i % log_every == 0 or sweep_i == total):
+            elapsed_s = float(time.monotonic() - t0)
+            best_keep = float(best["keep_rate"]) if best is not None else 0.0
+            logger.info(f"Progress {sweep_i}/{total} configs; best_keep={best_keep:.3f}; elapsed_s={elapsed_s:.1f}")
+
+    # NOTE: The sweep loops are intentionally silent by default (fast), but can be hard to
+    # distinguish from a hang. When --log-every is set, re-run with unbuffered output:
+    #   PYTHONUNBUFFERED=1 python -u scripts/sweep_call_extractor_decode.py ... --log-every 100
 
     if best is None:
         logger.error("No decode config satisfied strict gates on eval set.")

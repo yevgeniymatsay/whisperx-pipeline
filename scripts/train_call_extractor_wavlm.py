@@ -112,6 +112,13 @@ def main() -> int:
     in_call_samples = int(cfg.get("in_call_samples_per_video", 4))
     out_call_samples = int(cfg.get("out_call_samples_per_video", 4))
 
+    # Keep eval sampling small: Trainer eval is for sanity checks / "best checkpoint by eval_loss",
+    # not full-gate selection (which is done by predict+sweep on the fixed eval videos).
+    eval_boundary_k = int(cfg.get("eval_boundary_k_per_boundary", min(2, boundary_k)))
+    eval_boundary_jitter_s = float(cfg.get("eval_boundary_jitter_s", boundary_jitter_s))
+    eval_in_call_samples = int(cfg.get("eval_in_call_samples_per_video", max(1, in_call_samples // 2)))
+    eval_out_call_samples = int(cfg.get("eval_out_call_samples_per_video", max(1, out_call_samples // 2)))
+
     train_examples: list[Example] = []
     for vid in train_video_ids:
         loaded = _load_video(str(vid))
@@ -148,10 +155,10 @@ def main() -> int:
                 duration_s=float(duration_s),
                 chunk_cfg=chunk_cfg,
                 seed=seed + 1,
-                boundary_k=boundary_k,
-                boundary_jitter_s=boundary_jitter_s,
-                in_call_samples=max(1, in_call_samples // 2),
-                out_call_samples=max(1, out_call_samples // 2),
+                boundary_k=eval_boundary_k,
+                boundary_jitter_s=eval_boundary_jitter_s,
+                in_call_samples=eval_in_call_samples,
+                out_call_samples=eval_out_call_samples,
             )
         )
     logger.info(f"Eval examples: {len(eval_examples)} from {len(eval_video_ids)} videos")
@@ -186,6 +193,7 @@ def main() -> int:
     training_args = TrainingArguments(
         output_dir=str(local_artifacts_dir / "trainer"),
         num_train_epochs=float(cfg.get("num_train_epochs", 3)),
+        max_steps=int(cfg.get("max_steps", -1)),
         per_device_train_batch_size=int(cfg.get("per_device_train_batch_size", 2)),
         per_device_eval_batch_size=int(cfg.get("per_device_eval_batch_size", 2)),
         gradient_accumulation_steps=int(cfg.get("gradient_accumulation_steps", 1)),
@@ -193,8 +201,8 @@ def main() -> int:
         weight_decay=float(cfg.get("weight_decay", 0.01)),
         warmup_ratio=float(cfg.get("warmup_ratio", 0.05)),
         logging_steps=int(cfg.get("logging_steps", 25)),
-        eval_strategy="epoch",
-        save_strategy="epoch",
+        eval_strategy=str(cfg.get("eval_strategy", "epoch")),
+        save_strategy=str(cfg.get("save_strategy", "epoch")),
         save_total_limit=int(cfg.get("save_total_limit", 3)),
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
