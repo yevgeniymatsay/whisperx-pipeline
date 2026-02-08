@@ -145,70 +145,116 @@ def probabilities_to_segments(
     start_peaks = _nms_time(start_peaks, times_s=times_s, probs=start_p, min_sep_s=float(cfg.nms_min_sep_s))
     end_peaks = _nms_time(end_peaks, times_s=times_s, probs=end_p, min_sep_s=float(cfg.nms_min_sep_s))
 
-    starts = start_peaks.tolist()
-    ends = end_peaks.tolist()
+    starts = [int(i) for i in start_peaks.tolist()]
+    ends = [int(i) for i in end_peaks.tolist()]
+
+    # Process a combined timeline of (end, start) peaks to allow exact 0-gap boundaries.
+    # Tie-break: process END before START when times are equal.
+    events: list[tuple[float, int, int]] = []
+    for i in starts:
+        events.append((float(times_s[int(i)]), 1, int(i)))  # 1=start
+    for j in ends:
+        events.append((float(times_s[int(j)]), 0, int(j)))  # 0=end
+    events.sort(key=lambda x: (float(x[0]), int(x[1])))
+
+    min_dur = float(cfg.min_duration_s)
+    max_dur = float(cfg.max_duration_s)
+    in_call_min = float(cfg.in_call_mean_min)
+    internal_thr = float(cfg.internal_peak_drop_threshold)
+    join_tol = float(cfg.boundary_join_tolerance_s)
+
+    def slice_bounds(s_t: float, e_t: float) -> tuple[int, int]:
+        l = int(np.searchsorted(times_s, float(s_t), side="left"))
+        r = int(np.searchsorted(times_s, float(e_t), side="right"))
+        return l, r
+
+    def slice_internal(s_t: float, e_t: float) -> tuple[int, int]:
+        # Exclude a small neighborhood around boundaries to avoid dropping 0-gap segments
+        # due to frame discretization (peaks can land slightly inside the interval).
+        l = int(np.searchsorted(times_s, float(s_t) + join_tol, side="right"))
+        r = int(np.searchsorted(times_s, float(e_t) - join_tol, side="left"))
+        return l, r
 
     segments: list[dict] = []
-    i = 0
-    j = 0
-    while i < len(starts):
-        s_idx = int(starts[i])
-        s_t = float(times_s[s_idx])
+    candidate_starts: list[int] = []
+    min_start_t = float("-inf")
+    for _t, kind, idx in events:
+        if kind == 1:
+            candidate_starts.append(int(idx))
+            continue
 
-        while j < len(ends) and float(times_s[int(ends[j])]) <= s_t + float(cfg.min_duration_s):
-            j += 1
-        if j >= len(ends):
-            break
+        if not candidate_starts:
+            continue
 
-        e_idx = int(ends[j])
+        e_idx = int(idx)
         e_t = float(times_s[e_idx])
 
-        if e_t - s_t > float(cfg.max_duration_s):
-            i += 1
+        # Drop candidates that are already too old (cannot match any later end either).
+        candidate_starts = [s for s in candidate_starts if (e_t - float(times_s[int(s)])) <= max_dur]
+        if not candidate_starts:
             continue
 
-        if i + 1 < len(starts) and float(times_s[int(starts[i + 1])]) < e_t:
-            # Multiple starts before an end -> ambiguous. Drop the whole region up to this end.
-            while i < len(starts) and float(times_s[int(starts[i])]) < e_t:
-                i += 1
-            j += 1
+        # Starts very close to this end can belong to the *next* call in a 0-gap boundary;
+        # keep them for the next segment instead of treating them as ambiguous.
+        eligible_starts = [s for s in candidate_starts if float(times_s[int(s)]) < (e_t - join_tol)]
+        future_starts = [s for s in candidate_starts if float(times_s[int(s)]) >= (e_t - join_tol)]
+        if not eligible_starts:
+            candidate_starts = future_starts
             continue
 
-        inside = (times_s >= s_t) & (times_s <= e_t)
-        if inside.sum() == 0:
-            i += 1
+        # If we have multiple *strong* starts before an end, treat as ambiguous and drop.
+        strong_starts = [s for s in eligible_starts if float(start_p[int(s)]) >= internal_thr]
+        if len(strong_starts) > 1:
+            candidate_starts.clear()
             continue
 
-        mean_in_call = float(in_call_p[inside].mean())
-        if mean_in_call < float(cfg.in_call_mean_min):
-            i += 1
-            continue
-
-        # If we see another strong boundary peak inside the segment, drop it.
-        internal = (times_s > s_t) & (times_s < e_t)
-        if internal.any():
-            if float(start_p[internal].max(initial=0.0)) >= float(cfg.internal_peak_drop_threshold):
-                i += 1
+        best: tuple[float, int, float, float] | None = None  # (score, s_idx, s_t_eff, mean_in_call)
+        for s_idx in eligible_starts:
+            s_idx = int(s_idx)
+            s_t_raw = float(times_s[s_idx])
+            s_t = max(float(s_t_raw), float(min_start_t))
+            dur = float(e_t - s_t)
+            if dur < min_dur or dur > max_dur:
                 continue
-            if float(end_p[internal].max(initial=0.0)) >= float(cfg.internal_peak_drop_threshold):
-                i += 1
+
+            l, r = slice_bounds(s_t, e_t)
+            if r <= l:
                 continue
+            mean_in_call = float(in_call_p[l:r].mean())
+            if mean_in_call < in_call_min:
+                continue
+
+            li, ri = slice_internal(s_t, e_t)
+            if ri > li:
+                if float(start_p[li:ri].max(initial=0.0)) >= internal_thr:
+                    continue
+                if float(end_p[li:ri].max(initial=0.0)) >= internal_thr:
+                    continue
+
+            score = float(min(float(start_p[s_idx]), float(end_p[e_idx]), mean_in_call))
+            if best is None or score > best[0]:
+                best = (score, s_idx, s_t, mean_in_call)
+
+        if best is None:
+            candidate_starts = future_starts
+            continue
+
+        score, s_idx, s_t, mean_in_call = best
 
         segments.append(
             {
                 "start_s": float(s_t),
                 "end_s": float(e_t),
-                "score": float(min(float(start_p[s_idx]), float(end_p[e_idx]), mean_in_call)),
+                "score": float(score),
                 "mean_in_call": float(mean_in_call),
-                "start_p": float(start_p[s_idx]),
-                "end_p": float(end_p[e_idx]),
+                "start_p": float(start_p[int(s_idx)]),
+                "end_p": float(end_p[int(e_idx)]),
             }
         )
 
-        # Move to the next start at/after this end (allow exact equality for 0-gap calls).
-        i += 1
-        while i < len(starts) and float(times_s[int(starts[i])]) < e_t - float(cfg.boundary_join_tolerance_s):
-            i += 1
-        j += 1
+        # Reset for the next segment, but carry forward any start peaks that were
+        # within the join tolerance of this end (0-gap boundaries).
+        candidate_starts = [s for s in future_starts if int(s) != int(s_idx)]
+        min_start_t = float(e_t)
 
     return segments

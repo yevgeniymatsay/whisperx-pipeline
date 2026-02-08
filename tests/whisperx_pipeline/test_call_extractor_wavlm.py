@@ -56,6 +56,29 @@ def test_decoder_allows_zero_gap_adjacent_calls() -> None:
     assert segs[1]["end_s"] == 10.0
 
 
+def test_decoder_keeps_single_strong_start_when_multiple_starts_exist() -> None:
+    times = np.arange(0.0, 10.0, 1.0, dtype=np.float32)
+    in_call = np.ones_like(times, dtype=np.float32)
+    start = np.zeros_like(times, dtype=np.float32)
+    end = np.zeros_like(times, dtype=np.float32)
+
+    start[1] = 0.95
+    start[3] = 0.65  # below internal_peak_drop_threshold => treated as weak
+    end[8] = 0.95
+
+    cfg = DecodeConfig(
+        start_peak_threshold=0.6,
+        end_peak_threshold=0.8,
+        in_call_mean_min=0.5,
+        min_duration_s=1.0,
+        internal_peak_drop_threshold=0.9,
+    )
+    segs = probabilities_to_segments(times_s=times, in_call_p=in_call, start_p=start, end_p=end, cfg=cfg)
+    assert len(segs) == 1
+    assert segs[0]["start_s"] == 1.0
+    assert segs[0]["end_s"] == 8.0
+
+
 def test_metrics_merge_and_oversplit_detection() -> None:
     gt = [CallBoundary(0.0, 5.0), CallBoundary(5.0, 10.0)]
     pred_merge = [CallBoundary(0.0, 10.0)]
