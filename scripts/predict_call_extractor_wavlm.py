@@ -149,6 +149,12 @@ def main() -> int:
         default="eval",
         help="Which split videos to process (default: eval)",
     )
+    parser.add_argument(
+        "--video-ids-file",
+        type=Path,
+        default=None,
+        help="Optional newline-delimited video_id list to process (overrides --subset/split-config lists)",
+    )
     parser.add_argument("--sr-hz", type=int, default=16000)
     parser.add_argument("--chunk-total-s", type=float, default=30.0)
     parser.add_argument("--core-s", type=float, default=20.0)
@@ -161,13 +167,15 @@ def main() -> int:
     out_cfg = _load_json(args.output_config)
     decode_cfg = _load_decode_cfg(args.decode_config)
 
-    video_ids: list[str] = []
-    if args.subset == "eval":
-        video_ids = list(split_cfg["eval_video_ids"])
-    elif args.subset == "train":
-        video_ids = list(split_cfg["train_video_ids"])
+    if args.video_ids_file:
+        video_ids = [ln.strip() for ln in args.video_ids_file.read_text().splitlines() if ln.strip() != ""]
     else:
-        video_ids = list(split_cfg["eval_video_ids"]) + list(split_cfg["train_video_ids"])
+        if args.subset == "eval":
+            video_ids = list(split_cfg["eval_video_ids"])
+        elif args.subset == "train":
+            video_ids = list(split_cfg["train_video_ids"])
+        else:
+            video_ids = list(split_cfg["eval_video_ids"]) + list(split_cfg["train_video_ids"])
 
     audio_prefixes = list(split_cfg["audio_prefixes"])
     audio_index = build_audio_index(S3_BUCKET, audio_prefixes, region=AWS_REGION)
