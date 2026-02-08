@@ -69,3 +69,26 @@ Append one block per training cycle. Keep this file short and factual.
     - Viterbi decode (defaults) violated gates badly (merges/oversplits/FPs); do not use Viterbi until boundary heads have real signal.
     - Best strict-gates peaks sweep on the infra probs: keep_rate 0.013 (1/79) with `start_thr=0.11`, `end_thr=0.05`, `in_call_mean_min=0.56` (uploaded as `best_decode_peaks.config.json` + `eval_report_strict_peaks.*` under the infra prefix).
   - Next: fix training signal (especially start/end boundary heads) before spending time on decoder tuning.
+
+### run_20260208_062825_d7d842e (ABORTED; checkpoint eval)
+- Date (UTC): 2026-02-08
+- Git SHA: d7d842e (weights) / 7fd0080 (eval scripts)
+- Base model: `microsoft/wavlm-large`
+- Train config: `configs/call_extractor/train_wavlm_large_v2.config.json` (boundary-heavy)
+- Decode config: best strict-gates peaks sweep on eval
+  - start_thr=0.55, end_thr=0.55, in_call_mean_min=0.60
+- Eval split: `configs/call_extractor/split_v1.config.json` (10 videos, 79 calls)
+- Eval gates (strict: merges=0, oversplits=0, FP=0):
+  - merges: 0
+  - oversplits: 0
+  - keep_rate: 0.089 (7/79 calls kept)
+  - false_positives (including call videos): 0 segments
+- Artifacts (S3):
+  - model: none (training interrupted before `best_model/` export + upload)
+  - probs/segments + reports: `call_extractor/wavlm_large_v1/models/run_20260208_062825_d7d842e/ckpt209_eval_20260208_0715/`
+  - clips: none
+- Notes:
+  - Trainer wrote checkpoints up to `checkpoint-418` (epoch ~2.0) but the run ended early.
+  - Exported `checkpoint-209` → `export_checkpoint-209/` and evaluated that snapshot.
+  - Boundary heads show real signal (start/end AP ~0.06/0.12 at tolerance 0.4s on eval), enabling non-zero keep under strict gates.
+  - `checkpoint-418` was more "peaky" and did not improve strict-gates keep; viterbi sweep found no config satisfying strict gates on eval.
