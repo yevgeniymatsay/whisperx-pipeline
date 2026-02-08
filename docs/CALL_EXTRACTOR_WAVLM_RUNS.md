@@ -63,4 +63,5 @@ Append one block per training cycle. Keep this file short and factual.
 - Notes:
   - Training completed and uploaded; inference produced 0 segments on eval with current decoder.
   - Decode sweep (strict gates) picked start_thr=0.6, end_thr=0.6, in_call_mean_min=0.5, but keep_rate remained 0.
+  - Re-decode after strict peak-picking change (Git SHA `8fcbb05`): start_thr=0.10, end_thr=0.095, in_call_mean_min=0.56 => keep_rate 0.025 (2/79), merges=0, oversplits=0, fp=0.
   - Next: inspect prob peak distributions (`call_extractor/wavlm_large_v1/probs/{video_id}.npz`) and adjust decode strategy or training objective before Cycle #2.
