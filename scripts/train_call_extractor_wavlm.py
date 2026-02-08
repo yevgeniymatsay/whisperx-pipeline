@@ -376,6 +376,9 @@ def main() -> int:
         eval_strategy="epoch",
         save_strategy="epoch",
         save_total_limit=int(cfg.get("save_total_limit", 3)),
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",
+        greater_is_better=False,
         fp16=bool(cfg.get("fp16", True)),
         dataloader_num_workers=int(cfg.get("dataloader_num_workers", 2)),
         remove_unused_columns=False,
@@ -389,6 +392,7 @@ def main() -> int:
         data_collator=collator,
         train_dataset=train_ds,
         eval_dataset=eval_ds,
+        processing_class=feature_extractor,
     )
 
     trainer.train()
