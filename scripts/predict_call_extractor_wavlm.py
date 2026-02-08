@@ -21,6 +21,7 @@ from pipeline.call_extractor_wavlm.chunking import iter_inference_chunk_specs
 from pipeline.call_extractor_wavlm.decode import DecodeConfig, probabilities_to_segments
 from pipeline.call_extractor_wavlm.io import (
     build_audio_index,
+    cache_key_for_s3_prefix,
     ffprobe_duration_s,
     s3_download_if_missing,
     s3_upload_file,
@@ -194,7 +195,10 @@ def main() -> int:
     )
 
     s3_prefix = str(args.s3_prefix or out_cfg.get("s3_output_prefix", "call_extractor/wavlm_large_v1/")).rstrip("/")
-    local_pred_dir = Path(out_cfg.get("local_artifacts_dir", "artifacts/call_extractor/wavlm_large_v1")) / "predictions"
+    cache_key = cache_key_for_s3_prefix(s3_prefix)
+    local_pred_dir = (
+        Path(out_cfg.get("local_artifacts_dir", "artifacts/call_extractor/wavlm_large_v1")) / "predictions" / cache_key
+    )
     local_pred_dir.mkdir(parents=True, exist_ok=True)
 
     for idx, vid in enumerate(video_ids):

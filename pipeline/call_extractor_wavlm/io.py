@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import subprocess
+from hashlib import sha1
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, Optional
@@ -234,3 +235,21 @@ def utc_now_compact() -> str:
     import datetime as _dt
 
     return _dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+
+_CACHE_SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def cache_key_for_s3_prefix(prefix: str) -> str:
+    """Return a short, filesystem-safe key for caching artifacts per S3 prefix.
+
+    This prevents cross-run contamination when multiple runs write `{video_id}.npz/json`
+    under a shared local directory.
+    """
+    p = str(prefix).strip("/")
+    if p == "":
+        return "root"
+    tail = p.split("/")[-1] or "prefix"
+    tail = _CACHE_SAFE_RE.sub("_", tail).strip("_") or "prefix"
+    h = sha1(p.encode("utf-8")).hexdigest()[:10]
+    return f"{tail}_{h}"

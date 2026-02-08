@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pipeline.config import AWS_REGION, S3_BUCKET
-from pipeline.call_extractor_wavlm.io import s3_download_if_missing, s3_read_json
+from pipeline.call_extractor_wavlm.io import cache_key_for_s3_prefix, s3_download_if_missing, s3_read_json
 from pipeline.call_extractor_wavlm.labels import parse_video_labels
 from pipeline.call_extractor_wavlm.metrics import boundaries_from_json_segments, compute_gate_metrics
 
@@ -61,7 +61,12 @@ def main() -> int:
 
     segments_dir = args.segments_dir
     if segments_dir is None:
-        segments_dir = Path(out_cfg.get("local_artifacts_dir", "artifacts/call_extractor/wavlm_large_v1")) / "predictions"
+        cache_key = cache_key_for_s3_prefix(s3_prefix)
+        segments_dir = (
+            Path(out_cfg.get("local_artifacts_dir", "artifacts/call_extractor/wavlm_large_v1"))
+            / "predictions"
+            / cache_key
+        )
     segments_dir.mkdir(parents=True, exist_ok=True)
 
     eval_video_ids = list(split_cfg["eval_video_ids"])

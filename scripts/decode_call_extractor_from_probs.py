@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pipeline.config import AWS_REGION, S3_BUCKET
 from pipeline.call_extractor_wavlm.decode import DecodeConfig, probabilities_to_segments
-from pipeline.call_extractor_wavlm.io import s3_download_if_missing, s3_upload_file
+from pipeline.call_extractor_wavlm.io import cache_key_for_s3_prefix, s3_download_if_missing, s3_upload_file
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -70,7 +70,8 @@ def main() -> int:
     probs_dir = args.probs_dir
     segments_dir = args.segments_dir
     if probs_dir is None or segments_dir is None:
-        base = Path(out_cfg.get("local_artifacts_dir", "artifacts/call_extractor/wavlm_large_v1")) / "predictions"
+        cache_key = cache_key_for_s3_prefix(s3_prefix)
+        base = Path(out_cfg.get("local_artifacts_dir", "artifacts/call_extractor/wavlm_large_v1")) / "predictions" / cache_key
         probs_dir = probs_dir or base
         segments_dir = segments_dir or base
 

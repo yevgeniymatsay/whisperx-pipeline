@@ -14,7 +14,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pipeline.config import AWS_REGION, S3_BUCKET
-from pipeline.call_extractor_wavlm.io import s3_download_if_missing, s3_read_json
+from pipeline.call_extractor_wavlm.io import cache_key_for_s3_prefix, s3_download_if_missing, s3_read_json
 from pipeline.call_extractor_wavlm.labels import TargetConfig, make_targets_for_frames, parse_video_labels
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -98,7 +98,8 @@ def main() -> int:
 
     probs_dir = args.probs_dir
     if probs_dir is None:
-        probs_dir = Path(out_cfg.get("local_artifacts_dir", "artifacts/call_extractor/wavlm_large_v1")) / "predictions"
+        cache_key = cache_key_for_s3_prefix(s3_prefix)
+        probs_dir = Path(out_cfg.get("local_artifacts_dir", "artifacts/call_extractor/wavlm_large_v1")) / "predictions" / cache_key
     probs_dir.mkdir(parents=True, exist_ok=True)
 
     if args.subset == "eval":

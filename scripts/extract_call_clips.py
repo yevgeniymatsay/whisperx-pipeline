@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pipeline.config import AWS_REGION, S3_BUCKET
 from pipeline.call_extractor_wavlm.audio_cache import ensure_flac_cached, write_flac_segment_from_cached_flac
-from pipeline.call_extractor_wavlm.io import build_audio_index, s3_download_if_missing, s3_upload_file
+from pipeline.call_extractor_wavlm.io import cache_key_for_s3_prefix, build_audio_index, s3_download_if_missing, s3_upload_file
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -67,7 +67,12 @@ def main() -> int:
 
     segments_dir = args.segments_dir
     if segments_dir is None:
-        segments_dir = Path(out_cfg.get("local_artifacts_dir", "artifacts/call_extractor/wavlm_large_v1")) / "predictions"
+        cache_key = cache_key_for_s3_prefix(s3_prefix)
+        segments_dir = (
+            Path(out_cfg.get("local_artifacts_dir", "artifacts/call_extractor/wavlm_large_v1"))
+            / "predictions"
+            / cache_key
+        )
     segments_dir.mkdir(parents=True, exist_ok=True)
 
     if args.video_ids_file:
