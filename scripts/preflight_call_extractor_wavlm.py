@@ -23,6 +23,7 @@ from pipeline.call_extractor_wavlm.io import (
     s3_download_if_missing,
     s3_read_json,
 )
+from pipeline.call_extractor_wavlm.chunking import sample_boundary_chunks
 from pipeline.call_extractor_wavlm.labels import TargetConfig, parse_video_labels
 from pipeline.call_extractor_wavlm.model import WavLMFrameClassifier, WavLMFrameClassifierConfig
 from pipeline.call_extractor_wavlm.training import Collator, ChunkDataset, Example, make_examples_for_video, set_seed
@@ -177,6 +178,45 @@ def main() -> int:
     if not examples:
         raise RuntimeError("Failed to generate boundary-centered training examples for preflight")
 
+    # Build one example centered on a start boundary, and one centered on an end boundary, so we can sanity-check
+    # both sparse target heads are non-degenerate inside the core region.
+    rng = np.random.default_rng(int(seed) ^ (hash(video_id) & 0xFFFF_FFFF))
+    start_times = [float(b.start_s) for b in boundaries]
+    end_times = [float(b.end_s) for b in boundaries]
+
+    start_starts = sample_boundary_chunks(
+        boundary_times_s=start_times,
+        duration_s=float(duration_s),
+        cfg=chunk_cfg,
+        k_per_boundary=1,
+        jitter_s=0.0,
+        rng=rng,
+    )
+    end_starts = sample_boundary_chunks(
+        boundary_times_s=end_times,
+        duration_s=float(duration_s),
+        cfg=chunk_cfg,
+        k_per_boundary=1,
+        jitter_s=0.0,
+        rng=rng,
+    )
+
+    def _mk_example(start_s: float) -> Example:
+        core_start = float(start_s) + float(chunk_cfg.margin_s)
+        core_end = core_start + float(chunk_cfg.core_s)
+        return Example(
+            video_id=str(video_id),
+            audio_path=audio_path,
+            boundaries=boundaries,
+            chunk_start_s=float(start_s),
+            chunk_total_s=float(chunk_cfg.chunk_total_s),
+            core_start_abs_s=float(core_start),
+            core_end_abs_s=float(core_end),
+        )
+
+    ex_start = _mk_example(float(start_starts[0])) if start_starts else examples[0]
+    ex_end = _mk_example(float(end_starts[0])) if end_starts else examples[0]
+
     feature_extractor = AutoFeatureExtractor.from_pretrained(str(cfg.get("base_model_name", "microsoft/wavlm-large")))
     model_cfg = WavLMFrameClassifierConfig(
         base_model_name=str(cfg.get("base_model_name", "microsoft/wavlm-large")),
@@ -197,9 +237,11 @@ def main() -> int:
     )
     collator = Collator(feature_extractor=feature_extractor, sr_hz=sr_hz, target_cfg=target_cfg, model_config=model.wavlm.config)
 
-    ds = ChunkDataset([examples[0]], sr_hz=sr_hz)
-    item = ds[0]  # decode once
-    batch = collator([item])
+    ds = ChunkDataset([ex_start, ex_end], sr_hz=sr_hz)
+    item_start = ds[0]  # decode once
+    item_end = ds[1]  # decode once
+
+    batch = collator([item_start])
     batch = {k: (v.to(args.device) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
 
     with torch.no_grad():
@@ -219,20 +261,46 @@ def main() -> int:
     stats0 = _batch_stats(probs=probs0, labels=labels0, label_mask=mask0)
     logger.info(f"one_batch stats: {json.dumps(stats0, sort_keys=True)}")
 
-    # Target density sanity: start/end must appear inside the core region for a boundary-centered chunk.
+    # Target density sanity: ensure *both* sparse heads appear inside the core region for some boundary-centered chunk.
     core = mask0.astype(bool, copy=False)
     start_pos = int((labels0[..., 1][core] >= 0.5).sum())
     end_pos = int((labels0[..., 2][core] >= 0.5).sum())
-    if start_pos == 0 or end_pos == 0:
+    ok_start = start_pos > 0
+    ok_end = end_pos > 0
+
+    if not ok_end:
+        batch_e = collator([item_end])
+        batch_e = {k: (v.to(args.device) if isinstance(v, torch.Tensor) else v) for k, v in batch_e.items()}
+        with torch.no_grad():
+            out_e = model(
+                input_values=batch_e["input_values"],
+                attention_mask=batch_e.get("attention_mask"),
+                labels=batch_e["labels"],
+                label_mask=batch_e["label_mask"],
+            )
+        logits_e = out_e["logits"]
+        loss_e = float(out_e["loss"].detach().float().cpu().item())
+        probs_e = torch.sigmoid(logits_e).detach().float().cpu().numpy()
+        labels_e = batch_e["labels"].detach().float().cpu().numpy()
+        mask_e = batch_e["label_mask"].detach().float().cpu().numpy()
+        stats_e = _batch_stats(probs=probs_e, labels=labels_e, label_mask=mask_e)
+        logger.info(f"end_batch: logits_shape={tuple(logits_e.shape)} loss={loss_e:.6f}")
+        logger.info(f"end_batch stats: {json.dumps(stats_e, sort_keys=True)}")
+
+        core_e = mask_e.astype(bool, copy=False)
+        end_pos = int((labels_e[..., 2][core_e] >= 0.5).sum())
+        ok_end = end_pos > 0
+
+    if not ok_start or not ok_end:
         raise RuntimeError(
-            f"Preflight target density failed (core positives): start={start_pos} end={end_pos}. "
+            f"Preflight target density failed (core positives): start_ok={ok_start} end_ok={ok_end}. "
             "Check timing alignment / tolerance bands / sampling."
         )
 
     # Overfit one batch (HF debugging best practice): ensure loss decreases on the same batch.
     overfit_steps = int(args.overfit_steps)
     if overfit_steps > 0:
-        rep_ds = _RepeatItemDataset(item, n=1)
+        rep_ds = _RepeatItemDataset(item_start, n=1)
         training_args = TrainingArguments(
             output_dir=str(Path(out_cfg.get('local_artifacts_dir', 'artifacts/call_extractor/wavlm_large_v1')) / "preflight_overfit"),
             per_device_train_batch_size=1,
@@ -295,4 +363,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
