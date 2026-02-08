@@ -64,4 +64,8 @@ Append one block per training cycle. Keep this file short and factual.
   - Training completed and uploaded; inference produced 0 segments on eval with current decoder.
   - Decode sweep (strict gates) picked start_thr=0.6, end_thr=0.6, in_call_mean_min=0.5, but keep_rate remained 0.
   - Re-decode after strict peak-picking change (Git SHA `8fcbb05`): start_thr=0.10, end_thr=0.095, in_call_mean_min=0.56 => keep_rate 0.025 (2/79), merges=0, oversplits=0, fp=0.
-  - Next: inspect prob peak distributions (`call_extractor/wavlm_large_v1/probs/{video_id}.npz`) and adjust decode strategy or training objective before Cycle #2.
+  - Infra run (same weights, new code path + run-scoped S3 prefix): `call_extractor/wavlm_large_v1/models/run_20260208_005759_fd0ddb6/infra_20260208_053855_54358d8/`
+    - Frame metrics (eval): `in_call` has modest ranking signal but low dynamic range; `start`/`end` AP ~0.006/~0.005 (mostly noise).
+    - Viterbi decode (defaults) violated gates badly (merges/oversplits/FPs); do not use Viterbi until boundary heads have real signal.
+    - Best strict-gates peaks sweep on the infra probs: keep_rate 0.013 (1/79) with `start_thr=0.11`, `end_thr=0.05`, `in_call_mean_min=0.56` (uploaded as `best_decode_peaks.config.json` + `eval_report_strict_peaks.*` under the infra prefix).
+  - Next: fix training signal (especially start/end boundary heads) before spending time on decoder tuning.
