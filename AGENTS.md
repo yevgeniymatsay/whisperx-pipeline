@@ -58,6 +58,10 @@ Do not keep optimizing an approach that is structurally unable to satisfy the ga
 - **Never commit model weights**; upload weights/artifacts to S3 only.
 - Run ID format: `run_{YYYYMMDD_HHMMSS}_{gitsha}`
 
+### Batch extraction safety defaults
+- `scripts/predict_call_extractor_wavlm.py` uploads **segments JSON** by default; enable probs only for eval/sweeps with `--write-probs --upload-probs` (do **not** upload probs for thousands of videos).
+- `scripts/extract_call_clips.py` deletes local clip files after upload by default; use `--keep-local-clips` only for debugging.
+
 ### Commit message template (required)
 Use:
 - `<type>(scope): <summary>`
