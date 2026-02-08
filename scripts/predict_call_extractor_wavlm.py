@@ -137,6 +137,12 @@ def main() -> int:
     parser.add_argument("--output-config", type=Path, default=Path("configs/call_extractor/output_wavlm_large_v1.config.json"))
     parser.add_argument("--decode-config", type=Path, default=Path("configs/call_extractor/decode_wavlm_large_v1.config.json"))
     parser.add_argument(
+        "--s3-prefix",
+        type=str,
+        default=None,
+        help="Override S3 prefix for uploads (default: output-config's s3_output_prefix)",
+    )
+    parser.add_argument(
         "--subset",
         type=str,
         choices=["eval", "train", "all"],
@@ -179,7 +185,7 @@ def main() -> int:
         margin_s=float(args.margin_s),
     )
 
-    s3_prefix = str(out_cfg.get("s3_output_prefix", "call_extractor/wavlm_large_v1/")).rstrip("/")
+    s3_prefix = str(args.s3_prefix or out_cfg.get("s3_output_prefix", "call_extractor/wavlm_large_v1/")).rstrip("/")
     local_pred_dir = Path(out_cfg.get("local_artifacts_dir", "artifacts/call_extractor/wavlm_large_v1")) / "predictions"
     local_pred_dir.mkdir(parents=True, exist_ok=True)
 

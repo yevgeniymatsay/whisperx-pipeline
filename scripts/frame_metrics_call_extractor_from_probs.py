@@ -65,6 +65,12 @@ def main() -> int:
     parser.add_argument("--split-config", type=Path, default=Path("configs/call_extractor/split_v1.config.json"))
     parser.add_argument("--output-config", type=Path, default=Path("configs/call_extractor/output_wavlm_large_v1.config.json"))
     parser.add_argument(
+        "--s3-prefix",
+        type=str,
+        default=None,
+        help="Override S3 prefix for downloading probs (default: output-config's s3_output_prefix)",
+    )
+    parser.add_argument(
         "--probs-dir",
         type=Path,
         default=None,
@@ -88,7 +94,7 @@ def main() -> int:
 
     split_cfg = _load_json(args.split_config)
     out_cfg = _load_json(args.output_config)
-    s3_prefix = str(out_cfg.get("s3_output_prefix", "call_extractor/wavlm_large_v1/")).rstrip("/")
+    s3_prefix = str(args.s3_prefix or out_cfg.get("s3_output_prefix", "call_extractor/wavlm_large_v1/")).rstrip("/")
 
     probs_dir = args.probs_dir
     if probs_dir is None:
@@ -164,4 +170,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

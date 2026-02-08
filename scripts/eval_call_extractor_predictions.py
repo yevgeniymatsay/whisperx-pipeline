@@ -32,6 +32,12 @@ def main() -> int:
         default=Path("configs/call_extractor/output_wavlm_large_v1.config.json"),
     )
     parser.add_argument(
+        "--s3-prefix",
+        type=str,
+        default=None,
+        help="Override S3 prefix for downloading segments (default: output-config's s3_output_prefix)",
+    )
+    parser.add_argument(
         "--segments-dir",
         type=Path,
         default=None,
@@ -51,7 +57,7 @@ def main() -> int:
 
     split_cfg = _load_json(args.split_config)
     out_cfg = _load_json(args.output_config)
-    s3_prefix = str(out_cfg.get("s3_output_prefix", "call_extractor/wavlm_large_v1/")).rstrip("/")
+    s3_prefix = str(args.s3_prefix or out_cfg.get("s3_output_prefix", "call_extractor/wavlm_large_v1/")).rstrip("/")
 
     segments_dir = args.segments_dir
     if segments_dir is None:
@@ -147,4 +153,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

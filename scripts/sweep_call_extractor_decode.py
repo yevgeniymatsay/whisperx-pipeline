@@ -39,6 +39,12 @@ def main() -> int:
     parser.add_argument("--output-config", type=Path, default=Path("configs/call_extractor/output_wavlm_large_v1.config.json"))
     parser.add_argument("--decode-config", type=Path, default=Path("configs/call_extractor/decode_wavlm_large_v1.config.json"))
     parser.add_argument(
+        "--s3-prefix",
+        type=str,
+        default=None,
+        help="Override S3 prefix for downloading probs (default: output-config's s3_output_prefix)",
+    )
+    parser.add_argument(
         "--probs-dir",
         type=Path,
         default=None,
@@ -72,7 +78,7 @@ def main() -> int:
     out_cfg = _load_json(args.output_config)
     base_decode = DecodeConfig(**_load_json(args.decode_config))
 
-    s3_prefix = str(out_cfg.get("s3_output_prefix", "call_extractor/wavlm_large_v1/")).rstrip("/")
+    s3_prefix = str(args.s3_prefix or out_cfg.get("s3_output_prefix", "call_extractor/wavlm_large_v1/")).rstrip("/")
 
     probs_dir = args.probs_dir
     if probs_dir is None:
