@@ -5,15 +5,12 @@ import argparse
 import json
 import logging
 import os
-import random
 import sys
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Optional, Sequence
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset
 from transformers import (
     AutoFeatureExtractor,
     TrainingArguments,
@@ -24,214 +21,29 @@ from transformers import (
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pipeline.config import AWS_REGION, S3_BUCKET
-from pipeline.call_extractor_wavlm.chunking import (
-    sample_boundary_chunks,
-    sample_in_call_chunks,
-    sample_out_of_call_chunks,
-)
 from pipeline.call_extractor_wavlm.io import (
     build_audio_index,
     ffprobe_duration_s,
-    get_s3,
     git_short_sha,
     s3_download_if_missing,
     s3_read_json,
     s3_upload_directory,
     utc_now_compact,
-    decode_audio_segment_to_float32,
 )
-from pipeline.call_extractor_wavlm.labels import TargetConfig, make_core_mask, make_targets_for_frames, parse_video_labels
+from pipeline.call_extractor_wavlm.labels import TargetConfig, parse_video_labels
 from pipeline.call_extractor_wavlm.model import (
     WavLMFrameClassifier,
     WavLMFrameClassifierConfig,
-    feat_extract_output_length,
-    feat_extract_timing_from_config,
 )
+from pipeline.call_extractor_wavlm.training import Collator, ChunkDataset, Example, make_examples_for_video, set_seed
 from pipeline.call_extractor_wavlm.types import CallBoundary, ChunkingConfig
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def _set_seed(seed: int) -> None:
-    random.seed(int(seed))
-    np.random.seed(int(seed))
-    torch.manual_seed(int(seed))
-    torch.cuda.manual_seed_all(int(seed))
-
-
-@dataclass(frozen=True)
-class Example:
-    video_id: str
-    audio_path: Path
-    boundaries: list[CallBoundary]
-    chunk_start_s: float
-    chunk_total_s: float
-    core_start_abs_s: float
-    core_end_abs_s: float
-
-
-class ChunkDataset(Dataset):
-    def __init__(self, examples: Sequence[Example], *, sr_hz: int):
-        self.examples = list(examples)
-        self.sr_hz = int(sr_hz)
-
-    def __len__(self) -> int:
-        return len(self.examples)
-
-    def __getitem__(self, idx: int) -> dict:
-        ex = self.examples[int(idx)]
-        audio = decode_audio_segment_to_float32(
-            ex.audio_path,
-            start_s=float(ex.chunk_start_s),
-            duration_s=float(ex.chunk_total_s),
-            sr_hz=int(self.sr_hz),
-        )
-        return {
-            "video_id": ex.video_id,
-            "audio": audio,
-            "boundaries": ex.boundaries,
-            "chunk_start_s": float(ex.chunk_start_s),
-            "core_start_abs_s": float(ex.core_start_abs_s),
-            "core_end_abs_s": float(ex.core_end_abs_s),
-        }
-
-
-class Collator:
-    def __init__(
-        self,
-        *,
-        feature_extractor,
-        sr_hz: int,
-        target_cfg: TargetConfig,
-        model_config,
-    ):
-        self.feature_extractor = feature_extractor
-        self.sr_hz = int(sr_hz)
-        self.target_cfg = target_cfg
-        self.model_config = model_config
-
-        self.timing = feat_extract_timing_from_config(config=self.model_config, sr_hz=self.sr_hz)
-
-    def __call__(self, batch: list[dict]) -> dict:
-        audios = [b["audio"] for b in batch]
-        inputs = self.feature_extractor(
-            audios,
-            sampling_rate=int(self.sr_hz),
-            return_tensors="pt",
-            padding=True,
-        )
-
-        attention_mask = inputs.get("attention_mask", None)
-        if attention_mask is not None:
-            input_lengths = attention_mask.sum(dim=-1).to(torch.int64).tolist()
-        else:
-            input_lengths = [int(v.shape[-1]) for v in inputs["input_values"]]
-
-        out_lens = [feat_extract_output_length(input_length_samples=int(L), config=self.model_config) for L in input_lengths]
-        max_out_len = int(max(out_lens)) if out_lens else 0
-
-        labels = torch.zeros((len(batch), max_out_len, 3), dtype=torch.float32)
-        label_mask = torch.zeros((len(batch), max_out_len), dtype=torch.float32)
-
-        stride_s = float(self.timing.stride_s)
-        offset_s = float(self.timing.offset_s)
-
-        for bi, (b, out_len) in enumerate(zip(batch, out_lens)):
-            chunk_start = float(b["chunk_start_s"])
-            frame_times_abs = chunk_start + (np.arange(int(out_len), dtype=np.float32) * float(stride_s) + float(offset_s))
-
-            in_call, start, end = make_targets_for_frames(
-                frame_times_abs,
-                boundaries=b["boundaries"],
-                cfg=self.target_cfg,
-            )
-            core_mask = make_core_mask(
-                frame_times_abs,
-                core_start_abs_s=float(b["core_start_abs_s"]),
-                core_end_abs_s=float(b["core_end_abs_s"]),
-            ).astype(np.float32)
-
-            lab = np.stack([in_call, start, end], axis=-1).astype(np.float32)
-            labels[bi, : int(out_len), :] = torch.from_numpy(lab)
-            label_mask[bi, : int(out_len)] = torch.from_numpy(core_mask)
-
-        return {
-            "input_values": inputs["input_values"],
-            "attention_mask": attention_mask,
-            "labels": labels,
-            "label_mask": label_mask,
-        }
-
-
 def _load_json(path: Path) -> dict:
     return json.loads(path.read_text())
-
-
-def _make_examples_for_video(
-    *,
-    video_id: str,
-    audio_path: Path,
-    boundaries: Sequence[CallBoundary],
-    duration_s: float,
-    chunk_cfg: ChunkingConfig,
-    seed: int,
-    boundary_k: int,
-    boundary_jitter_s: float,
-    in_call_samples: int,
-    out_call_samples: int,
-) -> list[Example]:
-    rng = np.random.default_rng(int(seed) ^ (hash(video_id) & 0xFFFF_FFFF))
-    boundary_times: list[float] = []
-    for b in boundaries:
-        boundary_times.extend([float(b.start_s), float(b.end_s)])
-
-    starts: list[float] = []
-    starts.extend(
-        sample_boundary_chunks(
-            boundary_times_s=boundary_times,
-            duration_s=float(duration_s),
-            cfg=chunk_cfg,
-            k_per_boundary=int(boundary_k),
-            jitter_s=float(boundary_jitter_s),
-            rng=rng,
-        )
-    )
-    starts.extend(
-        sample_in_call_chunks(
-            boundaries=boundaries,
-            duration_s=float(duration_s),
-            cfg=chunk_cfg,
-            n_samples=int(in_call_samples),
-            rng=rng,
-        )
-    )
-    starts.extend(
-        sample_out_of_call_chunks(
-            boundaries=boundaries,
-            duration_s=float(duration_s),
-            cfg=chunk_cfg,
-            n_samples=int(out_call_samples),
-            rng=rng,
-        )
-    )
-
-    examples: list[Example] = []
-    for s in starts:
-        core_start = float(s) + float(chunk_cfg.margin_s)
-        core_end = core_start + float(chunk_cfg.core_s)
-        examples.append(
-            Example(
-                video_id=str(video_id),
-                audio_path=audio_path,
-                boundaries=list(boundaries),
-                chunk_start_s=float(s),
-                chunk_total_s=float(chunk_cfg.chunk_total_s),
-                core_start_abs_s=float(core_start),
-                core_end_abs_s=float(core_end),
-            )
-        )
-    return examples
 
 
 def main() -> int:
@@ -250,7 +62,7 @@ def main() -> int:
 
     sr_hz = int(cfg.get("sr_hz", 16000))
     seed = int(cfg.get("seed", 1337))
-    _set_seed(seed)
+    set_seed(seed)
 
     repo_root = Path(__file__).parent.parent
     run_id = f"run_{utc_now_compact()}_{git_short_sha(repo_root)}"
@@ -300,7 +112,7 @@ def main() -> int:
             continue
         audio_path, boundaries, duration_s = loaded
         train_examples.extend(
-            _make_examples_for_video(
+            make_examples_for_video(
                 video_id=str(vid),
                 audio_path=audio_path,
                 boundaries=boundaries,
@@ -322,7 +134,7 @@ def main() -> int:
             continue
         audio_path, boundaries, duration_s = loaded
         eval_examples.extend(
-            _make_examples_for_video(
+            make_examples_for_video(
                 video_id=str(vid),
                 audio_path=audio_path,
                 boundaries=boundaries,

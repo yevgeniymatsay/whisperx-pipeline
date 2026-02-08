@@ -44,9 +44,10 @@ def main() -> int:
         default=None,
         help="Local dir containing {video_id}.npz (default: <local_artifacts_dir>/predictions)",
     )
-    parser.add_argument("--start-thresholds", type=str, default="0.60,0.70,0.80,0.90")
-    parser.add_argument("--end-thresholds", type=str, default="0.60,0.70,0.80,0.90")
-    parser.add_argument("--in-call-mean-min", type=str, default="0.50,0.60,0.70")
+    # WavLM frame heads can be low-amplitude early in training; keep defaults in a range that works for v1 runs.
+    parser.add_argument("--start-thresholds", type=str, default="0.05,0.07,0.09,0.11,0.13,0.15")
+    parser.add_argument("--end-thresholds", type=str, default="0.05,0.07,0.09,0.11,0.13,0.15")
+    parser.add_argument("--in-call-mean-min", type=str, default="0.50,0.54,0.56,0.58,0.60")
     parser.add_argument("--write-best", type=Path, default=None, help="Write best DecodeConfig JSON here")
     args = parser.parse_args()
 
@@ -156,4 +157,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

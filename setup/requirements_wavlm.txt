@@ -12,4 +12,4 @@ boto3==1.34.0
 numpy==1.26.4
 tqdm==4.67.1
 safetensors==0.5.3
-
+scikit-learn==1.5.2
