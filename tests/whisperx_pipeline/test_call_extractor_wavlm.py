@@ -68,3 +68,21 @@ def test_metrics_merge_and_oversplit_detection() -> None:
     assert m2.merges == 0
     assert m2.oversplits == 1
 
+
+def test_metrics_counts_false_positive_segments_on_call_videos() -> None:
+    # GT has a single call, but pred includes an extra non-overlapping segment.
+    gt = [CallBoundary(10.0, 20.0)]
+    pred = [CallBoundary(10.0, 20.0), CallBoundary(30.0, 40.0)]
+    m = compute_gate_metrics(gt=gt, pred=pred)
+    assert m.merges == 0
+    assert m.oversplits == 0
+    assert m.false_positive_segments == 1
+
+
+def test_metrics_counts_false_positive_segments_on_no_call_videos() -> None:
+    gt: list[CallBoundary] = []
+    pred = [CallBoundary(0.0, 5.0), CallBoundary(10.0, 12.0)]
+    m = compute_gate_metrics(gt=gt, pred=pred)
+    assert m.gt_calls == 0
+    assert m.pred_calls == 2
+    assert m.false_positive_segments == 2

@@ -68,7 +68,10 @@ def compute_gate_metrics(
 
     keep_rate = (len(matched) / gt_n) if gt_n > 0 else 0.0
 
-    fp_segments = pred_n if gt_n == 0 else 0
+    # A "false positive" is any predicted segment that overlaps no ground-truth call.
+    # This must be counted even on videos that contain some calls, otherwise strict gating can
+    # accidentally allow extra non-call segments.
+    fp_segments = sum(1 for lst in pred_to_gt if len(lst) == 0)
 
     return GateMetrics(
         merges=int(merges),
@@ -89,4 +92,3 @@ def boundaries_from_json_segments(segments: Sequence[dict]) -> list[CallBoundary
         out.append(CallBoundary(start_s=float(s["start_s"]), end_s=float(s["end_s"])))
     out.sort(key=lambda b: (b.start_s, b.end_s))
     return out
-
