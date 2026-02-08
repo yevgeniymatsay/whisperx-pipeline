@@ -21,6 +21,7 @@ from transformers import (
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pipeline.config import AWS_REGION, S3_BUCKET
+from pipeline.call_extractor_wavlm.audio_cache import ensure_flac_cached
 from pipeline.call_extractor_wavlm.io import (
     build_audio_index,
     ffprobe_duration_s,
@@ -69,7 +70,9 @@ def main() -> int:
     local_artifacts_dir = Path(out_cfg.get("local_artifacts_dir", "artifacts/call_extractor/wavlm_large_v1")) / run_id
     cache_dir = Path(out_cfg.get("local_cache_dir", ".cache/call_extractor_wavlm"))
     audio_cache_dir = cache_dir / "audio"
+    flac_cache_dir = cache_dir / "audio_flac"
     audio_cache_dir.mkdir(parents=True, exist_ok=True)
+    flac_cache_dir.mkdir(parents=True, exist_ok=True)
     local_artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     label_prefix = str(split_cfg["label_prefix"])
@@ -89,10 +92,14 @@ def main() -> int:
         label_data = s3_read_json(S3_BUCKET, label_key, region=AWS_REGION)
         labels = parse_video_labels(label_data)
 
-        audio_path = audio_cache_dir / f"{video_id}.mp3"
-        s3_download_if_missing(S3_BUCKET, audio_key, audio_path, region=AWS_REGION)
-        duration_s = ffprobe_duration_s(audio_path)
-        return audio_path, labels.boundaries, float(duration_s)
+        mp3_path = audio_cache_dir / f"{video_id}.mp3"
+        s3_download_if_missing(S3_BUCKET, audio_key, mp3_path, region=AWS_REGION)
+
+        flac_path = flac_cache_dir / f"{video_id}.flac"
+        ensure_flac_cached(mp3_path=mp3_path, flac_path=flac_path, sr_hz=int(sr_hz))
+
+        duration_s = ffprobe_duration_s(flac_path)
+        return flac_path, labels.boundaries, float(duration_s)
 
     chunk_cfg = ChunkingConfig(
         chunk_total_s=float(cfg.get("chunk_total_s", 30.0)),

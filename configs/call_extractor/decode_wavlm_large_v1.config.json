@@ -1,11 +1,18 @@
 {
+  "mode": "viterbi",
   "boundary_join_tolerance_s": 0.001,
   "end_peak_threshold": 0.8,
-  "in_call_mean_min": 0.7,
+  "in_call_mean_min": 0.52,
   "internal_peak_drop_threshold": 0.85,
   "max_duration_s": 14400,
   "min_duration_s": 2.0,
   "nms_min_sep_s": 0.35,
-  "start_peak_threshold": 0.8
+  "start_peak_threshold": 0.8,
+  "viterbi_end_scale": 50.0,
+  "viterbi_min_off_s": 0.0,
+  "viterbi_min_on_s": 2.0,
+  "viterbi_off_to_on_penalty": 6.0,
+  "viterbi_on_to_off_penalty": 6.0,
+  "viterbi_smooth_win_s": 0.2,
+  "viterbi_start_scale": 50.0
 }
-

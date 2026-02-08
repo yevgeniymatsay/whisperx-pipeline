@@ -5,9 +5,13 @@ from typing import List, Tuple
 
 import numpy as np
 
+from .decode_viterbi import ViterbiConfig, on_off_to_segments, viterbi_decode_on_off
+
 
 @dataclass(frozen=True)
 class DecodeConfig:
+    mode: str = "peaks"  # "peaks" | "viterbi"
+
     start_peak_threshold: float = 0.70
     end_peak_threshold: float = 0.70
     in_call_mean_min: float = 0.60
@@ -18,6 +22,15 @@ class DecodeConfig:
 
     internal_peak_drop_threshold: float = 0.80
     boundary_join_tolerance_s: float = 1e-3  # allow next start at exactly previous end
+
+    # Viterbi/HMM decode params (used when mode == "viterbi")
+    viterbi_off_to_on_penalty: float = 6.0
+    viterbi_on_to_off_penalty: float = 6.0
+    viterbi_start_scale: float = 0.0
+    viterbi_end_scale: float = 0.0
+    viterbi_min_on_s: float = 2.0
+    viterbi_min_off_s: float = 0.0
+    viterbi_smooth_win_s: float = 0.0
 
 
 def _local_peak_indices(probs: np.ndarray, *, threshold: float) -> np.ndarray:
@@ -76,6 +89,43 @@ def probabilities_to_segments(
     """
     if not (times_s.shape == in_call_p.shape == start_p.shape == end_p.shape):
         raise ValueError("All arrays must have the same shape")
+
+    if str(cfg.mode).lower() == "viterbi":
+        on = viterbi_decode_on_off(
+            times_s=times_s,
+            in_call_p=in_call_p,
+            start_p=start_p,
+            end_p=end_p,
+            cfg=ViterbiConfig(
+                off_to_on_penalty=float(cfg.viterbi_off_to_on_penalty),
+                on_to_off_penalty=float(cfg.viterbi_on_to_off_penalty),
+                start_scale=float(cfg.viterbi_start_scale),
+                end_scale=float(cfg.viterbi_end_scale),
+                min_on_s=float(cfg.viterbi_min_on_s),
+                min_off_s=float(cfg.viterbi_min_off_s),
+                smooth_win_s=float(cfg.viterbi_smooth_win_s),
+            ),
+        )
+        seg_bounds = on_off_to_segments(times_s=times_s, on=on)
+        segments: list[dict] = []
+        for s_t, e_t in seg_bounds:
+            if e_t - s_t < float(cfg.min_duration_s) or e_t - s_t > float(cfg.max_duration_s):
+                continue
+            inside = (times_s >= float(s_t)) & (times_s <= float(e_t))
+            if inside.sum() == 0:
+                continue
+            mean_in_call = float(in_call_p[inside].mean())
+            if mean_in_call < float(cfg.in_call_mean_min):
+                continue
+            segments.append(
+                {
+                    "start_s": float(s_t),
+                    "end_s": float(e_t),
+                    "score": float(mean_in_call),
+                    "mean_in_call": float(mean_in_call),
+                }
+            )
+        return segments
 
     start_peaks = _local_peak_indices(start_p, threshold=float(cfg.start_peak_threshold))
     end_peaks = _local_peak_indices(end_p, threshold=float(cfg.end_peak_threshold))

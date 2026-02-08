@@ -16,6 +16,7 @@ Extract “real call” conversation segments from long MP3s **without ever merg
   - Models: `call_extractor/wavlm_large_v1/models/{run_id}/`
   - Predictions: `call_extractor/wavlm_large_v1/segments/{video_id}.json`
   - Clips (FLAC 16k mono): `call_extractor/wavlm_large_v1/clips/...`
+- **Audio alignment rule:** do not slice training/inference chunks directly from MP3; decode full MP3 → 16k mono FLAC once per video and do sample-accurate slicing from the cached FLAC (`.cache/call_extractor_wavlm/audio_flac/`).
 
 ### EC2 is the only runtime for model work
 - Host: `ubuntu@ec2-13-217-101-70.compute-1.amazonaws.com`

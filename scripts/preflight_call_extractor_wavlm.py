@@ -23,6 +23,7 @@ from pipeline.call_extractor_wavlm.io import (
     s3_download_if_missing,
     s3_read_json,
 )
+from pipeline.call_extractor_wavlm.audio_cache import ensure_flac_cached
 from pipeline.call_extractor_wavlm.chunking import sample_boundary_chunks
 from pipeline.call_extractor_wavlm.labels import TargetConfig, parse_video_labels
 from pipeline.call_extractor_wavlm.model import WavLMFrameClassifier, WavLMFrameClassifierConfig
@@ -38,15 +39,17 @@ def _load_json(path: Path) -> dict:
 
 
 class _RepeatItemDataset(Dataset):
-    def __init__(self, item: dict[str, Any], *, n: int):
-        self._item = item
+    def __init__(self, items: list[dict[str, Any]], *, n: int):
+        if not items:
+            raise ValueError("items must be non-empty")
+        self._items = list(items)
         self._n = int(n)
 
     def __len__(self) -> int:
         return self._n
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
-        return self._item
+        return self._items[int(idx) % int(len(self._items))]
 
 
 def _pick_video_id(
@@ -156,7 +159,10 @@ def main() -> int:
 
     audio_path = audio_cache_dir / f"{video_id}.mp3"
     s3_download_if_missing(S3_BUCKET, audio_key, audio_path, region=AWS_REGION)
-    duration_s = float(ffprobe_duration_s(audio_path))
+    flac_path = (cache_dir / "audio_flac") / f"{video_id}.flac"
+    flac_path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_flac_cached(mp3_path=audio_path, flac_path=flac_path, sr_hz=int(sr_hz))
+    duration_s = float(ffprobe_duration_s(flac_path))
 
     chunk_cfg = ChunkingConfig(
         chunk_total_s=float(cfg.get("chunk_total_s", 30.0)),
@@ -165,7 +171,7 @@ def main() -> int:
     )
     examples: list[Example] = make_examples_for_video(
         video_id=str(video_id),
-        audio_path=audio_path,
+        audio_path=flac_path,
         boundaries=boundaries,
         duration_s=float(duration_s),
         chunk_cfg=chunk_cfg,
@@ -300,7 +306,7 @@ def main() -> int:
     # Overfit one batch (HF debugging best practice): ensure loss decreases on the same batch.
     overfit_steps = int(args.overfit_steps)
     if overfit_steps > 0:
-        rep_ds = _RepeatItemDataset(item_start, n=1)
+        rep_ds = _RepeatItemDataset([item_start, item_end], n=2)
         training_args = TrainingArguments(
             output_dir=str(Path(out_cfg.get('local_artifacts_dir', 'artifacts/call_extractor/wavlm_large_v1')) / "preflight_overfit"),
             per_device_train_batch_size=1,

@@ -16,11 +16,11 @@ from transformers import AutoFeatureExtractor
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pipeline.config import AWS_REGION, S3_BUCKET
+from pipeline.call_extractor_wavlm.audio_cache import ensure_flac_cached, read_flac_segment_float32
 from pipeline.call_extractor_wavlm.chunking import iter_inference_chunk_specs
 from pipeline.call_extractor_wavlm.decode import DecodeConfig, probabilities_to_segments
 from pipeline.call_extractor_wavlm.io import (
     build_audio_index,
-    decode_audio_segment_to_float32,
     ffprobe_duration_s,
     s3_download_if_missing,
     s3_upload_file,
@@ -60,14 +60,14 @@ def _load_model(model_dir: Path, *, device: str) -> tuple[Any, torch.nn.Module]:
 def _predict_video(
     *,
     video_id: str,
-    audio_path: Path,
+    flac_path: Path,
     model,
     feature_extractor,
     sr_hz: int,
     chunk_cfg: ChunkingConfig,
     device: str,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    duration_s = ffprobe_duration_s(audio_path)
+    duration_s = ffprobe_duration_s(flac_path)
     timing = model.feat_timing(sr_hz=sr_hz)
     stride_s = float(timing.stride_s)
     offset_s = float(timing.offset_s)
@@ -78,8 +78,8 @@ def _predict_video(
     all_end: list[np.ndarray] = []
 
     for spec in iter_inference_chunk_specs(duration_s, chunk_cfg):
-        audio = decode_audio_segment_to_float32(
-            audio_path,
+        audio = read_flac_segment_float32(
+            flac_path,
             start_s=float(spec.chunk_start_s),
             duration_s=float(spec.chunk_total_s),
             sr_hz=int(sr_hz),
@@ -88,7 +88,12 @@ def _predict_video(
         input_values = inputs["input_values"].to(device)
         attention_mask = inputs.get("attention_mask")
         if attention_mask is not None:
-            attention_mask = attention_mask.to(device)
+            feat_norm = getattr(getattr(model, "wavlm", None), "config", None)
+            feat_norm = getattr(feat_norm, "feat_extract_norm", None)
+            if str(feat_norm).lower() == "group":
+                attention_mask = None
+            else:
+                attention_mask = attention_mask.to(device)
 
         out = model(input_values=input_values, attention_mask=attention_mask)
         logits = out["logits"][0].detach().float().cpu().numpy()
@@ -163,7 +168,9 @@ def main() -> int:
 
     cache_dir = Path(out_cfg.get("local_cache_dir", ".cache/call_extractor_wavlm"))
     audio_cache_dir = cache_dir / "audio"
+    flac_cache_dir = cache_dir / "audio_flac"
     audio_cache_dir.mkdir(parents=True, exist_ok=True)
+    flac_cache_dir.mkdir(parents=True, exist_ok=True)
 
     feature_extractor, model = _load_model(args.model_dir, device=args.device)
     chunk_cfg = ChunkingConfig(
@@ -181,12 +188,15 @@ def main() -> int:
         if not audio_key:
             logger.warning(f"[{idx+1}/{len(video_ids)}] Skip {vid}: audio not found")
             continue
-        audio_path = audio_cache_dir / f"{vid}.mp3"
-        s3_download_if_missing(S3_BUCKET, audio_key, audio_path, region=AWS_REGION)
+        mp3_path = audio_cache_dir / f"{vid}.mp3"
+        s3_download_if_missing(S3_BUCKET, audio_key, mp3_path, region=AWS_REGION)
+
+        flac_path = flac_cache_dir / f"{vid}.flac"
+        ensure_flac_cached(mp3_path=mp3_path, flac_path=flac_path, sr_hz=int(args.sr_hz))
 
         t, in_call, start, end = _predict_video(
             video_id=str(vid),
-            audio_path=audio_path,
+            flac_path=flac_path,
             model=model,
             feature_extractor=feature_extractor,
             sr_hz=int(args.sr_hz),

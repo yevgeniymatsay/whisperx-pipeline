@@ -9,8 +9,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
+from .audio_cache import read_flac_segment_float32
 from .chunking import sample_boundary_chunks, sample_in_call_chunks, sample_out_of_call_chunks
-from .io import decode_audio_segment_to_float32
 from .labels import TargetConfig, make_core_mask, make_targets_for_frames
 from .model import feat_extract_output_length, feat_extract_timing_from_config
 from .types import CallBoundary, ChunkingConfig
@@ -37,7 +37,7 @@ class ChunkDataset(Dataset):
 
     def __getitem__(self, idx: int) -> dict:
         ex = self.examples[int(idx)]
-        audio = decode_audio_segment_to_float32(
+        audio = read_flac_segment_float32(
             ex.audio_path,
             start_s=float(ex.chunk_start_s),
             duration_s=float(ex.chunk_total_s),
@@ -71,6 +71,7 @@ class Collator:
 
     def __call__(self, batch: list[dict]) -> dict:
         audios = [b["audio"] for b in batch]
+        audio_lengths = [int(a.shape[0]) for a in audios]
         inputs = self.feature_extractor(
             audios,
             sampling_rate=int(self.sr_hz),
@@ -79,10 +80,11 @@ class Collator:
         )
 
         attention_mask = inputs.get("attention_mask", None)
-        if attention_mask is not None:
-            input_lengths = attention_mask.sum(dim=-1).to(torch.int64).tolist()
-        else:
-            input_lengths = [int(v.shape[-1]) for v in inputs["input_values"]]
+        feat_norm = getattr(self.model_config, "feat_extract_norm", None)
+        use_attention_mask = (attention_mask is not None) and (str(feat_norm).lower() != "group")
+        if not use_attention_mask:
+            attention_mask = None
+        input_lengths = audio_lengths
 
         out_lens = [feat_extract_output_length(input_length_samples=int(L), config=self.model_config) for L in input_lengths]
         max_out_len = int(max(out_lens)) if out_lens else 0
@@ -191,4 +193,3 @@ def make_examples_for_video(
             )
         )
     return examples
-
