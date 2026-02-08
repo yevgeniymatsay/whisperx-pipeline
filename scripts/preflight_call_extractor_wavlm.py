@@ -212,7 +212,7 @@ def main() -> int:
         core_end = core_start + float(chunk_cfg.core_s)
         return Example(
             video_id=str(video_id),
-            audio_path=audio_path,
+            audio_path=flac_path,
             boundaries=boundaries,
             chunk_start_s=float(start_s),
             chunk_total_s=float(chunk_cfg.chunk_total_s),
