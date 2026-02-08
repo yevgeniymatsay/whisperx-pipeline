@@ -52,6 +52,12 @@ def main() -> int:
         help="Which split videos to process (default: eval)",
     )
     parser.add_argument("--upload", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--keep-local-clips",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Keep local clip files after upload (default: false)",
+    )
     parser.add_argument("--out-jsonl", type=Path, default=Path("artifacts/call_extractor/wavlm_large_v1/extracted_calls.jsonl"))
     args = parser.parse_args()
 
@@ -130,6 +136,8 @@ def main() -> int:
                 clip_key = f"{s3_prefix}/clips/{vid}/{name}"
                 if args.upload:
                     s3_upload_file(bucket=S3_BUCKET, key=clip_key, src_path=local_clip_path, region=AWS_REGION)
+                    if not args.keep_local_clips:
+                        local_clip_path.unlink(missing_ok=True)
 
                 rec = {
                     "video_id": vid,

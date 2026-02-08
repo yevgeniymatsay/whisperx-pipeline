@@ -161,7 +161,30 @@ def main() -> int:
     parser.add_argument("--core-s", type=float, default=20.0)
     parser.add_argument("--margin-s", type=float, default=5.0)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--upload", action=argparse.BooleanOptionalAction, default=True, help="Upload segments to S3")
+    parser.add_argument(
+        "--upload-segments",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Upload decoded segments JSON to S3 (default: true)",
+    )
+    parser.add_argument(
+        "--write-probs",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Write per-video probs NPZ locally (default: false; enable for eval/sweeps)",
+    )
+    parser.add_argument(
+        "--upload-probs",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Upload per-video probs NPZ to S3 (default: false; enable for eval/sweeps)",
+    )
+    parser.add_argument(
+        "--keep-local",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Keep local JSON/NPZ artifacts after processing (default: false)",
+    )
     args = parser.parse_args()
 
     split_cfg = _load_json(args.split_config)
@@ -239,17 +262,24 @@ def main() -> int:
         local_path = local_pred_dir / f"{vid}.json"
         local_path.write_text(json.dumps(out_json, indent=2, sort_keys=True) + "\n")
 
-        if args.upload:
+        if args.upload_segments:
             dst_key = f"{s3_prefix}/segments/{vid}.json"
             s3_upload_file(bucket=S3_BUCKET, key=dst_key, src_path=local_path, region=AWS_REGION)
 
         npz_path = local_pred_dir / f"{vid}.npz"
-        np.savez_compressed(npz_path, times_s=t, in_call=in_call, start=start, end=end)
-        if args.upload:
-            dst_key = f"{s3_prefix}/probs/{vid}.npz"
-            s3_upload_file(bucket=S3_BUCKET, key=dst_key, src_path=npz_path, region=AWS_REGION)
+        if args.write_probs or args.upload_probs:
+            np.savez_compressed(npz_path, times_s=t, in_call=in_call, start=start, end=end)
+            if args.upload_probs:
+                dst_key = f"{s3_prefix}/probs/{vid}.npz"
+                s3_upload_file(bucket=S3_BUCKET, key=dst_key, src_path=npz_path, region=AWS_REGION)
 
         logger.info(f"[{idx+1}/{len(video_ids)}] {vid}: segments={len(segments)} frames={t.shape[0]}")
+
+        if not args.keep_local:
+            if local_path.exists():
+                local_path.unlink()
+            if npz_path.exists():
+                npz_path.unlink()
 
     return 0
 
