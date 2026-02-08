@@ -65,12 +65,24 @@ def _nms_time(
     if peak_idxs.size == 0:
         return peak_idxs
 
+    # Greedy NMS by peak probability, using time-index suppression on the (sorted) frame timeline.
+    # This avoids O(N^2) behavior when the start/end heads are near-flat and produce many local maxima.
     order = peak_idxs[np.argsort(probs[peak_idxs])[::-1]]
+    suppressed = np.zeros((times_s.shape[0],), dtype=bool)
     kept: List[int] = []
+
+    sep = float(min_sep_s)
     for idx in order.tolist():
-        t = float(times_s[idx])
-        if all(abs(t - float(times_s[k])) >= float(min_sep_s) for k in kept):
-            kept.append(int(idx))
+        idx_i = int(idx)
+        if suppressed[idx_i]:
+            continue
+        kept.append(idx_i)
+
+        t0 = float(times_s[idx_i])
+        left = int(np.searchsorted(times_s, t0 - sep, side="left"))
+        right = int(np.searchsorted(times_s, t0 + sep, side="right"))
+        suppressed[left:right] = True
+
     kept.sort(key=lambda i: float(times_s[i]))
     return np.asarray(kept, dtype=np.int64)
 
