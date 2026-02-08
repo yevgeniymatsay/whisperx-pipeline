@@ -25,14 +25,20 @@ def _local_peak_indices(probs: np.ndarray, *, threshold: float) -> np.ndarray:
     if p.size == 0:
         return np.zeros((0,), dtype=np.int64)
 
-    ge_thresh = p >= float(threshold)
-    left = np.empty_like(p, dtype=bool)
-    right = np.empty_like(p, dtype=bool)
-    left[0] = True
-    left[1:] = p[1:] >= p[:-1]
-    right[-1] = True
-    right[:-1] = p[:-1] >= p[1:]
-    is_peak = ge_thresh & left & right
+    # Use *strict* local maxima to avoid generating huge numbers of peaks on nearly-flat probabilities.
+    # (WavLM frame heads can output low-amplitude signals early in training.)
+    is_peak = np.zeros_like(p, dtype=bool)
+    thr = float(threshold)
+    if p.size == 1:
+        is_peak[0] = p[0] >= thr
+        return np.flatnonzero(is_peak).astype(np.int64)
+
+    # Edge peaks: allow only strict dominance over the single neighbor.
+    is_peak[0] = (p[0] >= thr) and (p[0] > p[1])
+    is_peak[-1] = (p[-1] >= thr) and (p[-1] > p[-2])
+
+    mid = (p[1:-1] >= thr) & (p[1:-1] > p[:-2]) & (p[1:-1] > p[2:])
+    is_peak[1:-1] = mid
     return np.flatnonzero(is_peak).astype(np.int64)
 
 
