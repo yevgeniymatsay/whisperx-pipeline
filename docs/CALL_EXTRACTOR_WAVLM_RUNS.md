@@ -114,3 +114,27 @@ Append one block per training cycle. Keep this file short and factual.
 - Notes:
   - Frame metrics (eval; tolerance=0.4s): start AP≈0.069, end AP≈0.119; in_call AP≈0.847 (pos_frac≈0.75).
   - Peaks decoding is currently the only mode used for strict-gates selection; viterbi remains too risky until in_call separation improves.
+
+### run_20260208_114429_59a1f83 (ABORTED; checkpoint sweeps)
+- Date (UTC): 2026-02-08
+- Git SHA: 59a1f83
+- Base model: `microsoft/wavlm-large`
+- Train config: `configs/call_extractor/train_wavlm_large_v4.config.json` (boundary_k=12, triangle targets, tol=0.4s, pos_weight start/end=100)
+- Decode config: strict-gates peaks sweep per checkpoint (see S3 prefixes)
+- Eval split: `configs/call_extractor/split_v1.config.json` (10 videos, 79 calls)
+- Eval gates (strict: merges=0, oversplits=0, FP=0):
+  - checkpoint-283: keep_rate 0.025 (2/79)
+  - checkpoint-566: keep_rate 0.101 (8/79)  <-- best in this run
+  - checkpoint-849: keep_rate 0.076 (6/79)
+- Artifacts (S3):
+  - exported checkpoints:
+    - `call_extractor/wavlm_large_v1/models/run_20260208_114429_59a1f83/export_checkpoint-283/`
+    - `call_extractor/wavlm_large_v1/models/run_20260208_114429_59a1f83/export_checkpoint-566/`
+    - `call_extractor/wavlm_large_v1/models/run_20260208_114429_59a1f83/export_checkpoint-849/`
+  - eval prefixes:
+    - `call_extractor/wavlm_large_v1/models/run_20260208_114429_59a1f83/ckpt283_eval_20260208_122702/`
+    - `call_extractor/wavlm_large_v1/models/run_20260208_114429_59a1f83/ckpt566_eval_20260208_124154/`
+    - `call_extractor/wavlm_large_v1/models/run_20260208_114429_59a1f83/ckpt849_eval_20260208_125044/`
+- Notes:
+  - Trainer eval_loss worsened sharply after epoch 3; run stopped early.
+  - This run did **not** beat v3 (keep_rate 0.190). Next iteration should adjust training (in_call dynamic range) rather than longer training.
