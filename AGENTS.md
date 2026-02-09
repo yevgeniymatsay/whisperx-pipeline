@@ -41,6 +41,20 @@ Additional required rules:
 - **No mid-stream changes:** do not change any scoring/selection code/config while a sweep/eval is running; finish the run, then start a new versioned run.
 - **Do not kill running sweeps:** do not terminate/interrupt a running sweep/eval for impatience (or because CPU time is increasing). Let it finish to preserve near-miss diagnostics. Only stop if (a) the user explicitly tells you to stop, or (b) you can prove it is misconfigured (wrong split/prefix/params) and you record why in the execution checklist before stopping.
 
+### Cycle discipline (required: no open-ended looping)
+**A “cycle” = one bounded unit of work that produces new metrics** (training run, decode sweep, or eval run).
+
+For every cycle, the agent must:
+1. **Freeze comparability key** (metrics_version, gate_policy_version, split_config_path, label_prefix, match_tol_s, overlap_eps_s, min_coverage) in the execution checklist.
+2. **Run the cycle** (training OR capped sweep). **Config cap rule:** any diagnostic sweep must be **<=500 configs** unless the user explicitly approves a larger sweep.
+3. **Materialize outputs to a decode-scoped prefix** (never overwrite root `segments/`). Use an explicit `--s3-prefix` like: `call_extractor/wavlm_large_v1/models/{run_id}/decoded_<tag>_<ts>`.
+4. **Run eval** on the decode-scoped prefix with the frozen parameters and save:
+   - `eval_report.json` + `eval_report.md`
+   - (optional) `run_review.json`
+5. **STOP and write a Run Review** in the execution checklist before doing anything else.
+
+No new cycle may start until the Run Review is recorded and the user approves the next action.
+
 ### Run Review (required after each metrics-producing cycle)
 After any training/inference/eval cycle that produces new metrics, **STOP** and record a Run Review **in the execution checklist** (required; optionally mirror into `docs/CALL_EXTRACTOR_WAVLM_RUNS.md`) before taking further action.
 
@@ -49,6 +63,11 @@ Run Review compares the new run vs the **best prior run with the same comparabil
 - keep_rate_iou_0.5, keep_rate_coverage
 - merges / oversplits / FP_total
 - boundary error summary (mean_start_abs_err_s, mean_end_abs_err_s)
+- boundary error distribution (required): start_abs_err_s and end_abs_err_s p50 / p90 / p99, plus counts <=1s / <=3s / <=10s. **If the eval artifact does not contain what is needed to compute these, do not guess; the only allowed next action is a reporting-only change to emit it.**
+- top failure reason (merges vs oversplits vs FP_total vs coverage) and which videos
+- per-video table (top 10 eval videos), sorted worst-first: merges>0, oversplits>0, FP_total>0, lowest keep_rate_iou0.5, highest boundary error; include gap stats (min_gap_s, tiny_gaps<0.2s, zero_gaps)
+- failure clustering (one paragraph + counts): merges / oversplits / FP_total / coverage; note concentration in high-gt_calls and tiny/zero-gap videos
+- kept vs missed summary: kept_calls_iou0.5/total_gt_calls, matched_calls/total_gt_calls, kept_calls_coverage/total_gt_calls; state which gate filters most (IoU vs coverage vs no match)
 
 Comparability key (must match exactly):
 - metrics_version
@@ -67,7 +86,7 @@ Decision (choose exactly one):
 
 Strict-almost (reporting-only): merges==0 && FP_total==0 && oversplits<=1 (kept calls still use IoU_exact/coverage_exact under the frozen comparability key).
 
-No new training cycle starts until the Run Review is recorded (checklist required; run ledger optional).
+No new cycle starts until the Run Review is recorded and the user approves the next action (checklist required; run ledger optional).
 
 ### Eval/sweep invariants (required)
 - All sweeps/evals must explicitly pass `--split-config <path>` and record it in the execution checklist (scripts may warn if omitted; do not make the flag mandatory in argparse).
