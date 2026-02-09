@@ -139,3 +139,26 @@ Append one block per training cycle. Keep this file short and factual.
 - Notes:
   - Trainer eval_loss worsened sharply after epoch 3; run stopped early.
   - This run did **not** beat v3 (keep_rate 0.190). Next iteration should adjust training (in_call dynamic range) rather than longer training.
+
+### run_20260209_010446_df80d5a
+- Date (UTC): 2026-02-09
+- Git SHA: df80d5a
+- Base model: `microsoft/wavlm-large`
+- Train config: `configs/call_extractor/train_wavlm_large_v5.config.json` (epochs=5; triangle targets; tol=0.4s; boundary_k=12; pos_weight start/end=50; freeze_feature_encoder=true)
+- Decode config: `configs/call_extractor/decode_wavlm_large_v1.config.json`
+  - peaks: start_thr=0.40, end_thr=0.65, in_call_mean_min=0.64
+- Eval split: `configs/call_extractor/split_v2.config.json` (10 videos, 79 calls; labels `labeling/corrected_boundaries/v2/`)
+- Eval gates (strict: merges=0, oversplits=0, FP=0):
+  - default decode: keep_rate 0.038 (3/79), merges=0, oversplits=0, fp=0
+  - best strict-gates peaks sweep (from eval probs): keep_rate 0.139 (11/79), merges=0, oversplits=0, fp=0
+    - best cfg: start_thr=0.45, end_thr=0.50, in_call_mean_min=0.62
+- Artifacts (S3):
+  - model: `call_extractor/wavlm_large_v1/models/run_20260209_010446_df80d5a/`
+  - eval probs+segments+reports: `call_extractor/wavlm_large_v1/models/run_20260209_010446_df80d5a/eval_20260209_021242/`
+  - re-decoded (best peaks cfg) + report: `call_extractor/wavlm_large_v1/models/run_20260209_010446_df80d5a/eval_20260209_021242_decoded_peaks_best/`
+  - clips: none
+- Notes:
+  - Frame metrics (eval; tolerance=0.4s): in_call AP≈0.873 (pos_frac≈0.75), start AP≈0.138, end AP≈0.143.
+  - Keep-rate regressed vs v3 (0.190) but boundary heads show improved ranking signal vs earlier low-AP runs.
+  - Matched segments still often have very large boundary errors (segments overlap the correct call but start/end are far off); decoder/training needs refinement before any large batch extraction.
+  - Viterbi sweeps over full-length eval probs are too slow with the current Python-loop implementation; avoid sweeping Viterbi until optimized.
