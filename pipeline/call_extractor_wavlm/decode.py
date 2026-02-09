@@ -37,6 +37,7 @@ class DecodeConfig:
     in_call_min_on_s: float = 2.0
     in_call_min_off_s: float = 0.0
     in_call_smooth_win_s: float = 0.0
+    in_call_logit_scale: float = 1.0
 
     # Transition-filtered peaks decode params (used when mode == "transitions")
     # Uses smoothed in_call probabilities to validate that start/end peaks coincide with an ON/OFF transition.
@@ -224,57 +225,27 @@ def probabilities_to_segments(
             p = _smooth(p, win_steps=win_steps)
             p = np.clip(p, eps, 1.0 - eps)
 
+        scale = float(cfg.in_call_logit_scale)
+        if scale != 1.0:
+            # Scale log-odds to increase dynamic range when probabilities are squashed near 0.5.
+            logits = np.log(p) - np.log(1.0 - p)
+            logits = np.clip(logits * scale, -50.0, 50.0)
+            p = 1.0 / (1.0 + np.exp(-logits))
+            p = np.clip(p, eps, 1.0 - eps)
+
         on = p >= float(cfg.in_call_threshold)
         if dt_s > 0.0:
             min_on_steps = int(max(1, np.ceil(float(cfg.in_call_min_on_s) / float(dt_s)))) if float(cfg.in_call_min_on_s) > 0 else 1
             min_off_steps = int(max(1, np.ceil(float(cfg.in_call_min_off_s) / float(dt_s)))) if float(cfg.in_call_min_off_s) > 0 else 1
 
-            # Boundary-aware OFF-gap filling: only fill short OFF gaps if there is no boundary-like
-            # peak evidence (start/end) inside the gap. This allows using larger min_off_s to
-            # reduce within-call fragmentation without accidentally merging adjacent calls.
-            start_thr = float(cfg.start_peak_threshold)
-            end_thr = float(cfg.end_peak_threshold)
-            pad = 1  # include a 1-frame neighborhood to catch peaks near gap edges
-
-            def allow_fill(i: int, j: int) -> bool:
-                if j <= i:
-                    return True
-                l = max(0, int(i) - int(pad))
-                r = min(int(times_s.size), int(j) + int(pad))
-                if r <= l:
-                    return True
-                # Only treat as a boundary if we see *both* an end-like peak and a start-like peak
-                # in the OFF gap in end->start order (or tied). This reduces false "boundary"
-                # detections from noisy peaks inside calls.
-                sp = start_p[l:r]
-                ep = end_p[l:r]
-                max_s = float(np.max(sp))
-                max_e = float(np.max(ep))
-                if max_s >= start_thr and max_e >= end_thr:
-                    idx_s = int(l + int(np.argmax(sp)))
-                    idx_e = int(l + int(np.argmax(ep)))
-                    if idx_e <= idx_s:
-                        return False
-                return True
-
             on = _apply_min_run_lengths(
                 on,
                 min_on_steps=min_on_steps,
                 min_off_steps=min_off_steps,
-                fill_off_gap_allowed=allow_fill,
             )
 
         seg_bounds = on_off_to_segments(times_s=times_s, on=on)
         segments: list[dict] = []
-        internal_thr = float(cfg.internal_peak_drop_threshold)
-        join_tol = float(cfg.boundary_join_tolerance_s)
-
-        def slice_internal(s_t: float, e_t: float) -> tuple[int, int]:
-            # Exclude a small neighborhood around boundaries to avoid dropping due to frame
-            # discretization (peaks can land slightly inside the interval).
-            l = int(np.searchsorted(times_s, float(s_t) + join_tol, side="right"))
-            r = int(np.searchsorted(times_s, float(e_t) - join_tol, side="left"))
-            return l, r
 
         for s_t, e_t in seg_bounds:
             if e_t - s_t < float(cfg.min_duration_s) or e_t - s_t > float(cfg.max_duration_s):
@@ -286,21 +257,6 @@ def probabilities_to_segments(
             if mean_in_call < float(cfg.in_call_mean_min):
                 continue
 
-            # Drop segments with boundary-like evidence inside the interval; this helps enforce the
-            # "drop ambiguous" policy by preferring no output over a potential multi-call merge.
-            if internal_thr < 1.0:
-                li, ri = slice_internal(float(s_t), float(e_t))
-                if ri > li:
-                    sp = start_p[li:ri]
-                    ep = end_p[li:ri]
-                    max_s = float(sp.max(initial=0.0))
-                    max_e = float(ep.max(initial=0.0))
-                    if max_s >= internal_thr and max_e >= internal_thr:
-                        idx_s = int(li + int(np.argmax(sp)))
-                        idx_e = int(li + int(np.argmax(ep)))
-                        # Boundary pattern: end then start (or tied) inside one segment => ambiguous merge.
-                        if idx_e <= idx_s:
-                            continue
             segments.append(
                 {
                     "start_s": float(s_t),

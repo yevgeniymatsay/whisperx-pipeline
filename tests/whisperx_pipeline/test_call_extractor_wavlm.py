@@ -136,17 +136,12 @@ def test_transitions_decoder_restarts_on_new_start_when_end_missing() -> None:
     assert segs[0]["end_s"] == 6.0
 
 
-def test_in_call_decoder_does_not_fill_short_off_gap_when_boundary_peaks_present() -> None:
-    # Two calls separated by a short OFF gap: min_off would normally fill the gap (merge calls),
-    # but boundary-like start/end peaks inside the gap should prevent filling.
+def test_in_call_decoder_fills_short_off_gaps() -> None:
+    # In-call decoding is driven by in_call only; short OFF gaps are filled back into ON when min_off_s is set.
     times = np.arange(0.0, 10.0, 1.0, dtype=np.float32)
     in_call = np.array([0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.9, 0.9, 0.9, 0.9], dtype=np.float32)
     start = np.zeros_like(times, dtype=np.float32)
     end = np.zeros_like(times, dtype=np.float32)
-
-    # Boundary evidence in the OFF gap at t=5.
-    start[5] = 0.95
-    end[5] = 0.95
 
     cfg = DecodeConfig(
         mode="in_call",
@@ -160,11 +155,9 @@ def test_in_call_decoder_does_not_fill_short_off_gap_when_boundary_peaks_present
         min_duration_s=1.0,
     )
     segs = probabilities_to_segments(times_s=times, in_call_p=in_call, start_p=start, end_p=end, cfg=cfg)
-    assert len(segs) == 2
+    assert len(segs) == 1
     assert segs[0]["start_s"] == 0.0
-    assert segs[0]["end_s"] == 4.0
-    assert segs[1]["start_s"] == 6.0
-    assert segs[1]["end_s"] == 9.0
+    assert segs[0]["end_s"] == 9.0
 
 
 def test_metrics_merge_and_oversplit_detection() -> None:

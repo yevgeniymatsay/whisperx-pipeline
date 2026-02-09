@@ -82,7 +82,7 @@ def main() -> int:
     # Peaks mode grids (WavLM frame heads can be low-amplitude early in training).
     parser.add_argument("--start-thresholds", type=str, default="0.05,0.07,0.09,0.11,0.13,0.15")
     parser.add_argument("--end-thresholds", type=str, default="0.05,0.07,0.09,0.11,0.13,0.15")
-    parser.add_argument("--in-call-mean-min", type=str, default="0.50,0.52,0.54,0.56,0.58,0.60")
+    parser.add_argument("--in-call-mean-min", type=str, default="0.20,0.25,0.30")
 
     # Viterbi mode grids.
     parser.add_argument("--viterbi-off-to-on", type=str, default="2,4,6,8")
@@ -94,10 +94,11 @@ def main() -> int:
     parser.add_argument("--viterbi-smooth-win-s", type=str, default="0.0,0.1,0.2")
 
     # In-call threshold mode grids.
-    parser.add_argument("--in-call-thresholds", type=str, default="0.45,0.50,0.55,0.60")
-    parser.add_argument("--in-call-min-on-s", type=str, default="1.0,2.0")
-    parser.add_argument("--in-call-min-off-s", type=str, default="0.0,0.2,0.4,0.6,0.7,0.8")
-    parser.add_argument("--in-call-smooth-win-s", type=str, default="0.0,0.1,0.2")
+    parser.add_argument("--in-call-thresholds", type=str, default="0.30,0.35,0.40,0.45,0.50,0.55,0.60")
+    parser.add_argument("--in-call-min-on-s", type=str, default="1.5,2.0,3.0,4.0")
+    parser.add_argument("--in-call-min-off-s", type=str, default="0.5,0.7,0.9,1.2")
+    parser.add_argument("--in-call-smooth-win-s", type=str, default="0.0,0.2,0.4,0.8")
+    parser.add_argument("--in-call-logit-scales", type=str, default="1")
 
     # Transition-filtered peaks mode grids.
     parser.add_argument("--transition-win-s", type=str, default="0.2,0.4,0.6")
@@ -168,6 +169,7 @@ def main() -> int:
     ic_min_on_grid = _grid(args.in_call_min_on_s)
     ic_min_off_grid = _grid(args.in_call_min_off_s)
     ic_smooth_grid = _grid(args.in_call_smooth_win_s)
+    ic_scale_grid = _grid(args.in_call_logit_scales)
 
     trans_win_grid = _grid(args.transition_win_s)
     trans_margin_grid = _grid(args.transition_margin)
@@ -316,17 +318,13 @@ def main() -> int:
             * len(in_call_grid)
         )
     else:
-        # NOTE: start/end thresholds matter for in_call decoding when boundary-aware OFF-gap
-        # filling is enabled (decode.py uses start/end peaks to decide whether a short OFF gap
-        # is safe to fill). Sweep them explicitly to find strict-gates settings.
-        grid_iter = itertools.product(start_grid, end_grid, ic_thr_grid, ic_min_on_grid, ic_min_off_grid, ic_smooth_grid, in_call_grid)
+        grid_iter = itertools.product(ic_thr_grid, ic_min_on_grid, ic_min_off_grid, ic_smooth_grid, ic_scale_grid, in_call_grid)
         total = (
-            len(start_grid)
-            * len(end_grid)
-            * len(ic_thr_grid)
+            len(ic_thr_grid)
             * len(ic_min_on_grid)
             * len(ic_min_off_grid)
             * len(ic_smooth_grid)
+            * len(ic_scale_grid)
             * len(in_call_grid)
         )
 
@@ -385,11 +383,11 @@ def main() -> int:
                 transition_restart_on_new_start=bool(base_decode.transition_restart_on_new_start),
             )
         else:
-            s_thr, e_thr, ic_thr, min_on_s, min_off_s, smooth_s, ic_min = vals
+            ic_thr, min_on_s, min_off_s, smooth_s, logit_scale, ic_min = vals
             cfg = DecodeConfig(
                 mode="in_call",
-                start_peak_threshold=float(s_thr),
-                end_peak_threshold=float(e_thr),
+                start_peak_threshold=float(base_decode.start_peak_threshold),
+                end_peak_threshold=float(base_decode.end_peak_threshold),
                 in_call_mean_min=float(ic_min),
                 nms_min_sep_s=float(base_decode.nms_min_sep_s),
                 min_duration_s=float(base_decode.min_duration_s),
@@ -400,6 +398,7 @@ def main() -> int:
                 in_call_min_on_s=float(min_on_s),
                 in_call_min_off_s=float(min_off_s),
                 in_call_smooth_win_s=float(smooth_s),
+                in_call_logit_scale=float(logit_scale),
             )
 
         agg_by_tol: dict[float, Agg] = {float(t): Agg() for t in tols}
