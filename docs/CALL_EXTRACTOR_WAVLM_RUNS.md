@@ -183,3 +183,20 @@ Append one block per training cycle. Keep this file short and factual.
 - Notes:
   - Frame metrics (eval; tolerance=0.6s): in_call AP≈0.908 (pos_frac≈0.75), start AP≈0.103, end AP≈0.164.
   - Despite good in_call ranking signal, strict-gates keep-rate regressed; likely driven by poor boundary localization / decoder mismatch rather than separation alone.
+
+### run_20260209_073752_a2ebb51
+- Date (UTC): 2026-02-09
+- Git SHA: a2ebb51
+- Base model: `microsoft/wavlm-large`
+- Train config: `configs/call_extractor/train_wavlm_large_v11.config.json` (2 epochs; fast iteration)
+- Decode config: strict-gates transitions sweep on eval probs
+  - best cfg: mode=transitions start_thr=0.70 end_thr=0.80 in_call_threshold=0.54 in_call_smooth_win_s=0.1 transition_win_s=0.2 transition_margin=0.0 in_call_mean_min=0.54
+- Eval split: `configs/call_extractor/split_v2.config.json` (10 videos, 79 calls; labels `labeling/corrected_boundaries/v2/`)
+- Eval gates (strict: merges=0, oversplits=0, FP=0):
+  - transitions: merges=0, oversplits=0, fp=0, keep_rate_iou_0_5=0.013 (1/79), pred_calls=1
+- Artifacts (S3):
+  - model + probs + segments + reports: `call_extractor/wavlm_large_v1/models/run_20260209_073752_a2ebb51/`
+- Notes:
+  - Frame metrics (eval; tolerance=0.3s): in_call AP≈0.847 (pos_frac≈0.75), start AP≈0.096, end AP≈0.126.
+  - Start/end heads still produce rare very-high peaks even on no-call videos (max >0.9), so peaks decoding requires extremely high thresholds to avoid FP.
+  - Boundary localization remains poor (mean start err ≈17s, mean end err ≈40s for the single matched call); focus next on training signal + sampling rather than decoder micro-tuning.
