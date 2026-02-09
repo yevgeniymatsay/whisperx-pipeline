@@ -130,10 +130,45 @@ def compute_gate_metrics(
     keep_rate_iou_0_5 = (kept_iou_0_5 / gt_n) if gt_n > 0 else 0.0
     keep_rate_iou_0_8 = (kept_iou_0_8 / gt_n) if gt_n > 0 else 0.0
 
-    # A "false positive" is any predicted segment that overlaps no ground-truth call.
-    # This must be counted even on videos that contain some calls, otherwise strict gating can
-    # accidentally allow extra non-call segments.
-    fp_segments = sum(1 for lst in pred_to_gt if len(lst) == 0)
+    # Strict FP definition for SFT safety:
+    # Count a predicted segment as a false positive if it includes *any* time outside the union of
+    # ground-truth call intervals (expanded by match_tol_s for scoring-only tolerance).
+    #
+    # This catches segments that overlap a GT call but extend into non-call regions (a common
+    # failure mode when boundary localization is weak).
+    def build_union(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        if not intervals:
+            return []
+        intervals = sorted(intervals, key=lambda x: (float(x[0]), float(x[1])))
+        out: list[tuple[float, float]] = []
+        cur_s, cur_e = float(intervals[0][0]), float(intervals[0][1])
+        for s, e in intervals[1:]:
+            s_f, e_f = float(s), float(e)
+            if s_f <= cur_e:
+                cur_e = max(cur_e, e_f)
+            else:
+                out.append((cur_s, cur_e))
+                cur_s, cur_e = s_f, e_f
+        out.append((cur_s, cur_e))
+        return out
+
+    expanded_union = build_union([(float(g.start_s) - tol_s, float(g.end_s) + tol_s) for g in gt])
+
+    def is_contained(p0: float, p1: float) -> bool:
+        for s, e in expanded_union:
+            if float(p0) >= float(s) and float(p1) <= float(e):
+                return True
+        return False
+
+    fp_segments = 0
+    for pi, p in enumerate(pred):
+        # If it doesn't overlap any GT call (even with tol/eps), it's a strict FP.
+        if len(pred_to_gt[pi]) == 0:
+            fp_segments += 1
+            continue
+        # If it overlaps but is not fully contained in the (tol-expanded) GT union, it includes non-call audio.
+        if not is_contained(float(p.start_s), float(p.end_s)):
+            fp_segments += 1
 
     return GateMetrics(
         merges=int(merges),

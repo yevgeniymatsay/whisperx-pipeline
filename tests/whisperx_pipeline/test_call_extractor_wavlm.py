@@ -193,9 +193,10 @@ def test_metrics_counts_false_positive_segments_on_no_call_videos() -> None:
 
 
 def test_metrics_tolerance_can_prevent_false_positive_for_near_miss() -> None:
-    # Predicted segment starts just after GT ends (no exact overlap), but within tolerance.
+    # Predicted segment slightly overhangs the GT call boundary.
+    # With strict FP semantics, it is a FP unless scoring tolerance allows the overhang.
     gt = [CallBoundary(0.0, 10.0)]
-    pred = [CallBoundary(10.05, 15.0)]
+    pred = [CallBoundary(0.05, 10.20)]
 
     m0 = compute_gate_metrics(gt=gt, pred=pred, match_tol_s=0.0, overlap_eps_s=0.10)
     assert m0.false_positive_segments == 1
