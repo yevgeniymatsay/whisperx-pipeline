@@ -91,6 +91,7 @@ No new cycle starts until the Run Review is recorded and the user approves the n
 ### Eval/sweep invariants (required)
 - All sweeps/evals must explicitly pass `--split-config <path>` and record it in the execution checklist (scripts may warn if omitted; do not make the flag mandatory in argparse).
 - Every eval report artifact must include: `metrics_version`, `gate_policy_version`, `split_config_path`, `label_prefix`, `match_tol_s`, `overlap_eps_s`, `min_coverage`.
+- **Split policy (frozen):** use `configs/call_extractor/split_v2.config.json` for all sweeps/evals. Do not create new split configs or alternate eval sets unless the user explicitly approves (plan change + non-comparable). If `split_config_path` is missing or differs, record the run as **non-comparable** (no improvement/regression claims).
 
 ### Canonical data locations (S3)
 - Bucket: `rezora-whisperx-us-east-1-864981718771`
@@ -108,6 +109,11 @@ No new cycle starts until the Run Review is recorded and the user approves the n
 - Key: `~/.ssh/whisperx-key-east1.pem`
 - Instance: `whisperx-worker-1` / `i-08d8c53c1943eac02`
 - **Do not run training or inference locally.**
+
+### EC2 execution discipline (required)
+- **Confirm latest main before any EC2 cycle:** on EC2, run `git pull --ff-only` and `git rev-parse --short HEAD`, and record the SHA in the execution checklist before starting. Do not run cycles on unknown/unrecorded code.
+- **Stop re-litigating old commits mid-cycle:** once History-first + Plan are recorded and a cycle is running, do not keep doing extra archaeology (`git log`, re-diffing old commits) unless it is the explicit next approved action. Finish the cycle, then review under a new plan if needed.
+- **EC2 efficiency:** avoid repo-wide searching on EC2. Prefer targeted `grep` for small checks. For S3 existence/debug, prefer `aws s3 ls ... --recursive | grep` over heavy local scans.
 
 ### HF / Transformers requirements (follow `WavLM.md`)
 - Backbone: `transformers.WavLMModel`
