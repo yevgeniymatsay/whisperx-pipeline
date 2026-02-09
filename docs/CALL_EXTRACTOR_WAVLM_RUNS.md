@@ -234,3 +234,24 @@ Append one block per training cycle. Keep this file short and factual.
 - Notes:
   - No-call spike issue appears fixed (no-call start/end p99 <= ~0.20 on eval), enabling low start_thr without FP.
   - Boundary localization still weak on some videos (mean_start_abs_err≈60s; mean_end_abs_err≈14s for matched calls), limiting strict-gates keep-rate.
+
+### run_20260209_145206_0501f53
+- Date (UTC): 2026-02-09
+- Git SHA: 0501f53
+- Base model: `microsoft/wavlm-large`
+- Train config: `configs/call_extractor/train_wavlm_large_v15_quick.config.json` (triangle targets; tol=1.0s; boundary_k=20; freeze_feature_encoder=true; max_steps=700)
+- Decode config: best strict-gates peaks sweep on eval probs
+  - best cfg: mode=peaks start_thr=0.25 end_thr=0.05 in_call_mean_min=0.55 (min_dur=2s, internal_drop=0.9)
+- Eval split: `configs/call_extractor/split_v2.config.json` (10 videos, 79 calls; labels `labeling/corrected_boundaries/v2/`)
+- Eval gates (strict: merges=0, oversplits=0, FP=0):
+  - merges: 0
+  - oversplits: 0
+  - fp: 0
+  - keep_rate: 0.013 (1/79), keep_rate_iou_0_5: 0.000 (0/79)
+  - pred_calls: 1; mean_iou (matched): 0.267; mean_start_abs_err: 20.7s; mean_end_abs_err: 7.55s
+- Artifacts (S3):
+  - model + probs + segments + reports: `call_extractor/wavlm_large_v1/models/run_20260209_145206_0501f53/`
+- Notes:
+  - Frame metrics (eval; tolerance=0.2s): in_call AP≈0.918 (pos_frac≈0.75), start AP≈0.073, end AP≈0.073; p99 start/end ≈0.71/0.74.
+  - Sweeps: transitions + in_call sweeps found no strict-gates configs (tested grids); viterbi sweep is too slow in Python at full grid sizes.
+  - Next: improve boundary localization / reduce within-call fragmentation so strict-gates decoders can keep more than 0–1 calls.
