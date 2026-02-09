@@ -261,6 +261,9 @@ Append one block per training cycle. Keep this file short and factual.
       - min_coverage: 0.30
     - strict-valid (tol=0.25): keep@0.5=0.038 (3/79), keep@cov=0.038 (3/79), raw_keep=0.051 (4/79), merges=0, oversplits=0, fp=0
     - tol=0.0: keep@0.5=0.038, merges=0, oversplits=0, fp=0
+  - Capped decode sweep (transitions; 256 configs; kept start/end fixed; varied in_call_threshold + transition_margin):
+    - prefix: `call_extractor/wavlm_large_v1/models/run_20260209_100848_76185f0/decoded_transitions_strict_20260209_225020/`
+    - strict-valid (tol=0.25): keep@0.5=0.076 (6/79), keep@cov=0.076 (6/79), raw_keep=0.114 (9/79), merges=0, oversplits=0, fp=0
   - Comparison (same scoring; eval v2): this decode is current best by keep@0.5 (next-best runs: keep@0.5=0.025).
 
 ### run_20260209_145206_0501f53
