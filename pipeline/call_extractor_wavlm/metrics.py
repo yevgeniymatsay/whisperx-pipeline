@@ -8,9 +8,16 @@ import numpy as np
 from .types import CallBoundary
 
 
-def _overlap_s(a0: float, a1: float, b0: float, b1: float) -> float:
+def _intersection_exact_s(a0: float, a1: float, b0: float, b1: float) -> float:
     s = max(float(a0), float(b0))
     e = min(float(a1), float(b1))
+    return max(0.0, e - s)
+
+
+def _intersection_tol_s(a0: float, a1: float, b0: float, b1: float, tol_s: float) -> float:
+    tol = float(tol_s)
+    s = max(float(a0), float(b0) - tol)
+    e = min(float(a1), float(b1) + tol)
     return max(0.0, e - s)
 
 
@@ -24,6 +31,10 @@ class GateMetrics:
     keep_rate: float
 
     false_positive_segments: int
+
+    kept_calls_coverage: int
+    keep_rate_coverage: float
+    mean_coverage_exact: float | None
 
     mean_start_abs_err_s: float | None
     mean_end_abs_err_s: float | None
@@ -39,16 +50,31 @@ def compute_gate_metrics(
     *,
     gt: Sequence[CallBoundary],
     pred: Sequence[CallBoundary],
+    match_tol_s: float = 0.0,
+    overlap_eps_s: float = 0.10,
+    min_coverage: float = 0.0,
 ) -> GateMetrics:
     gt_n = len(gt)
     pred_n = len(pred)
+
+    tol_s = float(match_tol_s)
+    if tol_s < 0.0:
+        raise ValueError(f"match_tol_s must be >= 0 (got {match_tol_s})")
+
+    eps_s = float(overlap_eps_s)
+    if eps_s < 0.0:
+        raise ValueError(f"overlap_eps_s must be >= 0 (got {overlap_eps_s})")
+
+    cov_thr = float(min_coverage)
+    if not (0.0 <= cov_thr <= 1.0):
+        raise ValueError(f"min_coverage must be in [0, 1] (got {min_coverage})")
 
     pred_to_gt: list[list[int]] = [[] for _ in range(pred_n)]
     gt_to_pred: list[list[int]] = [[] for _ in range(gt_n)]
 
     for pi, p in enumerate(pred):
         for gi, g in enumerate(gt):
-            if _overlap_s(p.start_s, p.end_s, g.start_s, g.end_s) > 0.0:
+            if _intersection_tol_s(p.start_s, p.end_s, g.start_s, g.end_s, tol_s) >= eps_s:
                 pred_to_gt[pi].append(gi)
                 gt_to_pred[gi].append(pi)
 
@@ -65,9 +91,17 @@ def compute_gate_metrics(
 
     start_errs: list[float] = []
     end_errs: list[float] = []
+    coverages_exact: list[float] = []
     for gi, pi in matched:
-        start_errs.append(abs(float(pred[pi].start_s) - float(gt[gi].start_s)))
-        end_errs.append(abs(float(pred[pi].end_s) - float(gt[gi].end_s)))
+        p = pred[int(pi)]
+        g = gt[int(gi)]
+        start_errs.append(abs(float(p.start_s) - float(g.start_s)))
+        end_errs.append(abs(float(p.end_s) - float(g.end_s)))
+
+        ov = _intersection_exact_s(p.start_s, p.end_s, g.start_s, g.end_s)
+        gt_dur = max(0.0, float(g.end_s) - float(g.start_s))
+        cov = (float(ov) / float(gt_dur)) if gt_dur > 0.0 else 0.0
+        coverages_exact.append(float(cov))
 
     mean_start = float(np.mean(start_errs)) if start_errs else None
     mean_end = float(np.mean(end_errs)) if end_errs else None
@@ -76,7 +110,7 @@ def compute_gate_metrics(
     for gi, pi in matched:
         g = gt[int(gi)]
         p = pred[int(pi)]
-        ov = _overlap_s(p.start_s, p.end_s, g.start_s, g.end_s)
+        ov = _intersection_exact_s(p.start_s, p.end_s, g.start_s, g.end_s)
         gt_dur = max(0.0, float(g.end_s) - float(g.start_s))
         pred_dur = max(0.0, float(p.end_s) - float(p.start_s))
         union = gt_dur + pred_dur - float(ov)
@@ -85,10 +119,14 @@ def compute_gate_metrics(
         else:
             ious.append(float(ov) / float(union))
     mean_iou = float(np.mean(ious)) if ious else None
-    kept_iou_0_5 = int(sum(1 for x in ious if float(x) >= 0.5))
-    kept_iou_0_8 = int(sum(1 for x in ious if float(x) >= 0.8))
+    mean_cov_exact = float(np.mean(coverages_exact)) if coverages_exact else None
+
+    kept_cov = int(sum(1 for c in coverages_exact if float(c) >= cov_thr))
+    kept_iou_0_5 = int(sum(1 for iou, cov in zip(ious, coverages_exact) if float(cov) >= cov_thr and float(iou) >= 0.5))
+    kept_iou_0_8 = int(sum(1 for iou, cov in zip(ious, coverages_exact) if float(cov) >= cov_thr and float(iou) >= 0.8))
 
     keep_rate = (len(matched) / gt_n) if gt_n > 0 else 0.0
+    keep_rate_cov = (kept_cov / gt_n) if gt_n > 0 else 0.0
     keep_rate_iou_0_5 = (kept_iou_0_5 / gt_n) if gt_n > 0 else 0.0
     keep_rate_iou_0_8 = (kept_iou_0_8 / gt_n) if gt_n > 0 else 0.0
 
@@ -105,6 +143,9 @@ def compute_gate_metrics(
         matched_calls=int(len(matched)),
         keep_rate=float(keep_rate),
         false_positive_segments=int(fp_segments),
+        kept_calls_coverage=int(kept_cov),
+        keep_rate_coverage=float(keep_rate_cov),
+        mean_coverage_exact=mean_cov_exact,
         mean_start_abs_err_s=mean_start,
         mean_end_abs_err_s=mean_end,
         mean_iou=mean_iou,

@@ -197,3 +197,35 @@ def test_metrics_counts_false_positive_segments_on_no_call_videos() -> None:
     assert m.gt_calls == 0
     assert m.pred_calls == 2
     assert m.false_positive_segments == 2
+
+
+def test_metrics_tolerance_can_prevent_false_positive_for_near_miss() -> None:
+    # Predicted segment starts just after GT ends (no exact overlap), but within tolerance.
+    gt = [CallBoundary(0.0, 10.0)]
+    pred = [CallBoundary(10.05, 15.0)]
+
+    m0 = compute_gate_metrics(gt=gt, pred=pred, match_tol_s=0.0, overlap_eps_s=0.10)
+    assert m0.false_positive_segments == 1
+
+    m1 = compute_gate_metrics(gt=gt, pred=pred, match_tol_s=0.25, overlap_eps_s=0.10)
+    assert m1.false_positive_segments == 0
+
+
+def test_metrics_overlap_eps_filters_tiny_tolerance_overlaps() -> None:
+    gt = [CallBoundary(0.0, 10.0)]
+    pred = [CallBoundary(10.24, 10.25)]  # within tol, but tiny tol-overlap
+
+    m = compute_gate_metrics(gt=gt, pred=pred, match_tol_s=0.25, overlap_eps_s=0.10)
+    assert m.false_positive_segments == 1
+
+
+def test_metrics_coverage_gate_prevents_fragment_gaming() -> None:
+    gt = [CallBoundary(0.0, 10.0)]
+    pred = [CallBoundary(0.0, 2.0)]  # overlap=2s => coverage=0.2
+
+    m = compute_gate_metrics(gt=gt, pred=pred, match_tol_s=0.0, overlap_eps_s=0.10, min_coverage=0.30)
+    assert m.matched_calls == 1
+    assert m.kept_calls_coverage == 0
+    assert m.keep_rate_coverage == 0.0
+    assert m.kept_calls_iou_0_5 == 0
+    assert m.keep_rate_iou_0_5 == 0.0
