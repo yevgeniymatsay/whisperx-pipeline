@@ -241,6 +241,36 @@ def main() -> int:
             return float(ms) + float(me)
 
     def _fmt_row(label: str, cfg: DecodeConfig, agg_sel: Agg, agg0: Agg) -> str:
+        def fmt_params(c: DecodeConfig) -> str:
+            m = str(c.mode).lower()
+            if m == "peaks":
+                return (
+                    f"start_thr={c.start_peak_threshold:.2f} end_thr={c.end_peak_threshold:.2f} "
+                    f"in_call_mean_min={c.in_call_mean_min:.2f} nms_min_sep_s={c.nms_min_sep_s:.2f} "
+                    f"min_dur_s={c.min_duration_s:g} internal_drop={c.internal_peak_drop_threshold:.2f}"
+                )
+            if m == "in_call":
+                return (
+                    f"in_call_thr={c.in_call_threshold:.2f} min_on_s={c.in_call_min_on_s:g} min_off_s={c.in_call_min_off_s:g} "
+                    f"smooth_win_s={c.in_call_smooth_win_s:g} logit_scale={c.in_call_logit_scale:g} "
+                    f"in_call_mean_min={c.in_call_mean_min:.2f} min_dur_s={c.min_duration_s:g}"
+                )
+            if m == "transitions":
+                return (
+                    f"start_thr={c.start_peak_threshold:.2f} end_thr={c.end_peak_threshold:.2f} "
+                    f"in_call_thr={c.in_call_threshold:.2f} in_call_smooth_win_s={c.in_call_smooth_win_s:g} "
+                    f"transition_win_s={c.transition_win_s:g} transition_margin={c.transition_margin:g} "
+                    f"in_call_mean_min={c.in_call_mean_min:.2f} min_dur_s={c.min_duration_s:g}"
+                )
+            if m == "viterbi":
+                return (
+                    f"off_to_on={c.viterbi_off_to_on_penalty:g} on_to_off={c.viterbi_on_to_off_penalty:g} "
+                    f"start_scale={c.viterbi_start_scale:g} end_scale={c.viterbi_end_scale:g} "
+                    f"min_on_s={c.viterbi_min_on_s:g} min_off_s={c.viterbi_min_off_s:g} smooth_win_s={c.viterbi_smooth_win_s:g} "
+                    f"in_call_mean_min={c.in_call_mean_min:.2f} min_dur_s={c.min_duration_s:g}"
+                )
+            return "unknown"
+
         return (
             f"{label} keep@0.5={agg_sel.keep_rate_iou_0_5():.3f} "
             f"(kept={agg_sel.kept_iou_0_5}/{agg_sel.gt_calls}; cov_keep={agg_sel.keep_rate_cov():.3f}; raw_keep={agg_sel.keep_rate():.3f}) "
@@ -248,7 +278,7 @@ def main() -> int:
             f"fp(no_call)={agg_sel.fps_no_call} fp(call_outside)={agg_sel.fps_call_outside} "
             f"mean_start_err={agg_sel.mean_start_err()} mean_end_err={agg_sel.mean_end_err()} "
             f"|| tol0 keep@0.5={agg0.keep_rate_iou_0_5():.3f} merges={agg0.merges} oversplits={agg0.oversplits} fp={agg0.fps} "
-            f"mode={cfg.mode}"
+            f"mode={cfg.mode} {fmt_params(cfg)}"
         )
 
     TOP_K = 10
