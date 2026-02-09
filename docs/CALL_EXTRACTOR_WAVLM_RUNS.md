@@ -218,3 +218,19 @@ Append one block per training cycle. Keep this file short and factual.
   - Matched calls have high IoU (mean≈0.885) but end boundary error remains large (mean_end_abs_err≈12.2s).
   - Frame metrics (eval; tolerance=0.4s): in_call AP≈0.869, start AP≈0.149, end AP≈0.117.
   - No-call videos still show rare very-high start/end peaks (max≈0.91/0.86), forcing high start_thr to satisfy fp==0.
+
+### run_20260209_100848_76185f0
+- Date (UTC): 2026-02-09
+- Git SHA: 76185f0
+- Base model: `microsoft/wavlm-large`
+- Train config: `configs/call_extractor/train_wavlm_large_v13.config.json` (more no-call negatives; dropout=0.1; 3 epochs; best at epoch 1)
+- Decode config: strict-gates transitions sweep on eval probs
+  - best cfg: mode=transitions start_thr=0.25 end_thr=0.65 in_call_threshold=0.25 in_call_smooth_win_s=0.1 transition_win_s=0.4 transition_margin=0.02 in_call_mean_min=0.32
+- Eval split: `configs/call_extractor/split_v2.config.json` (10 videos, 79 calls; labels `labeling/corrected_boundaries/v2/`)
+- Eval gates (strict: merges=0, oversplits=0, FP=0):
+  - transitions: merges=0, oversplits=0, fp=0, keep_rate_iou_0_5=0.038 (3/79), matched=4/79
+- Artifacts (S3):
+  - model + probs + segments + reports: `call_extractor/wavlm_large_v1/models/run_20260209_100848_76185f0/`
+- Notes:
+  - No-call spike issue appears fixed (no-call start/end p99 <= ~0.20 on eval), enabling low start_thr without FP.
+  - Boundary localization still weak on some videos (mean_start_abs_err≈60s; mean_end_abs_err≈14s for matched calls), limiting strict-gates keep-rate.
