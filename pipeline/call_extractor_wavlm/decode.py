@@ -243,10 +243,18 @@ def probabilities_to_segments(
                 r = min(int(times_s.size), int(j) + int(pad))
                 if r <= l:
                     return True
-                if float(np.max(start_p[l:r])) >= start_thr:
-                    return False
-                if float(np.max(end_p[l:r])) >= end_thr:
-                    return False
+                # Only treat as a boundary if we see *both* an end-like peak and a start-like peak
+                # in the OFF gap in end->start order (or tied). This reduces false "boundary"
+                # detections from noisy peaks inside calls.
+                sp = start_p[l:r]
+                ep = end_p[l:r]
+                max_s = float(np.max(sp))
+                max_e = float(np.max(ep))
+                if max_s >= start_thr and max_e >= end_thr:
+                    idx_s = int(l + int(np.argmax(sp)))
+                    idx_e = int(l + int(np.argmax(ep)))
+                    if idx_e <= idx_s:
+                        return False
                 return True
 
             on = _apply_min_run_lengths(
@@ -283,10 +291,16 @@ def probabilities_to_segments(
             if internal_thr < 1.0:
                 li, ri = slice_internal(float(s_t), float(e_t))
                 if ri > li:
-                    if float(start_p[li:ri].max(initial=0.0)) >= internal_thr:
-                        continue
-                    if float(end_p[li:ri].max(initial=0.0)) >= internal_thr:
-                        continue
+                    sp = start_p[li:ri]
+                    ep = end_p[li:ri]
+                    max_s = float(sp.max(initial=0.0))
+                    max_e = float(ep.max(initial=0.0))
+                    if max_s >= internal_thr and max_e >= internal_thr:
+                        idx_s = int(li + int(np.argmax(sp)))
+                        idx_e = int(li + int(np.argmax(ep)))
+                        # Boundary pattern: end then start (or tied) inside one segment => ambiguous merge.
+                        if idx_e <= idx_s:
+                            continue
             segments.append(
                 {
                     "start_s": float(s_t),
