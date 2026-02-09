@@ -94,7 +94,7 @@ def _predict_video(
             if str(feat_norm).lower() == "group":
                 attention_mask = None
             else:
-                attention_mask = attention_mask.to(device)
+                attention_mask = attention_mask.to(device=device, dtype=torch.bool)
 
         out = model(input_values=input_values, attention_mask=attention_mask)
         logits = out["logits"][0].detach().float().cpu().numpy()

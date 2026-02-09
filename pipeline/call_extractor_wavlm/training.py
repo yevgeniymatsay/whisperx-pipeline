@@ -84,6 +84,10 @@ class Collator:
         use_attention_mask = (attention_mask is not None) and (str(feat_norm).lower() != "group")
         if not use_attention_mask:
             attention_mask = None
+        else:
+            # transformers attention mask is conceptually boolean; keeping it bool avoids downstream
+            # dtype mismatches in torch attention implementations.
+            attention_mask = attention_mask.to(dtype=torch.bool)
         input_lengths = audio_lengths
 
         out_lens = [feat_extract_output_length(input_length_samples=int(L), config=self.model_config) for L in input_lengths]
