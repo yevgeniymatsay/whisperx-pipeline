@@ -258,6 +258,16 @@ def probabilities_to_segments(
 
         seg_bounds = on_off_to_segments(times_s=times_s, on=on)
         segments: list[dict] = []
+        internal_thr = float(cfg.internal_peak_drop_threshold)
+        join_tol = float(cfg.boundary_join_tolerance_s)
+
+        def slice_internal(s_t: float, e_t: float) -> tuple[int, int]:
+            # Exclude a small neighborhood around boundaries to avoid dropping due to frame
+            # discretization (peaks can land slightly inside the interval).
+            l = int(np.searchsorted(times_s, float(s_t) + join_tol, side="right"))
+            r = int(np.searchsorted(times_s, float(e_t) - join_tol, side="left"))
+            return l, r
+
         for s_t, e_t in seg_bounds:
             if e_t - s_t < float(cfg.min_duration_s) or e_t - s_t > float(cfg.max_duration_s):
                 continue
@@ -267,6 +277,16 @@ def probabilities_to_segments(
             mean_in_call = float(in_call_p[inside].mean())
             if mean_in_call < float(cfg.in_call_mean_min):
                 continue
+
+            # Drop segments with boundary-like evidence inside the interval; this helps enforce the
+            # "drop ambiguous" policy by preferring no output over a potential multi-call merge.
+            if internal_thr < 1.0:
+                li, ri = slice_internal(float(s_t), float(e_t))
+                if ri > li:
+                    if float(start_p[li:ri].max(initial=0.0)) >= internal_thr:
+                        continue
+                    if float(end_p[li:ri].max(initial=0.0)) >= internal_thr:
+                        continue
             segments.append(
                 {
                     "start_s": float(s_t),
