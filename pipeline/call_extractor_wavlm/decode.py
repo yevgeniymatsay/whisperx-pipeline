@@ -315,6 +315,11 @@ def probabilities_to_segments(
         active_start: int | None = None
         segments: list[dict] = []
 
+        def slice_internal(s_t: float, e_t: float) -> tuple[int, int]:
+            l = int(np.searchsorted(times_s, float(s_t) + join_tol, side="right"))
+            r = int(np.searchsorted(times_s, float(e_t) - join_tol, side="left"))
+            return l, r
+
         for _t, kind, idx in events:
             idx = int(idx)
             if kind == 1:
@@ -344,6 +349,34 @@ def probabilities_to_segments(
             mean_in_call = float(in_call_p[l:r].mean()) if r > l else 0.0
             if mean_in_call < in_call_min:
                 continue
+
+            # Drop if there is evidence of an additional boundary-like transition inside the segment.
+            # This is stricter than necessary but helps enforce merges==0 / oversplits==0 by preferring drop.
+            internal_thr = float(cfg.internal_peak_drop_threshold)
+            li, ri = slice_internal(s_t, e_t)
+            if ri > li and internal_thr < 1.0:
+                drop_due_to_internal = False
+
+                internal_start_idxs = np.flatnonzero(start_p[li:ri] >= internal_thr).astype(np.int64) + int(li)
+                for ii in internal_start_idxs.tolist():
+                    pre = mean_lr(int(ii) - win_steps, int(ii))
+                    post = mean_lr(int(ii), int(ii) + win_steps)
+                    if pre <= (thr - margin) and post >= (thr + margin):
+                        # Looks like an extra call start inside a call => ambiguous
+                        drop_due_to_internal = True
+                        break
+                if drop_due_to_internal:
+                    continue
+
+                internal_end_idxs = np.flatnonzero(end_p[li:ri] >= internal_thr).astype(np.int64) + int(li)
+                for ii in internal_end_idxs.tolist():
+                    pre = mean_lr(int(ii) - win_steps, int(ii))
+                    post = mean_lr(int(ii), int(ii) + win_steps)
+                    if pre >= (thr + margin) and post <= (thr - margin):
+                        drop_due_to_internal = True
+                        break
+                if drop_due_to_internal:
+                    continue
 
             segments.append(
                 {
