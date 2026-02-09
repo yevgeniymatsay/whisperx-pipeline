@@ -7,6 +7,7 @@ import json
 import logging
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -57,6 +58,25 @@ def main() -> int:
         choices=["peaks", "viterbi", "in_call", "transitions"],
         default=None,
         help="Decode mode to sweep (default: use decode-config's mode)",
+    )
+
+    parser.add_argument(
+        "--match-tol-s",
+        type=float,
+        default=0.25,
+        help="Tolerance in seconds for overlap-based matching (selection uses this tol; tol=0.0 is always reported).",
+    )
+    parser.add_argument(
+        "--overlap-eps-s",
+        type=float,
+        default=0.10,
+        help="Minimum (tolerance-adjusted) intersection duration required to count as an overlap for matching.",
+    )
+    parser.add_argument(
+        "--min-coverage",
+        type=float,
+        default=0.30,
+        help="Coverage threshold for counting a GT call as kept (anti-gaming gate). Coverage uses exact intersection.",
     )
 
     # Peaks mode grids (WavLM frame heads can be low-amplitude early in training).
@@ -152,7 +172,113 @@ def main() -> int:
     trans_win_grid = _grid(args.transition_win_s)
     trans_margin_grid = _grid(args.transition_margin)
 
-    best: dict | None = None
+    tol_sel = float(args.match_tol_s)
+    tols = [0.0, tol_sel]
+    tols = sorted({float(t) for t in tols})
+
+    @dataclass
+    class Agg:
+        merges: int = 0
+        oversplits: int = 0
+        gt_calls: int = 0
+        pred_calls: int = 0
+        matched: int = 0
+        kept_cov: int = 0
+        kept_iou_0_5: int = 0
+        kept_iou_0_8: int = 0
+        fps: int = 0
+        fps_no_call: int = 0
+        fps_call_outside: int = 0
+        start_err_sum: float = 0.0
+        end_err_sum: float = 0.0
+
+        def add(self, m: Any) -> None:
+            self.merges += int(m.merges)
+            self.oversplits += int(m.oversplits)
+            self.gt_calls += int(m.gt_calls)
+            self.pred_calls += int(m.pred_calls)
+            self.matched += int(m.matched_calls)
+            self.kept_cov += int(getattr(m, "kept_calls_coverage", 0))
+            self.kept_iou_0_5 += int(m.kept_calls_iou_0_5)
+            self.kept_iou_0_8 += int(m.kept_calls_iou_0_8)
+            self.fps += int(m.false_positive_segments)
+            if int(m.gt_calls) == 0:
+                self.fps_no_call += int(m.false_positive_segments)
+            else:
+                self.fps_call_outside += int(m.false_positive_segments)
+            if m.mean_start_abs_err_s is not None and int(m.matched_calls) > 0:
+                self.start_err_sum += float(m.mean_start_abs_err_s) * float(m.matched_calls)
+            if m.mean_end_abs_err_s is not None and int(m.matched_calls) > 0:
+                self.end_err_sum += float(m.mean_end_abs_err_s) * float(m.matched_calls)
+
+        def keep_rate(self) -> float:
+            return (float(self.matched) / float(self.gt_calls)) if int(self.gt_calls) > 0 else 0.0
+
+        def keep_rate_cov(self) -> float:
+            return (float(self.kept_cov) / float(self.gt_calls)) if int(self.gt_calls) > 0 else 0.0
+
+        def keep_rate_iou_0_5(self) -> float:
+            return (float(self.kept_iou_0_5) / float(self.gt_calls)) if int(self.gt_calls) > 0 else 0.0
+
+        def keep_rate_iou_0_8(self) -> float:
+            return (float(self.kept_iou_0_8) / float(self.gt_calls)) if int(self.gt_calls) > 0 else 0.0
+
+        def mean_start_err(self) -> float | None:
+            return (float(self.start_err_sum) / float(self.matched)) if int(self.matched) > 0 else None
+
+        def mean_end_err(self) -> float | None:
+            return (float(self.end_err_sum) / float(self.matched)) if int(self.matched) > 0 else None
+
+        def err_score(self) -> float:
+            if int(self.matched) <= 0:
+                return float("inf")
+            ms = self.mean_start_err()
+            me = self.mean_end_err()
+            if ms is None or me is None:
+                return float("inf")
+            return float(ms) + float(me)
+
+    def _fmt_row(label: str, cfg: DecodeConfig, agg_sel: Agg, agg0: Agg) -> str:
+        return (
+            f"{label} keep@0.5={agg_sel.keep_rate_iou_0_5():.3f} "
+            f"(kept={agg_sel.kept_iou_0_5}/{agg_sel.gt_calls}; cov_keep={agg_sel.keep_rate_cov():.3f}; raw_keep={agg_sel.keep_rate():.3f}) "
+            f"merges={agg_sel.merges} oversplits={agg_sel.oversplits} fp={agg_sel.fps} "
+            f"fp(no_call)={agg_sel.fps_no_call} fp(call_outside)={agg_sel.fps_call_outside} "
+            f"mean_start_err={agg_sel.mean_start_err()} mean_end_err={agg_sel.mean_end_err()} "
+            f"|| tol0 keep@0.5={agg0.keep_rate_iou_0_5():.3f} merges={agg0.merges} oversplits={agg0.oversplits} fp={agg0.fps} "
+            f"mode={cfg.mode}"
+        )
+
+    TOP_K = 10
+
+    def _add_topk(topk: list[tuple[float, float, DecodeConfig, Agg, Agg]], cfg: DecodeConfig, agg_sel: Agg, agg0: Agg) -> None:
+        # Sort key: keep_rate_iou_0_5 desc, err_score asc.
+        k = float(agg_sel.keep_rate_iou_0_5())
+        e = float(agg_sel.err_score())
+        topk.append((k, e, cfg, agg_sel, agg0))
+        topk.sort(key=lambda x: (-float(x[0]), float(x[1])))
+        del topk[TOP_K:]
+
+    best_strict_sel: tuple[float, float, DecodeConfig, Agg, Agg] | None = None
+    best_strict_tol0: tuple[float, float, DecodeConfig, Agg, Agg] | None = None
+    best_almost_sel: tuple[float, float, DecodeConfig, Agg, Agg] | None = None
+    best_almost_tol0: tuple[float, float, DecodeConfig, Agg, Agg] | None = None
+
+    topk_sel: list[tuple[float, float, DecodeConfig, Agg, Agg]] = []
+    topk_tol0: list[tuple[float, float, DecodeConfig, Agg, Agg]] = []
+
+    # Near-miss buckets (tracked on selection tol, but print tol0 side-by-side).
+    best_m0_o0_minfp: tuple[int, float, float, DecodeConfig, Agg, Agg] | None = None  # (fp, keep, err)
+    best_m0_fp0_mino: tuple[int, float, float, DecodeConfig, Agg, Agg] | None = None  # (oversplits, keep, err)
+    best_o0_fp0_minm: tuple[int, float, float, DecodeConfig, Agg, Agg] | None = None  # (merges, keep, err)
+
+    # Failure summaries (selection tol).
+    fail_fp = 0
+    fail_fp_no_call = 0
+    fail_fp_call_outside = 0
+    fail_merges = 0
+    fail_oversplits = 0
+    fail_zero_cov_keep = 0
 
     if mode == "peaks":
         grid_iter = itertools.product(start_grid, end_grid, in_call_grid)
@@ -204,6 +330,7 @@ def main() -> int:
             * len(in_call_grid)
         )
 
+    total_configs = int(total)
     t0 = time.monotonic()
     for sweep_i, vals in enumerate(grid_iter, start=1):
         if mode == "peaks":
@@ -275,16 +402,7 @@ def main() -> int:
                 in_call_smooth_win_s=float(smooth_s),
             )
 
-        merges = 0
-        oversplits = 0
-        gt_calls = 0
-        matched = 0
-        kept_iou_0_5 = 0
-        kept_iou_0_8 = 0
-        pred_calls = 0
-        fps = 0
-        start_err_sum = 0.0
-        end_err_sum = 0.0
+        agg_by_tol: dict[float, Agg] = {float(t): Agg() for t in tols}
 
         for vid in eval_video_ids:
             times_s, in_call, start, end = probs_by_vid[str(vid)]
@@ -292,90 +410,183 @@ def main() -> int:
             pred_bounds = boundaries_from_json_segments(segs)
             gt_bounds = gt_by_vid[str(vid)]
 
-            m = compute_gate_metrics(gt=gt_bounds, pred=pred_bounds)
-            merges += int(m.merges)
-            oversplits += int(m.oversplits)
-            gt_calls += int(m.gt_calls)
-            matched += int(m.matched_calls)
-            kept_iou_0_5 += int(m.kept_calls_iou_0_5)
-            kept_iou_0_8 += int(m.kept_calls_iou_0_8)
-            pred_calls += int(m.pred_calls)
-            fps += int(m.false_positive_segments)
-            if m.mean_start_abs_err_s is not None and int(m.matched_calls) > 0:
-                start_err_sum += float(m.mean_start_abs_err_s) * float(m.matched_calls)
-            if m.mean_end_abs_err_s is not None and int(m.matched_calls) > 0:
-                end_err_sum += float(m.mean_end_abs_err_s) * float(m.matched_calls)
+            for tol in tols:
+                m = compute_gate_metrics(
+                    gt=gt_bounds,
+                    pred=pred_bounds,
+                    match_tol_s=float(tol),
+                    overlap_eps_s=float(args.overlap_eps_s),
+                    min_coverage=float(args.min_coverage),
+                )
+                agg_by_tol[float(tol)].add(m)
 
-        keep_rate = (matched / gt_calls) if gt_calls > 0 else 0.0
-        keep_rate_iou_0_5 = (kept_iou_0_5 / gt_calls) if gt_calls > 0 else 0.0
-        keep_rate_iou_0_8 = (kept_iou_0_8 / gt_calls) if gt_calls > 0 else 0.0
-        ok = (merges == 0) and (oversplits == 0) and (fps == 0)
-        if ok:
-            mean_start_err = (start_err_sum / float(matched)) if int(matched) > 0 else None
-            mean_end_err = (end_err_sum / float(matched)) if int(matched) > 0 else None
-            cand = {
-                "cfg": cfg,
-                "keep_rate": float(keep_rate),
-                "keep_rate_iou_0_5": float(keep_rate_iou_0_5),
-                "keep_rate_iou_0_8": float(keep_rate_iou_0_8),
-                "matched": int(matched),
-                "kept_iou_0_5": int(kept_iou_0_5),
-                "kept_iou_0_8": int(kept_iou_0_8),
-                "gt_calls": int(gt_calls),
-                "pred_calls": int(pred_calls),
-                "merges": int(merges),
-                "oversplits": int(oversplits),
-                "fps": int(fps),
-                "mean_start_abs_err_s": mean_start_err,
-                "mean_end_abs_err_s": mean_end_err,
-            }
+        agg_sel = agg_by_tol[float(tol_sel)]
+        agg0 = agg_by_tol[0.0]
 
-            def err_score(d: dict) -> float:
-                if int(d.get("matched", 0)) <= 0:
-                    return float("inf")
-                ms = d.get("mean_start_abs_err_s")
-                me = d.get("mean_end_abs_err_s")
-                if ms is None or me is None:
-                    return float("inf")
-                return float(ms) + float(me)
+        # Track top-K regardless of gates (selection tol).
+        _add_topk(topk_sel, cfg, agg_sel, agg0)
+        _add_topk(topk_tol0, cfg, agg0, agg0)  # store tol0 metrics in the "sel" slot for printing
 
-            if best is None:
-                best = cand
-            else:
-                cand_keep = float(cand["keep_rate_iou_0_5"])
-                best_keep = float(best["keep_rate_iou_0_5"])
-                if cand_keep > best_keep:
-                    best = cand
-                elif cand_keep == best_keep and err_score(cand) < err_score(best):
-                    best = cand
+        # Failure summaries (selection tol).
+        if int(agg_sel.fps) > 0:
+            fail_fp += 1
+        if int(agg_sel.fps_no_call) > 0:
+            fail_fp_no_call += 1
+        if int(agg_sel.fps_call_outside) > 0:
+            fail_fp_call_outside += 1
+        if int(agg_sel.merges) > 0:
+            fail_merges += 1
+        if int(agg_sel.oversplits) > 0:
+            fail_oversplits += 1
+        if int(agg_sel.merges) == 0 and int(agg_sel.oversplits) == 0 and int(agg_sel.fps) == 0:
+            # Safety passes but nothing meets the coverage gate.
+            if int(agg_sel.matched) > 0 and int(agg_sel.kept_cov) == 0:
+                fail_zero_cov_keep += 1
+
+        # Strict-valid and strict-almost (selection tol).
+        strict_sel_ok = (int(agg_sel.merges) == 0) and (int(agg_sel.oversplits) == 0) and (int(agg_sel.fps) == 0)
+        strict0_ok = (int(agg0.merges) == 0) and (int(agg0.oversplits) == 0) and (int(agg0.fps) == 0)
+
+        almost_sel_ok = (int(agg_sel.merges) == 0) and (int(agg_sel.fps) == 0) and (int(agg_sel.oversplits) <= 1)
+        almost0_ok = (int(agg0.merges) == 0) and (int(agg0.fps) == 0) and (int(agg0.oversplits) <= 1)
+
+        if strict_sel_ok:
+            k = float(agg_sel.keep_rate_iou_0_5())
+            e = float(agg_sel.err_score())
+            cand = (k, e, cfg, agg_sel, agg0)
+            if best_strict_sel is None or (k > float(best_strict_sel[0])) or (k == float(best_strict_sel[0]) and e < float(best_strict_sel[1])):
+                best_strict_sel = cand
+
+        if strict0_ok:
+            k = float(agg0.keep_rate_iou_0_5())
+            e = float(agg0.err_score())
+            cand = (k, e, cfg, agg0, agg0)
+            if best_strict_tol0 is None or (k > float(best_strict_tol0[0])) or (k == float(best_strict_tol0[0]) and e < float(best_strict_tol0[1])):
+                best_strict_tol0 = cand
+
+        if almost_sel_ok:
+            k = float(agg_sel.keep_rate_iou_0_5())
+            e = float(agg_sel.err_score())
+            cand = (k, e, cfg, agg_sel, agg0)
+            if best_almost_sel is None or (k > float(best_almost_sel[0])) or (k == float(best_almost_sel[0]) and e < float(best_almost_sel[1])):
+                best_almost_sel = cand
+
+        if almost0_ok:
+            k = float(agg0.keep_rate_iou_0_5())
+            e = float(agg0.err_score())
+            cand = (k, e, cfg, agg0, agg0)
+            if best_almost_tol0 is None or (k > float(best_almost_tol0[0])) or (k == float(best_almost_tol0[0]) and e < float(best_almost_tol0[1])):
+                best_almost_tol0 = cand
+
+        # Near-miss buckets on selection tol.
+        if int(agg_sel.merges) == 0 and int(agg_sel.oversplits) == 0:
+            fp = int(agg_sel.fps)
+            keep = float(agg_sel.keep_rate_iou_0_5())
+            err = float(agg_sel.err_score())
+            cand = (fp, keep, err, cfg, agg_sel, agg0)
+            if best_m0_o0_minfp is None or (fp < int(best_m0_o0_minfp[0])) or (fp == int(best_m0_o0_minfp[0]) and keep > float(best_m0_o0_minfp[1])) or (
+                fp == int(best_m0_o0_minfp[0]) and keep == float(best_m0_o0_minfp[1]) and err < float(best_m0_o0_minfp[2])
+            ):
+                best_m0_o0_minfp = cand
+
+        if int(agg_sel.merges) == 0 and int(agg_sel.fps) == 0:
+            o = int(agg_sel.oversplits)
+            keep = float(agg_sel.keep_rate_iou_0_5())
+            err = float(agg_sel.err_score())
+            cand = (o, keep, err, cfg, agg_sel, agg0)
+            if best_m0_fp0_mino is None or (o < int(best_m0_fp0_mino[0])) or (o == int(best_m0_fp0_mino[0]) and keep > float(best_m0_fp0_mino[1])) or (
+                o == int(best_m0_fp0_mino[0]) and keep == float(best_m0_fp0_mino[1]) and err < float(best_m0_fp0_mino[2])
+            ):
+                best_m0_fp0_mino = cand
+
+        if int(agg_sel.oversplits) == 0 and int(agg_sel.fps) == 0:
+            m = int(agg_sel.merges)
+            keep = float(agg_sel.keep_rate_iou_0_5())
+            err = float(agg_sel.err_score())
+            cand = (m, keep, err, cfg, agg_sel, agg0)
+            if best_o0_fp0_minm is None or (m < int(best_o0_fp0_minm[0])) or (m == int(best_o0_fp0_minm[0]) and keep > float(best_o0_fp0_minm[1])) or (
+                m == int(best_o0_fp0_minm[0]) and keep == float(best_o0_fp0_minm[1]) and err < float(best_o0_fp0_minm[2])
+            ):
+                best_o0_fp0_minm = cand
 
         log_every = int(args.log_every)
         if log_every > 0 and (sweep_i % log_every == 0 or sweep_i == total):
             elapsed_s = float(time.monotonic() - t0)
-            best_keep = float(best["keep_rate_iou_0_5"]) if best is not None else 0.0
-            logger.info(f"Progress {sweep_i}/{total} configs; best_keep={best_keep:.3f}; elapsed_s={elapsed_s:.1f}")
+            best_keep = float(best_strict_sel[0]) if best_strict_sel is not None else 0.0
+            logger.info(
+                f"Progress {sweep_i}/{total} configs; best_strict_keep@0.5={best_keep:.3f}; "
+                f"tol_sel={tol_sel} eps={args.overlap_eps_s} cov={args.min_coverage}; elapsed_s={elapsed_s:.1f}"
+            )
 
     # NOTE: The sweep loops are intentionally silent by default (fast), but can be hard to
     # distinguish from a hang. When --log-every is set, re-run with unbuffered output:
     #   PYTHONUNBUFFERED=1 python -u scripts/sweep_call_extractor_decode.py ... --log-every 100
 
-    if best is None:
-        logger.error("No decode config satisfied strict gates on eval set.")
-        return 2
-
-    best_cfg: DecodeConfig = best["cfg"]
     logger.info(
-        f"Best keep_rate_iou_0_5={best['keep_rate_iou_0_5']:.3f} "
-        f"kept_iou_0_5={best['kept_iou_0_5']}/{best['gt_calls']} "
-        f"(raw_keep_rate={best['keep_rate']:.3f} matched={best['matched']}/{best['gt_calls']}) "
-        f"mean_start_err={best.get('mean_start_abs_err_s')} mean_end_err={best.get('mean_end_abs_err_s')} "
-        f"mode={best_cfg.mode} "
-        f"start_thr={best_cfg.start_peak_threshold} end_thr={best_cfg.end_peak_threshold} "
-        f"in_call_mean_min={best_cfg.in_call_mean_min}"
+        f"Sweep complete: mode={mode} tol_sel={tol_sel} eps={args.overlap_eps_s} min_coverage={args.min_coverage} total_configs={total_configs}"
     )
+
+    logger.info("Top-K overall by keep@0.5 (selection tol):")
+    for i, (k, e, cfg, agg_sel, agg0) in enumerate(topk_sel, start=1):
+        logger.info(_fmt_row(f"  [{i:02d}]", cfg, agg_sel, agg0))
+
+    logger.info("Top-K overall by keep@0.5 (tol=0.0):")
+    for i, (k, e, cfg, agg_sel, agg0) in enumerate(topk_tol0, start=1):
+        # Here agg_sel==agg0 by construction.
+        logger.info(_fmt_row(f"  [{i:02d}]", cfg, agg_sel, agg0))
+
+    if best_strict_sel is not None:
+        _k, _e, best_cfg, agg_sel, agg0 = best_strict_sel
+        logger.info("Best strict-valid @ tol_sel:")
+        logger.info(_fmt_row("  [BEST_STRICT_SEL]", best_cfg, agg_sel, agg0))
+    else:
+        logger.error("No strict-valid config found @ tol_sel.")
+
+    if best_strict_tol0 is not None:
+        _k, _e, best_cfg, agg_sel, agg0 = best_strict_tol0
+        logger.info("Best strict-valid @ tol=0.0:")
+        logger.info(_fmt_row("  [BEST_STRICT_TOL0]", best_cfg, agg_sel, agg0))
+    else:
+        logger.info("No strict-valid config found @ tol=0.0.")
+
+    if best_almost_sel is not None:
+        _k, _e, best_cfg, agg_sel, agg0 = best_almost_sel
+        logger.info("Best strict-almost @ tol_sel (reporting-only):")
+        logger.info(_fmt_row("  [BEST_ALMOST_SEL]", best_cfg, agg_sel, agg0))
+
+    if best_almost_tol0 is not None:
+        _k, _e, best_cfg, agg_sel, agg0 = best_almost_tol0
+        logger.info("Best strict-almost @ tol=0.0 (reporting-only):")
+        logger.info(_fmt_row("  [BEST_ALMOST_TOL0]", best_cfg, agg_sel, agg0))
+
+    if best_m0_o0_minfp is not None:
+        fp, keep, err, best_cfg, agg_sel, agg0 = best_m0_o0_minfp
+        logger.info(f"Near-miss (merges=0, oversplits=0; minimize FP): fp={fp}")
+        logger.info(_fmt_row("  [NEAR_M0_O0_MINFP]", best_cfg, agg_sel, agg0))
+
+    if best_m0_fp0_mino is not None:
+        o, keep, err, best_cfg, agg_sel, agg0 = best_m0_fp0_mino
+        logger.info(f"Near-miss (merges=0, FP=0; minimize oversplits): oversplits={o}")
+        logger.info(_fmt_row("  [NEAR_M0_FP0_MINO]", best_cfg, agg_sel, agg0))
+
+    if best_o0_fp0_minm is not None:
+        m, keep, err, best_cfg, agg_sel, agg0 = best_o0_fp0_minm
+        logger.info(f"Near-miss (oversplits=0, FP=0; minimize merges): merges={m}")
+        logger.info(_fmt_row("  [NEAR_O0_FP0_MINM]", best_cfg, agg_sel, agg0))
+
+    logger.info(
+        "Failure summary (@ tol_sel): "
+        f"fp_fail={fail_fp}/{total_configs} (no_call={fail_fp_no_call}, call_outside={fail_fp_call_outside}) "
+        f"merges_fail={fail_merges}/{total_configs} oversplits_fail={fail_oversplits}/{total_configs} "
+        f"safety_pass_but_zero_cov_keep={fail_zero_cov_keep}/{total_configs}"
+    )
+
+    if best_strict_sel is None:
+        return 2
 
     if args.write_best:
         args.write_best.parent.mkdir(parents=True, exist_ok=True)
+        best_cfg: DecodeConfig = best_strict_sel[2]
         args.write_best.write_text(json.dumps(best_cfg.__dict__, indent=2, sort_keys=True) + "\n")
         logger.info(f"Wrote {args.write_best}")
 
