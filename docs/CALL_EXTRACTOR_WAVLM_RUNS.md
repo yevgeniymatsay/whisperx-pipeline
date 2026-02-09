@@ -162,3 +162,24 @@ Append one block per training cycle. Keep this file short and factual.
   - Keep-rate regressed vs v3 (0.190) but boundary heads show improved ranking signal vs earlier low-AP runs.
   - Matched segments still often have very large boundary errors (segments overlap the correct call but start/end are far off); decoder/training needs refinement before any large batch extraction.
   - Viterbi sweeps over full-length eval probs are too slow with the current Python-loop implementation; avoid sweeping Viterbi until optimized.
+
+### run_20260209_052329_a83e45a
+- Date (UTC): 2026-02-09
+- Git SHA: a83e45a
+- Base model: `microsoft/wavlm-large`
+- Train config: `configs/call_extractor/train_wavlm_large_v9.config.json` (tol=0.6s; boundary_k=8; heavy out-call sampling)
+- Decode config: sweep-only (no single default)
+  - strict-gates transitions best: `best_decode_transitions.json` (keep_rate_iou_0_5=0.025; 2/79)
+  - strict-gates peaks best (internal=0.6): `best_decode_peaks_internal0.6.json` (keep_rate_iou_0_5=0.038; 3/79)
+- Eval split: `configs/call_extractor/split_v2.config.json` (10 videos, 79 calls; labels `labeling/corrected_boundaries/v2/`)
+- Eval gates (strict: merges=0, oversplits=0, FP=0):
+  - transitions: merges=0, oversplits=0, fp=0, keep_rate_iou_0_5=0.025 (2/79)
+  - peaks (internal=0.6): merges=0, oversplits=0, fp=0, keep_rate_iou_0_5=0.038 (3/79)
+  - peaks (internal=0.9): no strict-gates config found
+  - in_call: no strict-gates config found (for the tested grid)
+  - viterbi: sweep too slow with current implementation (avoid until optimized)
+- Artifacts (S3):
+  - model + probs + reports: `call_extractor/wavlm_large_v1/models/run_20260209_052329_a83e45a/`
+- Notes:
+  - Frame metrics (eval; tolerance=0.6s): in_call AP≈0.908 (pos_frac≈0.75), start AP≈0.103, end AP≈0.164.
+  - Despite good in_call ranking signal, strict-gates keep-rate regressed; likely driven by poor boundary localization / decoder mismatch rather than separation alone.

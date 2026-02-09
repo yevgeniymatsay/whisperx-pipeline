@@ -21,9 +21,17 @@ def feat_extract_timing_from_config(*, config, sr_hz: int) -> FeatExtractTiming:
 
     if conv_kernel is None or conv_stride is None:
         # Reasonable defaults for WavLM/Wav2Vec2 style feature extractor.
+        #
+        # Canonical Wav2Vec2/WavLM conv extractor params are typically:
+        #   conv_kernel=[10,3,3,3,3,2,2]
+        #   conv_stride=[5,2,2,2,2,2,2]
+        # which yields:
+        #   total_stride = 5 * 2^6 = 320 samples (@16kHz => 20ms)
+        #   receptive_field = 700 samples
+        #   center offset = round((700-1)/2) = 350 samples
         stride_samples = 320
-        receptive_field_samples = 703
-        offset_samples = 351
+        receptive_field_samples = 700
+        offset_samples = 350
         return FeatExtractTiming(
             sr_hz=int(sr_hz),
             stride_samples=int(stride_samples),
@@ -55,8 +63,15 @@ def feat_extract_output_length(*, input_length_samples: int, config) -> int:
     conv_kernel = getattr(config, "conv_kernel", None)
     conv_stride = getattr(config, "conv_stride", None)
     if conv_kernel is None or conv_stride is None:
+        # Match the 7-layer valid-conv stack semantics for the canonical Wav2Vec2/WavLM extractor.
+        # With receptive_field=700 and total_stride=320, output length is:
+        #   floor((L - receptive_field) / stride) + 1
         stride = 320
-        return int(max(0, (int(input_length_samples) // stride)))
+        receptive = 700
+        L = int(input_length_samples)
+        if L < receptive:
+            return 0
+        return int(max(0, (int((L - receptive) // stride) + 1)))
 
     length = int(input_length_samples)
     for k, s in zip(conv_kernel, conv_stride):
@@ -126,4 +141,3 @@ class WavLMFrameClassifier(nn.Module):
         denom = mask.sum().clamp(min=1.0) * float(logits.shape[-1])
         result["loss"] = loss / denom
         return result
-

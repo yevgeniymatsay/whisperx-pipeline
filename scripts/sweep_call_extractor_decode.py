@@ -76,7 +76,7 @@ def main() -> int:
     # In-call threshold mode grids.
     parser.add_argument("--in-call-thresholds", type=str, default="0.45,0.50,0.55,0.60")
     parser.add_argument("--in-call-min-on-s", type=str, default="1.0,2.0")
-    parser.add_argument("--in-call-min-off-s", type=str, default="0.0,0.2,0.4,0.6,0.8")
+    parser.add_argument("--in-call-min-off-s", type=str, default="0.0,0.2,0.4,0.6,0.7,0.8")
     parser.add_argument("--in-call-smooth-win-s", type=str, default="0.0,0.1,0.2")
 
     # Transition-filtered peaks mode grids.
@@ -190,8 +190,19 @@ def main() -> int:
             * len(in_call_grid)
         )
     else:
-        grid_iter = itertools.product(ic_thr_grid, ic_min_on_grid, ic_min_off_grid, ic_smooth_grid, in_call_grid)
-        total = len(ic_thr_grid) * len(ic_min_on_grid) * len(ic_min_off_grid) * len(ic_smooth_grid) * len(in_call_grid)
+        # NOTE: start/end thresholds matter for in_call decoding when boundary-aware OFF-gap
+        # filling is enabled (decode.py uses start/end peaks to decide whether a short OFF gap
+        # is safe to fill). Sweep them explicitly to find strict-gates settings.
+        grid_iter = itertools.product(start_grid, end_grid, ic_thr_grid, ic_min_on_grid, ic_min_off_grid, ic_smooth_grid, in_call_grid)
+        total = (
+            len(start_grid)
+            * len(end_grid)
+            * len(ic_thr_grid)
+            * len(ic_min_on_grid)
+            * len(ic_min_off_grid)
+            * len(ic_smooth_grid)
+            * len(in_call_grid)
+        )
 
     t0 = time.monotonic()
     for sweep_i, vals in enumerate(grid_iter, start=1):
@@ -247,11 +258,11 @@ def main() -> int:
                 transition_restart_on_new_start=bool(base_decode.transition_restart_on_new_start),
             )
         else:
-            ic_thr, min_on_s, min_off_s, smooth_s, ic_min = vals
+            s_thr, e_thr, ic_thr, min_on_s, min_off_s, smooth_s, ic_min = vals
             cfg = DecodeConfig(
                 mode="in_call",
-                start_peak_threshold=float(base_decode.start_peak_threshold),
-                end_peak_threshold=float(base_decode.end_peak_threshold),
+                start_peak_threshold=float(s_thr),
+                end_peak_threshold=float(e_thr),
                 in_call_mean_min=float(ic_min),
                 nms_min_sep_s=float(base_decode.nms_min_sep_s),
                 min_duration_s=float(base_decode.min_duration_s),
