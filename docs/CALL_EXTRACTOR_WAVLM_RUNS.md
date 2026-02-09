@@ -250,6 +250,18 @@ Append one block per training cycle. Keep this file short and factual.
 - Notes:
   - No-call spike issue appears fixed (no-call start/end p99 <= ~0.20 on eval), enabling low start_thr without FP.
   - Boundary localization still weak on some videos (mean_start_abs_err≈60s; mean_end_abs_err≈14s for matched calls), limiting strict-gates keep-rate.
+  - Locked strict-valid decode (decode-scoped; avoids overwriting run root `segments/`):
+    - prefix: `call_extractor/wavlm_large_v1/models/run_20260209_100848_76185f0/decoded_transitions_strict_20260209_224252/`
+    - decode config: `best_strict_decode.json` (same as `best_decode_transitions_strict.config.json` from run root)
+    - comparability:
+      - metrics_version: `gate_metrics_v1`
+      - gate_policy_version: `strict_gates_v1_fp_total`
+      - match_tol_s: 0.25
+      - overlap_eps_s: 0.10
+      - min_coverage: 0.30
+    - strict-valid (tol=0.25): keep@0.5=0.038 (3/79), keep@cov=0.038 (3/79), raw_keep=0.051 (4/79), merges=0, oversplits=0, fp=0
+    - tol=0.0: keep@0.5=0.038, merges=0, oversplits=0, fp=0
+  - Comparison (same scoring; eval v2): this decode is current best by keep@0.5 (next-best runs: keep@0.5=0.025).
 
 ### run_20260209_145206_0501f53
 - Date (UTC): 2026-02-09
