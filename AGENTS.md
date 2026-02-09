@@ -35,6 +35,7 @@ Additional required rules:
 - **Separation of concerns:** FP is only “spurious segment” (overlaps no GT call). Boundary quality belongs in coverage/IoU/error metrics. If you want “outside-GT overhang” safety, implement it as a **new metric** (report-only first), and only later promote it to a gate via a plan change.
 - **Single source of truth:** all sweeps/evals must use `pipeline.call_extractor_wavlm.metrics.compute_gate_metrics(...)` (no duplicated formulas).
 - **No mid-stream changes:** do not change any scoring/selection code/config while a sweep/eval is running; finish the run, then start a new versioned run.
+- **Do not kill running sweeps:** once a sweep/eval starts, do not terminate/interrupt it (e.g., Ctrl-C/kill) to “save time” or because CPU time is increasing. Let it finish to preserve near-miss diagnostics. Only stop a running sweep if the user explicitly instructs you to stop. If you think the sweep is misconfigured or “too slow,” record the concern and ask for explicit stop instructions.
 
 ### Run Review (required after each metrics-producing cycle)
 After any training/inference/eval cycle that produces new metrics, **STOP** and record a Run Review **in the execution checklist** (required; optionally mirror into `docs/CALL_EXTRACTOR_WAVLM_RUNS.md`) before taking further action.
