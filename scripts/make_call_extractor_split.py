@@ -40,7 +40,7 @@ def main() -> int:
     parser.add_argument(
         "--label-prefix",
         type=str,
-        default="labeling/corrected_boundaries/v1/",
+        default="labeling/corrected_boundaries/v2/",
         help="S3 prefix containing {video_id}.json label files",
     )
     parser.add_argument(
@@ -58,7 +58,7 @@ def main() -> int:
     parser.add_argument(
         "--out",
         type=Path,
-        default=Path("configs/call_extractor/split_v1.config.json"),
+        default=Path("configs/call_extractor/split_v2.config.json"),
         help="Output path (must end with .config.json to be tracked)",
     )
     parser.add_argument("--include-missing-audio", action="store_true", help="Keep videos even if audio not found")
@@ -89,7 +89,7 @@ def main() -> int:
     train_set = sorted([vid for vid in video_ids if vid not in set(eval_set)])
 
     out: Dict[str, Any] = {
-        "version": "split_v1",
+        "version": "split_v2",
         "generated_at_utc": utc_now_compact(),
         "bucket": S3_BUCKET,
         "aws_region": AWS_REGION,
@@ -108,4 +108,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

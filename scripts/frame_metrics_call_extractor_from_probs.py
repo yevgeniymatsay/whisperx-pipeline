@@ -62,7 +62,7 @@ def _metrics(y_true: np.ndarray, y_score: np.ndarray) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Frame-level metrics from saved per-frame probs (*.npz) + S3 labels.")
-    parser.add_argument("--split-config", type=Path, default=Path("configs/call_extractor/split_v1.config.json"))
+    parser.add_argument("--split-config", type=Path, default=Path("configs/call_extractor/split_v2.config.json"))
     parser.add_argument("--output-config", type=Path, default=Path("configs/call_extractor/output_wavlm_large_v1.config.json"))
     parser.add_argument(
         "--s3-prefix",

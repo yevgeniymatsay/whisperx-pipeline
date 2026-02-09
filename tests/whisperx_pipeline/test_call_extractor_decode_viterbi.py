@@ -47,3 +47,25 @@ def test_viterbi_respects_min_on_duration() -> None:
     segs = probabilities_to_segments(times_s=times, in_call_p=in_call, start_p=start, end_p=end, cfg=cfg)
     assert segs == []
 
+
+def test_in_call_threshold_decoder_closes_short_off_gaps() -> None:
+    # ON region with a brief dip below threshold should remain one segment when min_off_s is enforced.
+    times = np.arange(0.0, 10.0, 1.0, dtype=np.float32)
+    in_call = np.full_like(times, 0.95, dtype=np.float32)
+    in_call[4] = 0.05  # 1s OFF gap
+    start = np.zeros_like(times, dtype=np.float32)
+    end = np.zeros_like(times, dtype=np.float32)
+
+    cfg = DecodeConfig(
+        mode="in_call",
+        in_call_threshold=0.5,
+        in_call_mean_min=0.2,
+        min_duration_s=1.0,
+        in_call_min_on_s=1.0,
+        in_call_min_off_s=2.0,  # require OFF >=2s to split; fill 1s gap
+        in_call_smooth_win_s=0.0,
+    )
+    segs = probabilities_to_segments(times_s=times, in_call_p=in_call, start_p=start, end_p=end, cfg=cfg)
+    assert len(segs) == 1
+    assert segs[0]["start_s"] == 0.0
+    assert segs[0]["end_s"] == 9.0

@@ -10,7 +10,7 @@ from .decode_viterbi import ViterbiConfig, on_off_to_segments, viterbi_decode_on
 
 @dataclass(frozen=True)
 class DecodeConfig:
-    mode: str = "peaks"  # "peaks" | "viterbi"
+    mode: str = "peaks"  # "peaks" | "viterbi" | "in_call"
 
     start_peak_threshold: float = 0.70
     end_peak_threshold: float = 0.70
@@ -31,6 +31,65 @@ class DecodeConfig:
     viterbi_min_on_s: float = 2.0
     viterbi_min_off_s: float = 0.0
     viterbi_smooth_win_s: float = 0.0
+
+    # In-call threshold decode params (used when mode == "in_call")
+    in_call_threshold: float = 0.50
+    in_call_min_on_s: float = 2.0
+    in_call_min_off_s: float = 0.0
+    in_call_smooth_win_s: float = 0.0
+
+
+def _median_dt_s(times_s: np.ndarray) -> float:
+    if times_s.size < 2:
+        return 0.0
+    d = np.diff(times_s.astype(np.float64, copy=False))
+    d = d[d > 0]
+    if d.size == 0:
+        return 0.0
+    return float(np.median(d))
+
+
+def _smooth(p: np.ndarray, *, win_steps: int) -> np.ndarray:
+    if win_steps <= 1:
+        return p
+    k = np.ones((int(win_steps),), dtype=np.float32) / float(win_steps)
+    return np.convolve(p.astype(np.float32, copy=False), k, mode="same")
+
+
+def _apply_min_run_lengths(on: np.ndarray, *, min_on_steps: int, min_off_steps: int) -> np.ndarray:
+    """Flip short runs to enforce minimum ON/OFF durations.
+
+    WARNING: Filling short OFF gaps can merge adjacent calls.
+    Always use strict gating (merges==0) to select safe settings.
+    """
+    on = on.astype(bool, copy=True)
+    n = int(on.size)
+    if n == 0:
+        return on
+
+    def iter_runs(vals: np.ndarray):
+        i = 0
+        while i < n:
+            v = bool(vals[i])
+            j = i + 1
+            while j < n and bool(vals[j]) == v:
+                j += 1
+            yield v, i, j
+            i = j
+
+    # First remove short ON runs.
+    if int(min_on_steps) > 1:
+        for v, i, j in list(iter_runs(on)):
+            if v and (j - i) < int(min_on_steps):
+                on[i:j] = False
+
+    # Then fill short OFF gaps.
+    if int(min_off_steps) > 1:
+        for v, i, j in list(iter_runs(on)):
+            if (not v) and (j - i) < int(min_off_steps):
+                on[i:j] = True
+
+    return on
 
 
 def _local_peak_indices(probs: np.ndarray, *, threshold: float) -> np.ndarray:
@@ -118,6 +177,45 @@ def probabilities_to_segments(
                 smooth_win_s=float(cfg.viterbi_smooth_win_s),
             ),
         )
+        seg_bounds = on_off_to_segments(times_s=times_s, on=on)
+        segments: list[dict] = []
+        for s_t, e_t in seg_bounds:
+            if e_t - s_t < float(cfg.min_duration_s) or e_t - s_t > float(cfg.max_duration_s):
+                continue
+            inside = (times_s >= float(s_t)) & (times_s <= float(e_t))
+            if inside.sum() == 0:
+                continue
+            mean_in_call = float(in_call_p[inside].mean())
+            if mean_in_call < float(cfg.in_call_mean_min):
+                continue
+            segments.append(
+                {
+                    "start_s": float(s_t),
+                    "end_s": float(e_t),
+                    "score": float(mean_in_call),
+                    "mean_in_call": float(mean_in_call),
+                }
+            )
+        return segments
+
+    if str(cfg.mode).lower() == "in_call":
+        eps = 1e-6
+        p = np.clip(in_call_p.astype(np.float32, copy=False), eps, 1.0 - eps)
+
+        dt_s = _median_dt_s(times_s)
+        win_steps = 0
+        if float(cfg.in_call_smooth_win_s) > 0.0 and dt_s > 0.0:
+            win_steps = int(max(1, round(float(cfg.in_call_smooth_win_s) / float(dt_s))))
+        if win_steps > 1:
+            p = _smooth(p, win_steps=win_steps)
+            p = np.clip(p, eps, 1.0 - eps)
+
+        on = p >= float(cfg.in_call_threshold)
+        if dt_s > 0.0:
+            min_on_steps = int(max(1, np.ceil(float(cfg.in_call_min_on_s) / float(dt_s)))) if float(cfg.in_call_min_on_s) > 0 else 1
+            min_off_steps = int(max(1, np.ceil(float(cfg.in_call_min_off_s) / float(dt_s)))) if float(cfg.in_call_min_off_s) > 0 else 1
+            on = _apply_min_run_lengths(on, min_on_steps=min_on_steps, min_off_steps=min_off_steps)
+
         seg_bounds = on_off_to_segments(times_s=times_s, on=on)
         segments: list[dict] = []
         for s_t, e_t in seg_bounds:

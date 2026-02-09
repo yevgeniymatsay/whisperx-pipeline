@@ -24,7 +24,7 @@ def _load_json(path: Path) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Extract predicted call clips as FLAC 16kHz mono and upload to S3.")
-    parser.add_argument("--split-config", type=Path, default=Path("configs/call_extractor/split_v1.config.json"))
+    parser.add_argument("--split-config", type=Path, default=Path("configs/call_extractor/split_v2.config.json"))
     parser.add_argument("--output-config", type=Path, default=Path("configs/call_extractor/output_wavlm_large_v1.config.json"))
     parser.add_argument(
         "--s3-prefix",

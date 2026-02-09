@@ -14,7 +14,7 @@ from config import S3_BUCKET, AWS_REGION
 
 
 # Default S3 prefix for boundary storage
-DEFAULT_PREFIX = "labeling/corrected_boundaries/v1/"
+DEFAULT_PREFIX = "labeling/corrected_boundaries/v2/"
 
 
 class S3BoundaryStore:
@@ -43,7 +43,7 @@ class S3BoundaryStore:
 
         Args:
             bucket: S3 bucket name. Defaults to S3_BUCKET env var.
-            prefix: S3 key prefix. Defaults to labeling/corrected_boundaries/v1/
+            prefix: S3 key prefix. Defaults to labeling/corrected_boundaries/v2/
         """
         self.bucket = bucket or os.environ.get("BOUNDARIES_BUCKET", S3_BUCKET)
         self.prefix = prefix or os.environ.get("BOUNDARIES_PREFIX", DEFAULT_PREFIX)

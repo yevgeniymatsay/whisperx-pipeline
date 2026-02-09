@@ -55,7 +55,7 @@ runs/{video_id}/{run_id}/       # Pipeline output
   calls/{call_id}/              # spk_turns.json, call_metadata.json
 latest/{video_id}.json          # Pointer to latest run
 genrm/{accepted,review,rejected,role_fallback}/  # Routed SFT data
-labeling/corrected_boundaries/v1/{video_id}.json  # Human-corrected call boundaries
+labeling/corrected_boundaries/v2/{video_id}.json  # Human-corrected call boundaries
 ```
 
 **Model Bucket:** `rezora-data-pipeline-864981718771`

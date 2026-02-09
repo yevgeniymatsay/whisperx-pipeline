@@ -25,7 +25,7 @@ def _load_json(path: Path) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate predicted call segments against boundary labels.")
-    parser.add_argument("--split-config", type=Path, default=Path("configs/call_extractor/split_v1.config.json"))
+    parser.add_argument("--split-config", type=Path, default=Path("configs/call_extractor/split_v2.config.json"))
     parser.add_argument(
         "--output-config",
         type=Path,

@@ -77,7 +77,7 @@ def _xcorr_lag_samples(a: np.ndarray, b: np.ndarray, *, max_lag_samples: int) ->
 def main() -> int:
     parser = argparse.ArgumentParser(description="Quantify MP3 chunk-seek jitter vs FLAC sample-accurate slicing.")
     parser.add_argument("--video-id", type=str, required=True)
-    parser.add_argument("--split-config", type=Path, default=Path("configs/call_extractor/split_v1.config.json"))
+    parser.add_argument("--split-config", type=Path, default=Path("configs/call_extractor/split_v2.config.json"))
     parser.add_argument("--output-config", type=Path, default=Path("configs/call_extractor/output_wavlm_large_v1.config.json"))
     parser.add_argument("--sr-hz", type=int, default=16000)
     parser.add_argument("--dur-s", type=float, default=10.0)

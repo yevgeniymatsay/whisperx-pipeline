@@ -20,7 +20,7 @@ Extract “real call” conversation segments from long MP3s **without ever merg
 
 ### Canonical data locations (S3)
 - Bucket: `rezora-whisperx-us-east-1-864981718771`
-- Labels: `labeling/corrected_boundaries/v1/{video_id}.json`
+- Labels: `labeling/corrected_boundaries/v2/{video_id}.json`
 - Audio (expected): `audio/pretraining/*.mp3` (keys end with ` - {video_id}.mp3`)
 - Outputs base prefix: `call_extractor/wavlm_large_v1/`
   - Models: `call_extractor/wavlm_large_v1/models/{run_id}/`

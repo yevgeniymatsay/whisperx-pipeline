@@ -30,7 +30,7 @@ def _load_decode_cfg(path: Path) -> DecodeConfig:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Decode call segments from saved per-frame probs (*.npz).")
-    parser.add_argument("--split-config", type=Path, default=Path("configs/call_extractor/split_v1.config.json"))
+    parser.add_argument("--split-config", type=Path, default=Path("configs/call_extractor/split_v2.config.json"))
     parser.add_argument("--output-config", type=Path, default=Path("configs/call_extractor/output_wavlm_large_v1.config.json"))
     parser.add_argument("--decode-config", type=Path, default=Path("configs/call_extractor/decode_wavlm_large_v1.config.json"))
     parser.add_argument(

@@ -36,7 +36,7 @@ def _grid(values: str) -> list[float]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Sweep decode thresholds on eval set with strict gates.")
-    parser.add_argument("--split-config", type=Path, default=Path("configs/call_extractor/split_v1.config.json"))
+    parser.add_argument("--split-config", type=Path, default=Path("configs/call_extractor/split_v2.config.json"))
     parser.add_argument("--output-config", type=Path, default=Path("configs/call_extractor/output_wavlm_large_v1.config.json"))
     parser.add_argument("--decode-config", type=Path, default=Path("configs/call_extractor/decode_wavlm_large_v1.config.json"))
     parser.add_argument(
@@ -54,7 +54,7 @@ def main() -> int:
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["peaks", "viterbi"],
+        choices=["peaks", "viterbi", "in_call"],
         default=None,
         help="Decode mode to sweep (default: use decode-config's mode)",
     )
@@ -72,6 +72,12 @@ def main() -> int:
     parser.add_argument("--viterbi-min-on-s", type=str, default="1.0,2.0")
     parser.add_argument("--viterbi-min-off-s", type=str, default="0.0")
     parser.add_argument("--viterbi-smooth-win-s", type=str, default="0.0,0.1,0.2")
+
+    # In-call threshold mode grids.
+    parser.add_argument("--in-call-thresholds", type=str, default="0.45,0.50,0.55,0.60")
+    parser.add_argument("--in-call-min-on-s", type=str, default="1.0,2.0")
+    parser.add_argument("--in-call-min-off-s", type=str, default="0.0,0.2,0.4,0.6,0.8")
+    parser.add_argument("--in-call-smooth-win-s", type=str, default="0.0,0.1,0.2")
     parser.add_argument("--write-best", type=Path, default=None, help="Write best DecodeConfig JSON here")
     parser.add_argument(
         "--log-every",
@@ -134,12 +140,17 @@ def main() -> int:
     vit_min_off_grid = _grid(args.viterbi_min_off_s)
     vit_smooth_grid = _grid(args.viterbi_smooth_win_s)
 
+    ic_thr_grid = _grid(args.in_call_thresholds)
+    ic_min_on_grid = _grid(args.in_call_min_on_s)
+    ic_min_off_grid = _grid(args.in_call_min_off_s)
+    ic_smooth_grid = _grid(args.in_call_smooth_win_s)
+
     best: dict | None = None
 
     if mode == "peaks":
         grid_iter = itertools.product(start_grid, end_grid, in_call_grid)
         total = len(start_grid) * len(end_grid) * len(in_call_grid)
-    else:
+    elif mode == "viterbi":
         grid_iter = itertools.product(
             vit_off_on_grid,
             vit_on_off_grid,
@@ -160,6 +171,9 @@ def main() -> int:
             * len(vit_smooth_grid)
             * len(in_call_grid)
         )
+    else:
+        grid_iter = itertools.product(ic_thr_grid, ic_min_on_grid, ic_min_off_grid, ic_smooth_grid, in_call_grid)
+        total = len(ic_thr_grid) * len(ic_min_on_grid) * len(ic_min_off_grid) * len(ic_smooth_grid) * len(in_call_grid)
 
     t0 = time.monotonic()
     for sweep_i, vals in enumerate(grid_iter, start=1):
@@ -176,7 +190,7 @@ def main() -> int:
                 internal_peak_drop_threshold=float(base_decode.internal_peak_drop_threshold),
                 boundary_join_tolerance_s=float(base_decode.boundary_join_tolerance_s),
             )
-        else:
+        elif mode == "viterbi":
             off_on, on_off, ss, es, min_on_s, min_off_s, smooth_s, ic_min = vals
             cfg = DecodeConfig(
                 mode="viterbi",
@@ -195,6 +209,23 @@ def main() -> int:
                 viterbi_min_on_s=float(min_on_s),
                 viterbi_min_off_s=float(min_off_s),
                 viterbi_smooth_win_s=float(smooth_s),
+            )
+        else:
+            ic_thr, min_on_s, min_off_s, smooth_s, ic_min = vals
+            cfg = DecodeConfig(
+                mode="in_call",
+                start_peak_threshold=float(base_decode.start_peak_threshold),
+                end_peak_threshold=float(base_decode.end_peak_threshold),
+                in_call_mean_min=float(ic_min),
+                nms_min_sep_s=float(base_decode.nms_min_sep_s),
+                min_duration_s=float(base_decode.min_duration_s),
+                max_duration_s=float(base_decode.max_duration_s),
+                internal_peak_drop_threshold=float(base_decode.internal_peak_drop_threshold),
+                boundary_join_tolerance_s=float(base_decode.boundary_join_tolerance_s),
+                in_call_threshold=float(ic_thr),
+                in_call_min_on_s=float(min_on_s),
+                in_call_min_off_s=float(min_off_s),
+                in_call_smooth_win_s=float(smooth_s),
             )
 
         merges = 0

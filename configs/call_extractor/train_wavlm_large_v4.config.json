@@ -25,11 +25,10 @@
   "pos_weight_start": 100.0,
   "save_total_limit": 3,
   "seed": 1337,
-  "split_config_path": "configs/call_extractor/split_v1.config.json",
+  "split_config_path": "configs/call_extractor/split_v2.config.json",
   "sr_hz": 16000,
   "start_tolerance_s": 0.4,
   "version": "train_wavlm_large_v4",
   "warmup_ratio": 0.05,
   "weight_decay": 0.01
 }
-

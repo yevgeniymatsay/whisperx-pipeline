@@ -10,7 +10,7 @@ Usage:
 Options:
     --input PATH      Path to existing CSV file
     --bucket NAME     S3 bucket (default: S3_BUCKET env or rezora-whisperx-us-east-1-864981718771)
-    --prefix PREFIX   S3 key prefix (default: labeling/corrected_boundaries/v1/)
+    --prefix PREFIX   S3 key prefix (default: labeling/corrected_boundaries/v2/)
     --dry-run         Print what would be uploaded without actually uploading
 """
 import argparse
@@ -30,7 +30,7 @@ from botocore.exceptions import ClientError
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 DEFAULT_BUCKET = os.environ.get("S3_BUCKET", "rezora-whisperx-us-east-1-864981718771")
-DEFAULT_PREFIX = "labeling/corrected_boundaries/v1/"
+DEFAULT_PREFIX = "labeling/corrected_boundaries/v2/"
 
 
 def load_csv(csv_path: str) -> Dict[str, List[Dict[str, Any]]]:

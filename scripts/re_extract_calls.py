@@ -45,7 +45,7 @@ except ImportError:
     AWS_REGION = "us-east-1"
 
 # Default S3 prefix for boundary store
-DEFAULT_BOUNDARIES_PREFIX = "labeling/corrected_boundaries/v1/"
+DEFAULT_BOUNDARIES_PREFIX = "labeling/corrected_boundaries/v2/"
 
 
 @dataclass
