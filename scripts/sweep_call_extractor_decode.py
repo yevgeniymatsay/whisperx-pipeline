@@ -232,6 +232,8 @@ def main() -> int:
         oversplits = 0
         gt_calls = 0
         matched = 0
+        kept_iou_0_5 = 0
+        kept_iou_0_8 = 0
         pred_calls = 0
         fps = 0
         start_err_sum = 0.0
@@ -248,6 +250,8 @@ def main() -> int:
             oversplits += int(m.oversplits)
             gt_calls += int(m.gt_calls)
             matched += int(m.matched_calls)
+            kept_iou_0_5 += int(m.kept_calls_iou_0_5)
+            kept_iou_0_8 += int(m.kept_calls_iou_0_8)
             pred_calls += int(m.pred_calls)
             fps += int(m.false_positive_segments)
             if m.mean_start_abs_err_s is not None and int(m.matched_calls) > 0:
@@ -256,6 +260,8 @@ def main() -> int:
                 end_err_sum += float(m.mean_end_abs_err_s) * float(m.matched_calls)
 
         keep_rate = (matched / gt_calls) if gt_calls > 0 else 0.0
+        keep_rate_iou_0_5 = (kept_iou_0_5 / gt_calls) if gt_calls > 0 else 0.0
+        keep_rate_iou_0_8 = (kept_iou_0_8 / gt_calls) if gt_calls > 0 else 0.0
         ok = (merges == 0) and (oversplits == 0) and (fps == 0)
         if ok:
             mean_start_err = (start_err_sum / float(matched)) if int(matched) > 0 else None
@@ -263,7 +269,11 @@ def main() -> int:
             cand = {
                 "cfg": cfg,
                 "keep_rate": float(keep_rate),
+                "keep_rate_iou_0_5": float(keep_rate_iou_0_5),
+                "keep_rate_iou_0_8": float(keep_rate_iou_0_8),
                 "matched": int(matched),
+                "kept_iou_0_5": int(kept_iou_0_5),
+                "kept_iou_0_8": int(kept_iou_0_8),
                 "gt_calls": int(gt_calls),
                 "pred_calls": int(pred_calls),
                 "merges": int(merges),
@@ -285,8 +295,8 @@ def main() -> int:
             if best is None:
                 best = cand
             else:
-                cand_keep = float(cand["keep_rate"])
-                best_keep = float(best["keep_rate"])
+                cand_keep = float(cand["keep_rate_iou_0_5"])
+                best_keep = float(best["keep_rate_iou_0_5"])
                 if cand_keep > best_keep:
                     best = cand
                 elif cand_keep == best_keep and err_score(cand) < err_score(best):
@@ -295,7 +305,7 @@ def main() -> int:
         log_every = int(args.log_every)
         if log_every > 0 and (sweep_i % log_every == 0 or sweep_i == total):
             elapsed_s = float(time.monotonic() - t0)
-            best_keep = float(best["keep_rate"]) if best is not None else 0.0
+            best_keep = float(best["keep_rate_iou_0_5"]) if best is not None else 0.0
             logger.info(f"Progress {sweep_i}/{total} configs; best_keep={best_keep:.3f}; elapsed_s={elapsed_s:.1f}")
 
     # NOTE: The sweep loops are intentionally silent by default (fast), but can be hard to
@@ -308,7 +318,9 @@ def main() -> int:
 
     best_cfg: DecodeConfig = best["cfg"]
     logger.info(
-        f"Best keep_rate={best['keep_rate']:.3f} matched={best['matched']}/{best['gt_calls']} "
+        f"Best keep_rate_iou_0_5={best['keep_rate_iou_0_5']:.3f} "
+        f"kept_iou_0_5={best['kept_iou_0_5']}/{best['gt_calls']} "
+        f"(raw_keep_rate={best['keep_rate']:.3f} matched={best['matched']}/{best['gt_calls']}) "
         f"mean_start_err={best.get('mean_start_abs_err_s')} mean_end_err={best.get('mean_end_abs_err_s')} "
         f"mode={best_cfg.mode} "
         f"start_thr={best_cfg.start_peak_threshold} end_thr={best_cfg.end_peak_threshold} "

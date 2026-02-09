@@ -79,10 +79,13 @@ def main() -> int:
         "gt_calls": 0,
         "pred_calls": 0,
         "matched_calls": 0,
+        "kept_calls_iou_0_5": 0,
+        "kept_calls_iou_0_8": 0,
         "false_positive_segments": 0,
     }
     start_err_sum = 0.0
     end_err_sum = 0.0
+    iou_sum = 0.0
 
     for vid in eval_video_ids:
         vid = str(vid)
@@ -103,12 +106,16 @@ def main() -> int:
         agg["gt_calls"] += int(m.gt_calls)
         agg["pred_calls"] += int(m.pred_calls)
         agg["matched_calls"] += int(m.matched_calls)
+        agg["kept_calls_iou_0_5"] += int(m.kept_calls_iou_0_5)
+        agg["kept_calls_iou_0_8"] += int(m.kept_calls_iou_0_8)
         agg["false_positive_segments"] += int(m.false_positive_segments)
 
         if m.mean_start_abs_err_s is not None and int(m.matched_calls) > 0:
             start_err_sum += float(m.mean_start_abs_err_s) * float(m.matched_calls)
         if m.mean_end_abs_err_s is not None and int(m.matched_calls) > 0:
             end_err_sum += float(m.mean_end_abs_err_s) * float(m.matched_calls)
+        if m.mean_iou is not None and int(m.matched_calls) > 0:
+            iou_sum += float(m.mean_iou) * float(m.matched_calls)
 
         per_video.append(
             {
@@ -116,25 +123,36 @@ def main() -> int:
                 "gt_calls": m.gt_calls,
                 "pred_calls": m.pred_calls,
                 "matched_calls": m.matched_calls,
+                "kept_calls_iou_0_5": m.kept_calls_iou_0_5,
+                "kept_calls_iou_0_8": m.kept_calls_iou_0_8,
                 "merges": m.merges,
                 "oversplits": m.oversplits,
                 "keep_rate": m.keep_rate,
+                "keep_rate_iou_0_5": m.keep_rate_iou_0_5,
+                "keep_rate_iou_0_8": m.keep_rate_iou_0_8,
                 "false_positive_segments": m.false_positive_segments,
                 "mean_start_abs_err_s": m.mean_start_abs_err_s,
                 "mean_end_abs_err_s": m.mean_end_abs_err_s,
+                "mean_iou": m.mean_iou,
             }
         )
 
     keep_rate = (agg["matched_calls"] / agg["gt_calls"]) if agg["gt_calls"] > 0 else 0.0
+    keep_rate_iou_0_5 = (agg["kept_calls_iou_0_5"] / agg["gt_calls"]) if agg["gt_calls"] > 0 else 0.0
+    keep_rate_iou_0_8 = (agg["kept_calls_iou_0_8"] / agg["gt_calls"]) if agg["gt_calls"] > 0 else 0.0
     mean_start_abs_err_s = (start_err_sum / float(agg["matched_calls"])) if int(agg["matched_calls"]) > 0 else None
     mean_end_abs_err_s = (end_err_sum / float(agg["matched_calls"])) if int(agg["matched_calls"]) > 0 else None
+    mean_iou = (iou_sum / float(agg["matched_calls"])) if int(agg["matched_calls"]) > 0 else None
 
     report = {
         "eval_videos": len(eval_video_ids),
         "keep_rate": float(keep_rate),
+        "keep_rate_iou_0_5": float(keep_rate_iou_0_5),
+        "keep_rate_iou_0_8": float(keep_rate_iou_0_8),
         **agg,
         "mean_start_abs_err_s": mean_start_abs_err_s,
         "mean_end_abs_err_s": mean_end_abs_err_s,
+        "mean_iou": mean_iou,
         "per_video": sorted(per_video, key=lambda r: (r["merges"], r["oversplits"], -r["keep_rate"]), reverse=True),
     }
 
@@ -151,16 +169,19 @@ def main() -> int:
         f"- gt_calls: {report['gt_calls']}",
         f"- pred_calls: {report['pred_calls']}",
         f"- false_positive_segments: {report['false_positive_segments']}",
+        f"- keep_rate_iou_0_5: {report['keep_rate_iou_0_5']:.3f}",
+        f"- keep_rate_iou_0_8: {report['keep_rate_iou_0_8']:.3f}",
         f"- mean_start_abs_err_s: {report['mean_start_abs_err_s']}",
         f"- mean_end_abs_err_s: {report['mean_end_abs_err_s']}",
+        f"- mean_iou: {report['mean_iou']}",
         "",
         "## Per-video",
-        "| video_id | gt | pred | matched | keep_rate | merges | oversplits | fp |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| video_id | gt | pred | matched | kept@iou0.5 | keep_rate | keep@iou0.5 | merges | oversplits | fp |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for r in report["per_video"]:
         md_lines.append(
-            f"| {r['video_id']} | {r['gt_calls']} | {r['pred_calls']} | {r['matched_calls']} | {r['keep_rate']:.3f} | {r['merges']} | {r['oversplits']} | {r['false_positive_segments']} |"
+            f"| {r['video_id']} | {r['gt_calls']} | {r['pred_calls']} | {r['matched_calls']} | {r['kept_calls_iou_0_5']} | {r['keep_rate']:.3f} | {r['keep_rate_iou_0_5']:.3f} | {r['merges']} | {r['oversplits']} | {r['false_positive_segments']} |"
         )
 
     args.out_md.parent.mkdir(parents=True, exist_ok=True)
