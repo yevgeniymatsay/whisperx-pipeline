@@ -14,10 +14,14 @@ This repo expects extremely high traceability and conservatism. For any code/con
 ### Objective (non-negotiable)
 Extract “real call” conversation segments from long MP3s **without ever merging calls** and **without over-splitting calls** for any **kept** outputs. If separation is uncertain, **drop ambiguous** (output nothing) rather than output wrong segments.
 
-### Hard gates (eval + production policy)
+### Eval/sweep gates (GT-based)
 - **merges == 0**: no predicted segment overlaps >1 ground-truth call.
 - **oversplits == 0**: no ground-truth call overlaps >1 predicted segment.
 - **FP_total == 0**: no predicted segment overlaps zero ground-truth calls (spurious segments anywhere). FP is overlap-based and must **never** be redefined as containment/overhang.
+- **Kept calls (for keep_rate metrics):** IoU_exact >= 0.5 and coverage_exact >= min_coverage (min_coverage is frozen in the comparability key).
+- **strict_valid:** merges==0 && oversplits==0 && FP_total==0 under the frozen matching params (match_tol_s, overlap_eps_s).
+
+### Production policy (no GT available)
 - **drop ambiguous**: conservative decoder must prefer “no output” over incorrect segmentation.
 
 ### Metric/gate definition freeze (required)
@@ -35,7 +39,7 @@ Additional required rules:
 - **Separation of concerns:** FP is only “spurious segment” (overlaps no GT call). Boundary quality belongs in coverage/IoU/error metrics. If you want “outside-GT overhang” safety, implement it as a **new metric** (report-only first), and only later promote it to a gate via a plan change.
 - **Single source of truth:** all sweeps/evals must use `pipeline.call_extractor_wavlm.metrics.compute_gate_metrics(...)` (no duplicated formulas).
 - **No mid-stream changes:** do not change any scoring/selection code/config while a sweep/eval is running; finish the run, then start a new versioned run.
-- **Do not kill running sweeps:** once a sweep/eval starts, do not terminate/interrupt it (e.g., Ctrl-C/kill) to “save time” or because CPU time is increasing. Let it finish to preserve near-miss diagnostics. Only stop a running sweep if the user explicitly instructs you to stop. If you think the sweep is misconfigured or “too slow,” record the concern and ask for explicit stop instructions.
+- **Do not kill running sweeps:** do not terminate/interrupt a running sweep/eval for impatience (or because CPU time is increasing). Let it finish to preserve near-miss diagnostics. Only stop if (a) the user explicitly tells you to stop, or (b) you can prove it is misconfigured (wrong split/prefix/params) and you record why in the execution checklist before stopping.
 
 ### Run Review (required after each metrics-producing cycle)
 After any training/inference/eval cycle that produces new metrics, **STOP** and record a Run Review **in the execution checklist** (required; optionally mirror into `docs/CALL_EXTRACTOR_WAVLM_RUNS.md`) before taking further action.
@@ -61,6 +65,8 @@ Decision (choose exactly one):
 - **Rollback**: previous run is better; reuse best prior config
 - **Method change**: only if two consecutive Iterate cycles fail and strict-almost is “not close”
 
+Strict-almost (reporting-only): merges==0 && FP_total==0 && oversplits<=1 (kept calls still use IoU_exact/coverage_exact under the frozen comparability key).
+
 No new training cycle starts until the Run Review is recorded (checklist required; run ledger optional).
 
 ### Eval/sweep invariants (required)
@@ -73,7 +79,8 @@ No new training cycle starts until the Run Review is recorded (checklist require
 - Audio (expected): `audio/pretraining/*.mp3` (keys end with ` - {video_id}.mp3`)
 - Outputs base prefix: `call_extractor/wavlm_large_v1/`
   - Models: `call_extractor/wavlm_large_v1/models/{run_id}/`
-  - Predictions: `call_extractor/wavlm_large_v1/segments/{video_id}.json`
+  - Segments (run-scoped): `call_extractor/wavlm_large_v1/models/{run_id}/segments/{video_id}.json`
+  - Segments (decode-scoped): `call_extractor/wavlm_large_v1/models/{run_id}/decoded_<tag>_<ts>/segments/{video_id}.json`
   - Clips (FLAC 16k mono): `call_extractor/wavlm_large_v1/clips/...`
 - **Audio alignment rule:** do not slice training/inference chunks directly from MP3; decode full MP3 → 16k mono FLAC once per video and do sample-accurate slicing from the cached FLAC (`.cache/call_extractor_wavlm/audio_flac/`).
 
