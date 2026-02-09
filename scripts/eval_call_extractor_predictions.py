@@ -81,6 +81,8 @@ def main() -> int:
         "matched_calls": 0,
         "false_positive_segments": 0,
     }
+    start_err_sum = 0.0
+    end_err_sum = 0.0
 
     for vid in eval_video_ids:
         vid = str(vid)
@@ -103,6 +105,11 @@ def main() -> int:
         agg["matched_calls"] += int(m.matched_calls)
         agg["false_positive_segments"] += int(m.false_positive_segments)
 
+        if m.mean_start_abs_err_s is not None and int(m.matched_calls) > 0:
+            start_err_sum += float(m.mean_start_abs_err_s) * float(m.matched_calls)
+        if m.mean_end_abs_err_s is not None and int(m.matched_calls) > 0:
+            end_err_sum += float(m.mean_end_abs_err_s) * float(m.matched_calls)
+
         per_video.append(
             {
                 "video_id": vid,
@@ -119,11 +126,15 @@ def main() -> int:
         )
 
     keep_rate = (agg["matched_calls"] / agg["gt_calls"]) if agg["gt_calls"] > 0 else 0.0
+    mean_start_abs_err_s = (start_err_sum / float(agg["matched_calls"])) if int(agg["matched_calls"]) > 0 else None
+    mean_end_abs_err_s = (end_err_sum / float(agg["matched_calls"])) if int(agg["matched_calls"]) > 0 else None
 
     report = {
         "eval_videos": len(eval_video_ids),
         "keep_rate": float(keep_rate),
         **agg,
+        "mean_start_abs_err_s": mean_start_abs_err_s,
+        "mean_end_abs_err_s": mean_end_abs_err_s,
         "per_video": sorted(per_video, key=lambda r: (r["merges"], r["oversplits"], -r["keep_rate"]), reverse=True),
     }
 
@@ -140,6 +151,8 @@ def main() -> int:
         f"- gt_calls: {report['gt_calls']}",
         f"- pred_calls: {report['pred_calls']}",
         f"- false_positive_segments: {report['false_positive_segments']}",
+        f"- mean_start_abs_err_s: {report['mean_start_abs_err_s']}",
+        f"- mean_end_abs_err_s: {report['mean_end_abs_err_s']}",
         "",
         "## Per-video",
         "| video_id | gt | pred | matched | keep_rate | merges | oversplits | fp |",

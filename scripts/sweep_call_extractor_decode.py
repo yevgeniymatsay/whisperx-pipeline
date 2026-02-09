@@ -234,6 +234,8 @@ def main() -> int:
         matched = 0
         pred_calls = 0
         fps = 0
+        start_err_sum = 0.0
+        end_err_sum = 0.0
 
         for vid in eval_video_ids:
             times_s, in_call, start, end = probs_by_vid[str(vid)]
@@ -248,10 +250,16 @@ def main() -> int:
             matched += int(m.matched_calls)
             pred_calls += int(m.pred_calls)
             fps += int(m.false_positive_segments)
+            if m.mean_start_abs_err_s is not None and int(m.matched_calls) > 0:
+                start_err_sum += float(m.mean_start_abs_err_s) * float(m.matched_calls)
+            if m.mean_end_abs_err_s is not None and int(m.matched_calls) > 0:
+                end_err_sum += float(m.mean_end_abs_err_s) * float(m.matched_calls)
 
         keep_rate = (matched / gt_calls) if gt_calls > 0 else 0.0
         ok = (merges == 0) and (oversplits == 0) and (fps == 0)
         if ok:
+            mean_start_err = (start_err_sum / float(matched)) if int(matched) > 0 else None
+            mean_end_err = (end_err_sum / float(matched)) if int(matched) > 0 else None
             cand = {
                 "cfg": cfg,
                 "keep_rate": float(keep_rate),
@@ -261,9 +269,28 @@ def main() -> int:
                 "merges": int(merges),
                 "oversplits": int(oversplits),
                 "fps": int(fps),
+                "mean_start_abs_err_s": mean_start_err,
+                "mean_end_abs_err_s": mean_end_err,
             }
-            if best is None or float(cand["keep_rate"]) > float(best["keep_rate"]):
+
+            def err_score(d: dict) -> float:
+                if int(d.get("matched", 0)) <= 0:
+                    return float("inf")
+                ms = d.get("mean_start_abs_err_s")
+                me = d.get("mean_end_abs_err_s")
+                if ms is None or me is None:
+                    return float("inf")
+                return float(ms) + float(me)
+
+            if best is None:
                 best = cand
+            else:
+                cand_keep = float(cand["keep_rate"])
+                best_keep = float(best["keep_rate"])
+                if cand_keep > best_keep:
+                    best = cand
+                elif cand_keep == best_keep and err_score(cand) < err_score(best):
+                    best = cand
 
         log_every = int(args.log_every)
         if log_every > 0 and (sweep_i % log_every == 0 or sweep_i == total):
@@ -282,6 +309,7 @@ def main() -> int:
     best_cfg: DecodeConfig = best["cfg"]
     logger.info(
         f"Best keep_rate={best['keep_rate']:.3f} matched={best['matched']}/{best['gt_calls']} "
+        f"mean_start_err={best.get('mean_start_abs_err_s')} mean_end_err={best.get('mean_end_abs_err_s')} "
         f"mode={best_cfg.mode} "
         f"start_thr={best_cfg.start_peak_threshold} end_thr={best_cfg.end_peak_threshold} "
         f"in_call_mean_min={best_cfg.in_call_mean_min}"
