@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 import numpy as np
 
@@ -62,7 +62,13 @@ def _smooth(p: np.ndarray, *, win_steps: int) -> np.ndarray:
     return np.convolve(p.astype(np.float32, copy=False), k, mode="same")
 
 
-def _apply_min_run_lengths(on: np.ndarray, *, min_on_steps: int, min_off_steps: int) -> np.ndarray:
+def _apply_min_run_lengths(
+    on: np.ndarray,
+    *,
+    min_on_steps: int,
+    min_off_steps: int,
+    fill_off_gap_allowed: Callable[[int, int], bool] | None = None,
+) -> np.ndarray:
     """Flip short runs to enforce minimum ON/OFF durations.
 
     WARNING: Filling short OFF gaps can merge adjacent calls.
@@ -89,10 +95,12 @@ def _apply_min_run_lengths(on: np.ndarray, *, min_on_steps: int, min_off_steps: 
             if v and (j - i) < int(min_on_steps):
                 on[i:j] = False
 
-    # Then fill short OFF gaps.
+    # Then fill short OFF gaps (optionally, with a caller-provided boundary check).
     if int(min_off_steps) > 1:
         for v, i, j in list(iter_runs(on)):
             if (not v) and (j - i) < int(min_off_steps):
+                if fill_off_gap_allowed is not None and not bool(fill_off_gap_allowed(int(i), int(j))):
+                    continue
                 on[i:j] = True
 
     return on
@@ -220,7 +228,33 @@ def probabilities_to_segments(
         if dt_s > 0.0:
             min_on_steps = int(max(1, np.ceil(float(cfg.in_call_min_on_s) / float(dt_s)))) if float(cfg.in_call_min_on_s) > 0 else 1
             min_off_steps = int(max(1, np.ceil(float(cfg.in_call_min_off_s) / float(dt_s)))) if float(cfg.in_call_min_off_s) > 0 else 1
-            on = _apply_min_run_lengths(on, min_on_steps=min_on_steps, min_off_steps=min_off_steps)
+
+            # Boundary-aware OFF-gap filling: only fill short OFF gaps if there is no boundary-like
+            # peak evidence (start/end) inside the gap. This allows using larger min_off_s to
+            # reduce within-call fragmentation without accidentally merging adjacent calls.
+            start_thr = float(cfg.start_peak_threshold)
+            end_thr = float(cfg.end_peak_threshold)
+            pad = 1  # include a 1-frame neighborhood to catch peaks near gap edges
+
+            def allow_fill(i: int, j: int) -> bool:
+                if j <= i:
+                    return True
+                l = max(0, int(i) - int(pad))
+                r = min(int(times_s.size), int(j) + int(pad))
+                if r <= l:
+                    return True
+                if float(np.max(start_p[l:r])) >= start_thr:
+                    return False
+                if float(np.max(end_p[l:r])) >= end_thr:
+                    return False
+                return True
+
+            on = _apply_min_run_lengths(
+                on,
+                min_on_steps=min_on_steps,
+                min_off_steps=min_off_steps,
+                fill_off_gap_allowed=allow_fill,
+            )
 
         seg_bounds = on_off_to_segments(times_s=times_s, on=on)
         segments: list[dict] = []
