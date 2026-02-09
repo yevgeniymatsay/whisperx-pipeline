@@ -133,6 +133,33 @@ def main() -> int:
         data = s3_read_json(S3_BUCKET, key, region=AWS_REGION)
         gt_by_vid[str(vid)] = parse_video_labels(data).boundaries
 
+    # Gap diagnostics (reporting-only): tiny gaps make in_call-only decoding structurally hard.
+    tiny_gap_thr_s = 0.20
+    gap_rows: list[tuple[float | None, int, int, int, str]] = []
+    for vid in eval_video_ids:
+        bounds = list(gt_by_vid.get(str(vid), []))
+        gaps: list[float] = []
+        for i in range(max(0, len(bounds) - 1)):
+            gaps.append(float(bounds[i + 1].start_s) - float(bounds[i].end_s))
+        min_gap_s = float(min(gaps)) if gaps else None
+        tiny_gaps = int(sum(1 for g in gaps if float(g) < float(tiny_gap_thr_s)))
+        zero_gaps = int(sum(1 for g in gaps if abs(float(g)) < 1e-6))
+        gap_rows.append((min_gap_s, tiny_gaps, zero_gaps, len(bounds), str(vid)))
+
+    # Sort call-containing videos by min_gap (ascending), then append no-call videos.
+    call_rows = [r for r in gap_rows if r[0] is not None]
+    no_call_rows = [r for r in gap_rows if r[0] is None]
+    call_rows.sort(key=lambda r: float(r[0]))  # type: ignore[arg-type]
+    gap_rows_sorted = call_rows + no_call_rows
+
+    tiny_gap_vids = [vid for (min_gap_s, _tiny, _zero, _n, vid) in gap_rows_sorted if (min_gap_s is not None and float(min_gap_s) < float(tiny_gap_thr_s))]
+    logger.info(f"Eval gap stats (tiny_gap_thr_s={tiny_gap_thr_s}): tiny-gap videos={len(tiny_gap_vids)}/{len(eval_video_ids)}")
+    for min_gap_s, tiny_gaps, zero_gaps, n_calls, vid in gap_rows_sorted:
+        logger.info(
+            f"  gap_stats video_id={vid} gt_calls={n_calls} "
+            f"min_gap_s={min_gap_s} tiny_gaps<{tiny_gap_thr_s}s={tiny_gaps} zero_gaps={zero_gaps}"
+        )
+
     def load_probs(vid: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         local = probs_dir / f"{vid}.npz"
         if not local.exists():
