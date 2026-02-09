@@ -54,7 +54,7 @@ def main() -> int:
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["peaks", "viterbi", "in_call"],
+        choices=["peaks", "viterbi", "in_call", "transitions"],
         default=None,
         help="Decode mode to sweep (default: use decode-config's mode)",
     )
@@ -78,6 +78,10 @@ def main() -> int:
     parser.add_argument("--in-call-min-on-s", type=str, default="1.0,2.0")
     parser.add_argument("--in-call-min-off-s", type=str, default="0.0,0.2,0.4,0.6,0.8")
     parser.add_argument("--in-call-smooth-win-s", type=str, default="0.0,0.1,0.2")
+
+    # Transition-filtered peaks mode grids.
+    parser.add_argument("--transition-win-s", type=str, default="0.2,0.4,0.6")
+    parser.add_argument("--transition-margin", type=str, default="0.0,0.01,0.02")
     parser.add_argument("--write-best", type=Path, default=None, help="Write best DecodeConfig JSON here")
     parser.add_argument(
         "--log-every",
@@ -145,6 +149,9 @@ def main() -> int:
     ic_min_off_grid = _grid(args.in_call_min_off_s)
     ic_smooth_grid = _grid(args.in_call_smooth_win_s)
 
+    trans_win_grid = _grid(args.transition_win_s)
+    trans_margin_grid = _grid(args.transition_margin)
+
     best: dict | None = None
 
     if mode == "peaks":
@@ -169,6 +176,17 @@ def main() -> int:
             * len(vit_min_on_grid)
             * len(vit_min_off_grid)
             * len(vit_smooth_grid)
+            * len(in_call_grid)
+        )
+    elif mode == "transitions":
+        grid_iter = itertools.product(start_grid, end_grid, ic_thr_grid, ic_smooth_grid, trans_win_grid, trans_margin_grid, in_call_grid)
+        total = (
+            len(start_grid)
+            * len(end_grid)
+            * len(ic_thr_grid)
+            * len(ic_smooth_grid)
+            * len(trans_win_grid)
+            * len(trans_margin_grid)
             * len(in_call_grid)
         )
     else:
@@ -209,6 +227,24 @@ def main() -> int:
                 viterbi_min_on_s=float(min_on_s),
                 viterbi_min_off_s=float(min_off_s),
                 viterbi_smooth_win_s=float(smooth_s),
+            )
+        elif mode == "transitions":
+            s_thr, e_thr, ic_thr, ic_smooth, t_win, t_margin, ic_min = vals
+            cfg = DecodeConfig(
+                mode="transitions",
+                start_peak_threshold=float(s_thr),
+                end_peak_threshold=float(e_thr),
+                in_call_mean_min=float(ic_min),
+                nms_min_sep_s=float(base_decode.nms_min_sep_s),
+                min_duration_s=float(base_decode.min_duration_s),
+                max_duration_s=float(base_decode.max_duration_s),
+                internal_peak_drop_threshold=float(base_decode.internal_peak_drop_threshold),
+                boundary_join_tolerance_s=float(base_decode.boundary_join_tolerance_s),
+                in_call_threshold=float(ic_thr),
+                in_call_smooth_win_s=float(ic_smooth),
+                transition_win_s=float(t_win),
+                transition_margin=float(t_margin),
+                transition_restart_on_new_start=bool(base_decode.transition_restart_on_new_start),
             )
         else:
             ic_thr, min_on_s, min_off_s, smooth_s, ic_min = vals

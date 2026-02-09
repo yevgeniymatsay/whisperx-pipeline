@@ -10,7 +10,7 @@ from .decode_viterbi import ViterbiConfig, on_off_to_segments, viterbi_decode_on
 
 @dataclass(frozen=True)
 class DecodeConfig:
-    mode: str = "peaks"  # "peaks" | "viterbi" | "in_call"
+    mode: str = "peaks"  # "peaks" | "viterbi" | "in_call" | "transitions"
 
     start_peak_threshold: float = 0.70
     end_peak_threshold: float = 0.70
@@ -37,6 +37,12 @@ class DecodeConfig:
     in_call_min_on_s: float = 2.0
     in_call_min_off_s: float = 0.0
     in_call_smooth_win_s: float = 0.0
+
+    # Transition-filtered peaks decode params (used when mode == "transitions")
+    # Uses smoothed in_call probabilities to validate that start/end peaks coincide with an ON/OFF transition.
+    transition_win_s: float = 0.40
+    transition_margin: float = 0.00
+    transition_restart_on_new_start: bool = True
 
 
 def _median_dt_s(times_s: np.ndarray) -> float:
@@ -235,6 +241,122 @@ def probabilities_to_segments(
                     "mean_in_call": float(mean_in_call),
                 }
             )
+        return segments
+
+    if str(cfg.mode).lower() == "transitions":
+        # 1) Smooth in_call to reduce frame-level jitter when validating boundary transitions.
+        eps = 1e-6
+        p = np.clip(in_call_p.astype(np.float32, copy=False), eps, 1.0 - eps)
+        dt_s = _median_dt_s(times_s)
+        win_steps = 0
+        if float(cfg.in_call_smooth_win_s) > 0.0 and dt_s > 0.0:
+            win_steps = int(max(1, round(float(cfg.in_call_smooth_win_s) / float(dt_s))))
+        if win_steps > 1:
+            p = _smooth(p, win_steps=win_steps)
+            p = np.clip(p, eps, 1.0 - eps)
+
+        # 2) Find start/end peaks (candidate boundary times).
+        start_peaks = _local_peak_indices(start_p, threshold=float(cfg.start_peak_threshold))
+        end_peaks = _local_peak_indices(end_p, threshold=float(cfg.end_peak_threshold))
+        start_peaks = _nms_time(start_peaks, times_s=times_s, probs=start_p, min_sep_s=float(cfg.nms_min_sep_s))
+        end_peaks = _nms_time(end_peaks, times_s=times_s, probs=end_p, min_sep_s=float(cfg.nms_min_sep_s))
+
+        # 3) Validate peaks using an ON/OFF transition in smoothed in_call probability.
+        thr = float(cfg.in_call_threshold)
+        margin = float(cfg.transition_margin)
+        win_s = float(cfg.transition_win_s)
+        win_steps = 0
+        if win_s > 0.0 and dt_s > 0.0:
+            win_steps = int(max(1, round(float(win_s) / float(dt_s))))
+
+        # Fast range means via prefix sums.
+        csum = np.concatenate([np.zeros((1,), dtype=np.float32), np.cumsum(p.astype(np.float32, copy=False))])
+        n = int(p.shape[0])
+
+        def mean_lr(l: int, r: int) -> float:
+            l_i = int(max(0, min(int(l), n)))
+            r_i = int(max(0, min(int(r), n)))
+            if r_i <= l_i:
+                if n <= 0:
+                    return 0.0
+                return float(p[int(max(0, min(l_i, n - 1)))])
+            return float((csum[r_i] - csum[l_i]) / float(r_i - l_i))
+
+        start_ok: list[int] = []
+        for i in start_peaks.tolist():
+            ii = int(i)
+            pre = mean_lr(ii - win_steps, ii)
+            post = mean_lr(ii, ii + win_steps)
+            if pre <= (thr - margin) and post >= (thr + margin):
+                start_ok.append(ii)
+
+        end_ok: list[int] = []
+        for i in end_peaks.tolist():
+            ii = int(i)
+            pre = mean_lr(ii - win_steps, ii)
+            post = mean_lr(ii, ii + win_steps)
+            if pre >= (thr + margin) and post <= (thr - margin):
+                end_ok.append(ii)
+
+        # 4) Start-driven pairing with conservative restart: if another start appears before an end,
+        # drop the previous open segment and restart at the new start. This prevents merges.
+        events: list[tuple[float, int, int]] = []
+        for i in start_ok:
+            events.append((float(times_s[int(i)]), 1, int(i)))  # 1=start
+        for j in end_ok:
+            events.append((float(times_s[int(j)]), 0, int(j)))  # 0=end (processed before start at same t)
+        events.sort(key=lambda x: (float(x[0]), int(x[1])))
+
+        min_dur = float(cfg.min_duration_s)
+        max_dur = float(cfg.max_duration_s)
+        in_call_min = float(cfg.in_call_mean_min)
+        join_tol = float(cfg.boundary_join_tolerance_s)
+
+        active_start: int | None = None
+        segments: list[dict] = []
+
+        for _t, kind, idx in events:
+            idx = int(idx)
+            if kind == 1:
+                if active_start is None:
+                    active_start = idx
+                else:
+                    if bool(cfg.transition_restart_on_new_start):
+                        active_start = idx
+                continue
+
+            # END event
+            if active_start is None:
+                continue
+            s_idx = int(active_start)
+            e_idx = int(idx)
+            s_t = float(times_s[s_idx])
+            e_t = float(times_s[e_idx])
+            if e_t <= (s_t + join_tol):
+                continue
+
+            dur = float(e_t - s_t)
+            if dur < min_dur or dur > max_dur:
+                continue
+
+            l = int(min(s_idx, e_idx))
+            r = int(max(s_idx, e_idx)) + 1
+            mean_in_call = float(in_call_p[l:r].mean()) if r > l else 0.0
+            if mean_in_call < in_call_min:
+                continue
+
+            segments.append(
+                {
+                    "start_s": float(s_t),
+                    "end_s": float(e_t),
+                    "score": float(mean_in_call),
+                    "mean_in_call": float(mean_in_call),
+                    "start_p": float(start_p[int(s_idx)]),
+                    "end_p": float(end_p[int(e_idx)]),
+                }
+            )
+            active_start = None
+
         return segments
 
     start_peaks = _local_peak_indices(start_p, threshold=float(cfg.start_peak_threshold))

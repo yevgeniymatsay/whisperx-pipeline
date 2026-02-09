@@ -79,6 +79,63 @@ def test_decoder_keeps_single_strong_start_when_multiple_starts_exist() -> None:
     assert segs[0]["end_s"] == 8.0
 
 
+def test_transitions_decoder_ignores_internal_start_peaks_without_in_call_transition() -> None:
+    # Start peaks inside an active call are ignored if in_call is already high before the peak.
+    times = np.arange(0.0, 6.0, 1.0, dtype=np.float32)
+    in_call = np.array([0.1, 0.9, 0.9, 0.9, 0.1, 0.1], dtype=np.float32)
+    start = np.zeros_like(times, dtype=np.float32)
+    end = np.zeros_like(times, dtype=np.float32)
+
+    start[1] = 0.95  # valid boundary-like start (off->on)
+    start[3] = 0.95  # internal start peak; should be ignored (on->on)
+    end[4] = 0.95  # boundary-like end (on->off)
+
+    cfg = DecodeConfig(
+        mode="transitions",
+        start_peak_threshold=0.8,
+        end_peak_threshold=0.8,
+        in_call_threshold=0.5,
+        transition_win_s=1.0,
+        transition_margin=0.0,
+        in_call_smooth_win_s=0.0,
+        in_call_mean_min=0.0,
+        min_duration_s=1.0,
+    )
+    segs = probabilities_to_segments(times_s=times, in_call_p=in_call, start_p=start, end_p=end, cfg=cfg)
+    assert len(segs) == 1
+    assert segs[0]["start_s"] == 1.0
+    assert segs[0]["end_s"] == 4.0
+
+
+def test_transitions_decoder_restarts_on_new_start_when_end_missing() -> None:
+    # If a new boundary-like start arrives before any end, restart (drop the earlier segment) to avoid merges.
+    times = np.arange(0.0, 7.0, 1.0, dtype=np.float32)
+    in_call = np.array([0.1, 0.9, 0.1, 0.9, 0.9, 0.9, 0.1], dtype=np.float32)
+    start = np.zeros_like(times, dtype=np.float32)
+    end = np.zeros_like(times, dtype=np.float32)
+
+    start[1] = 0.95  # boundary-like start (off->on)
+    start[3] = 0.95  # boundary-like start (off->on) again
+    end[6] = 0.95  # only one end peak (the earlier end is missing)
+
+    cfg = DecodeConfig(
+        mode="transitions",
+        start_peak_threshold=0.8,
+        end_peak_threshold=0.8,
+        in_call_threshold=0.5,
+        transition_win_s=1.0,
+        transition_margin=0.0,
+        in_call_smooth_win_s=0.0,
+        transition_restart_on_new_start=True,
+        in_call_mean_min=0.0,
+        min_duration_s=1.0,
+    )
+    segs = probabilities_to_segments(times_s=times, in_call_p=in_call, start_p=start, end_p=end, cfg=cfg)
+    assert len(segs) == 1
+    assert segs[0]["start_s"] == 3.0
+    assert segs[0]["end_s"] == 6.0
+
+
 def test_metrics_merge_and_oversplit_detection() -> None:
     gt = [CallBoundary(0.0, 5.0), CallBoundary(5.0, 10.0)]
     pred_merge = [CallBoundary(0.0, 10.0)]
