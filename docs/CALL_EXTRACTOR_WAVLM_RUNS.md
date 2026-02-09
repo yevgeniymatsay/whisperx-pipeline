@@ -10,12 +10,28 @@ Append one block per training cycle. Keep this file short and factual.
 - Base model:
 - Train config:
 - Decode config:
-- Eval split:
-- Eval gates:
+- Eval comparability key:
+  - metrics_version:
+  - gate_policy_version:
+  - split_config_path:
+  - label_prefix:
+  - match_tol_s:
+  - overlap_eps_s:
+  - min_coverage:
+- Eval gates (strict-valid):
   - merges:
   - oversplits:
-  - keep_rate:
-  - false_positives (no-call vids):
+  - FP_total:
+  - keep_rate_iou_0.5:
+  - keep_rate_coverage:
+- Boundary error:
+  - mean_start_abs_err_s:
+  - mean_end_abs_err_s:
+- Run Review (required; checklist required, run ledger optional):
+  - Best prior comparable run:
+  - Comparable? (yes/no; if no, why):
+  - Decision (Proceed / Iterate / Rollback / Method change):
+  - Hypothesis + what changed (Iterate only):
 - Artifacts (S3):
   - model:
   - segments:

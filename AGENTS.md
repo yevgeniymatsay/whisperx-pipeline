@@ -4,6 +4,7 @@
 This repo expects extremely high traceability and conservatism. For any code/config/docs change:
 - **History-first (no edits yet):** identify the exact files/symbols you will touch; review recent related commits (`git log -n 20 -- <paths>`) and diffs; summarize any recent failures in the same area.
 - **Plan gate (no edits yet):** write a step-by-step plan with goal + success criteria (explicit metrics/gates), risks/failure modes (especially merge/oversplit risk), exact files to change, and exact checks/tests you will run.
+- **Execution checklist (no edits yet):** for any execution-locked plan, create `docs/EXECUTION_CHECKLIST_{YYYYMMDD}_{shortname}.md` with baseline SHA, scope (files/symbols), frozen metric/gate definitions + versions, and an explicit Run Review section. Update the checklist as you work.
 - **Research gate (no edits yet):** verify uncertain/unstable assumptions via primary sources (Context7 and/or official docs + web when needed). If verification is inconclusive, choose the conservative path: **drop ambiguous** / output nothing rather than risk merges/oversplits.
 - **Implement one atomic change:** make only the smallest cohesive change that can be validated end-to-end.
 - **Verify locally (before commit):** run the narrowest relevant checks first (usually a targeted `pytest` subset) and record them in the commit message.
@@ -16,7 +17,54 @@ Extract “real call” conversation segments from long MP3s **without ever merg
 ### Hard gates (eval + production policy)
 - **merges == 0**: no predicted segment overlaps >1 ground-truth call.
 - **oversplits == 0**: no ground-truth call overlaps >1 predicted segment.
+- **FP_total == 0**: no predicted segment overlaps zero ground-truth calls (spurious segments anywhere). FP is overlap-based and must **never** be redefined as containment/overhang.
 - **drop ambiguous**: conservative decoder must prefer “no output” over incorrect segmentation.
+
+### Metric/gate definition freeze (required)
+Once an execution-locked plan starts, **freeze** all metric definitions and gates. Any change to:
+- metric formulas (including FP semantics),
+- gate conditions,
+- dataset split / label source,
+- tolerance/epsilon/min_coverage values,
+is a **plan change** and requires:
+1. a short justification,
+2. an explicit note that before/after results are **not comparable**,
+3. a version bump (e.g., `metrics_version`, `gate_policy_version`) and a fresh run.
+
+Additional required rules:
+- **Separation of concerns:** FP is only “spurious segment” (overlaps no GT call). Boundary quality belongs in coverage/IoU/error metrics. If you want “outside-GT overhang” safety, implement it as a **new metric** (report-only first), and only later promote it to a gate via a plan change.
+- **Single source of truth:** all sweeps/evals must use `pipeline.call_extractor_wavlm.metrics.compute_gate_metrics(...)` (no duplicated formulas).
+- **No mid-stream changes:** do not change any scoring/selection code/config while a sweep/eval is running; finish the run, then start a new versioned run.
+
+### Run Review (required after each metrics-producing cycle)
+After any training/inference/eval cycle that produces new metrics, **STOP** and record a Run Review **in the execution checklist** (required; optionally mirror into `docs/CALL_EXTRACTOR_WAVLM_RUNS.md`) before taking further action.
+
+Run Review compares the new run vs the **best prior run with the same comparability key**:
+- strict_valid? (yes/no)
+- keep_rate_iou_0.5, keep_rate_coverage
+- merges / oversplits / FP_total
+- boundary error summary (mean_start_abs_err_s, mean_end_abs_err_s)
+
+Comparability key (must match exactly):
+- metrics_version
+- gate_policy_version
+- split_config_path
+- label_prefix
+- match_tol_s, overlap_eps_s, min_coverage
+
+If the comparability key differs, record the run as **non-comparable** and do not treat it as an improvement/regression.
+
+Decision (choose exactly one):
+- **Proceed** (new run is better / meets stage target)
+- **Iterate (small tweak)**: state exactly one hypothesis and what changed
+- **Rollback**: previous run is better; reuse best prior config
+- **Method change**: only if two consecutive Iterate cycles fail and strict-almost is “not close”
+
+No new training cycle starts until the Run Review is recorded (checklist required; run ledger optional).
+
+### Eval/sweep invariants (required)
+- All sweeps/evals must explicitly pass `--split-config <path>` and record it in the execution checklist (scripts may warn if omitted; do not make the flag mandatory in argparse).
+- Every eval report artifact must include: `metrics_version`, `gate_policy_version`, `split_config_path`, `label_prefix`, `match_tol_s`, `overlap_eps_s`, `min_coverage`.
 
 ### Canonical data locations (S3)
 - Bucket: `rezora-whisperx-us-east-1-864981718771`
@@ -79,9 +127,10 @@ Preferred: GitHub PAT stored in AWS Secrets Manager (region `us-east-1`) as secr
 - Use `gh auth login --with-token` (token pulled from Secrets Manager) and `gh auth setup-git`.
 - Never print tokens in logs.
 
-### Local testing (CPU only; no model runs)
+### Local testing (safe: unit tests + static checks only)
 - Add/maintain unit tests for:
   - label alignment (including 0-gap adjacent calls)
   - decoder drop-on-ambiguity behavior
   - merge/oversplit metrics on toy segments
 - Run targeted `pytest` locally before each commit+push (or explicitly document why not in `Checks:`).
+- All sweeps/decoding/evals on real data must run on EC2.
