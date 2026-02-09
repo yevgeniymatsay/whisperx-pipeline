@@ -23,6 +23,7 @@ Extract “real call” conversation segments from long MP3s **without ever merg
 
 ### Production policy (no GT available)
 - **drop ambiguous**: conservative decoder must prefer “no output” over incorrect segmentation.
+- **Eval gates are GT-based:** production cannot compute merges/oversplits/FP_total. Production must rely on conservative decoder rules and “drop ambiguous”.
 
 ### Metric/gate definition freeze (required)
 Once an execution-locked plan starts, **freeze** all metric definitions and gates. Any change to:
@@ -43,6 +44,7 @@ Additional required rules:
 
 ### Cycle discipline (required: no open-ended looping)
 **A “cycle” = one bounded unit of work that produces new metrics** (training run, decode sweep, or eval run).
+A cycle counts if it writes any new eval report / sweep summary / frame-metrics report to artifacts or S3.
 
 For every cycle, the agent must:
 1. **Freeze comparability key** (metrics_version, gate_policy_version, split_config_path, label_prefix, match_tol_s, overlap_eps_s, min_coverage) in the execution checklist.

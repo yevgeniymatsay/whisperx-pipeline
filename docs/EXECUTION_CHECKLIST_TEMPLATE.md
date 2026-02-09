@@ -38,6 +38,7 @@ Use this template for any execution-locked plan: `docs/EXECUTION_CHECKLIST_{YYYY
 
 ## Cycle discipline (required)
 **A “cycle” = one bounded unit of work that produces new metrics** (training run, decode sweep, or eval run).
+A cycle counts if it writes any new eval report / sweep summary / frame-metrics report to artifacts or S3.
 
 For every cycle:
 - [ ] Freeze comparability key in this checklist (below).
