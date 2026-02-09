@@ -20,7 +20,12 @@ from pipeline.config import AWS_REGION, S3_BUCKET
 from pipeline.call_extractor_wavlm.decode import DecodeConfig, probabilities_to_segments
 from pipeline.call_extractor_wavlm.io import cache_key_for_s3_prefix, s3_download_if_missing, s3_read_json
 from pipeline.call_extractor_wavlm.labels import parse_video_labels
-from pipeline.call_extractor_wavlm.metrics import boundaries_from_json_segments, compute_gate_metrics
+from pipeline.call_extractor_wavlm.metrics import (
+    GATE_POLICY_VERSION,
+    METRICS_VERSION,
+    boundaries_from_json_segments,
+    compute_gate_metrics,
+)
 from pipeline.call_extractor_wavlm.types import CallBoundary
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -37,7 +42,12 @@ def _grid(values: str) -> list[float]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Sweep decode thresholds on eval set with strict gates.")
-    parser.add_argument("--split-config", type=Path, default=Path("configs/call_extractor/split_v2.config.json"))
+    parser.add_argument(
+        "--split-config",
+        type=Path,
+        default=None,
+        help="Path to split config. If omitted, uses configs/call_extractor/split_v2.config.json (per AGENTS.md, pass explicitly).",
+    )
     parser.add_argument("--output-config", type=Path, default=Path("configs/call_extractor/output_wavlm_large_v1.config.json"))
     parser.add_argument("--decode-config", type=Path, default=Path("configs/call_extractor/decode_wavlm_large_v1.config.json"))
     parser.add_argument(
@@ -112,7 +122,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    split_cfg = _load_json(args.split_config)
+    default_split_config = Path("configs/call_extractor/split_v2.config.json")
+    split_config_path = args.split_config
+    if split_config_path is None:
+        split_config_path = default_split_config
+        logger.warning(f"--split-config omitted; using default {split_config_path} (per AGENTS.md, pass --split-config explicitly).")
+
+    split_cfg = _load_json(split_config_path)
     out_cfg = _load_json(args.output_config)
     base_decode = DecodeConfig(**_load_json(args.decode_config))
 
@@ -126,6 +142,16 @@ def main() -> int:
 
     eval_video_ids = list(split_cfg["eval_video_ids"])
     label_prefix = str(split_cfg["label_prefix"])
+    logger.info(
+        "Comparability key: metrics_version=%s gate_policy_version=%s split_config_path=%s label_prefix=%s match_tol_s=%s overlap_eps_s=%s min_coverage=%s",
+        str(METRICS_VERSION),
+        str(GATE_POLICY_VERSION),
+        str(split_config_path),
+        str(label_prefix),
+        float(args.match_tol_s),
+        float(args.overlap_eps_s),
+        float(args.min_coverage),
+    )
 
     gt_by_vid: dict[str, list[CallBoundary]] = {}
     for vid in eval_video_ids:

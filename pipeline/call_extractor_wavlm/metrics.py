@@ -7,6 +7,9 @@ import numpy as np
 
 from .types import CallBoundary
 
+METRICS_VERSION = "gate_metrics_v1"
+GATE_POLICY_VERSION = "strict_gates_v1_fp_total"
+
 
 def _intersection_exact_s(a0: float, a1: float, b0: float, b1: float) -> float:
     s = max(float(a0), float(b0))

@@ -173,6 +173,15 @@ def test_metrics_merge_and_oversplit_detection() -> None:
     assert m2.oversplits == 1
 
 
+def test_metrics_expose_version_constants() -> None:
+    import pipeline.call_extractor_wavlm.metrics as metrics
+
+    assert isinstance(metrics.METRICS_VERSION, str)
+    assert metrics.METRICS_VERSION.strip() != ""
+    assert isinstance(metrics.GATE_POLICY_VERSION, str)
+    assert metrics.GATE_POLICY_VERSION.strip() != ""
+
+
 def test_metrics_counts_false_positive_segments_on_call_videos() -> None:
     # GT has a single call, but pred includes an extra non-overlapping segment.
     gt = [CallBoundary(10.0, 20.0)]

@@ -13,7 +13,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from pipeline.config import AWS_REGION, S3_BUCKET
 from pipeline.call_extractor_wavlm.io import cache_key_for_s3_prefix, s3_download_if_missing, s3_read_json
 from pipeline.call_extractor_wavlm.labels import parse_video_labels
-from pipeline.call_extractor_wavlm.metrics import boundaries_from_json_segments, compute_gate_metrics
+from pipeline.call_extractor_wavlm.metrics import (
+    GATE_POLICY_VERSION,
+    METRICS_VERSION,
+    boundaries_from_json_segments,
+    compute_gate_metrics,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -25,7 +30,12 @@ def _load_json(path: Path) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate predicted call segments against boundary labels.")
-    parser.add_argument("--split-config", type=Path, default=Path("configs/call_extractor/split_v2.config.json"))
+    parser.add_argument(
+        "--split-config",
+        type=Path,
+        default=None,
+        help="Path to split config. If omitted, uses configs/call_extractor/split_v2.config.json (per AGENTS.md, pass explicitly).",
+    )
     parser.add_argument(
         "--output-config",
         type=Path,
@@ -58,7 +68,13 @@ def main() -> int:
     parser.add_argument("--min-coverage", type=float, default=0.30, help="Minimum exact coverage required to count a GT call as kept.")
     args = parser.parse_args()
 
-    split_cfg = _load_json(args.split_config)
+    default_split_config = Path("configs/call_extractor/split_v2.config.json")
+    split_config_path = args.split_config
+    if split_config_path is None:
+        split_config_path = default_split_config
+        logger.warning(f"--split-config omitted; using default {split_config_path} (per AGENTS.md, pass --split-config explicitly).")
+
+    split_cfg = _load_json(split_config_path)
     out_cfg = _load_json(args.output_config)
     s3_prefix = str(args.s3_prefix or out_cfg.get("s3_output_prefix", "call_extractor/wavlm_large_v1/")).rstrip("/")
 
@@ -194,6 +210,10 @@ def main() -> int:
     report_0 = build_report(match_tol_s=0.0)
 
     report = {
+        "metrics_version": str(METRICS_VERSION),
+        "gate_policy_version": str(GATE_POLICY_VERSION),
+        "split_config_path": str(split_config_path),
+        "label_prefix": str(label_prefix),
         **{k: v for k, v in report_sel.items() if k not in {"per_video"}},
         "per_video": report_sel["per_video"],
         "report_tol_0_0": report_0,
@@ -206,6 +226,10 @@ def main() -> int:
         "# Call extractor eval report",
         "",
         "## Summary (selection tol)",
+        f"- metrics_version: {report['metrics_version']}",
+        f"- gate_policy_version: {report['gate_policy_version']}",
+        f"- split_config_path: {report['split_config_path']}",
+        f"- label_prefix: {report['label_prefix']}",
         f"- match_tol_s: {report_sel['match_tol_s']}",
         f"- overlap_eps_s: {report_sel['overlap_eps_s']}",
         f"- min_coverage: {report_sel['min_coverage']}",
