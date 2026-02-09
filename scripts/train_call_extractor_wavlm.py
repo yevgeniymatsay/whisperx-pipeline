@@ -111,6 +111,7 @@ def main() -> int:
     boundary_jitter_s = float(cfg.get("boundary_jitter_s", 1.0))
     in_call_samples = int(cfg.get("in_call_samples_per_video", 4))
     out_call_samples = int(cfg.get("out_call_samples_per_video", 4))
+    no_call_out_call_samples = int(cfg.get("no_call_out_call_samples_per_video", out_call_samples))
 
     # Keep eval sampling small: Trainer eval is for sanity checks / "best checkpoint by eval_loss",
     # not full-gate selection (which is done by predict+sweep on the fixed eval videos).
@@ -125,6 +126,7 @@ def main() -> int:
         if not loaded:
             continue
         audio_path, boundaries, duration_s = loaded
+        is_no_call = len(boundaries) == 0
         train_examples.extend(
             make_examples_for_video(
                 video_id=str(vid),
@@ -135,8 +137,8 @@ def main() -> int:
                 seed=seed,
                 boundary_k=boundary_k,
                 boundary_jitter_s=boundary_jitter_s,
-                in_call_samples=in_call_samples,
-                out_call_samples=out_call_samples,
+                in_call_samples=0 if is_no_call else in_call_samples,
+                out_call_samples=no_call_out_call_samples if is_no_call else out_call_samples,
             )
         )
     logger.info(f"Train examples: {len(train_examples)} from {len(train_video_ids)} videos")
@@ -147,6 +149,7 @@ def main() -> int:
         if not loaded:
             continue
         audio_path, boundaries, duration_s = loaded
+        is_no_call = len(boundaries) == 0
         eval_examples.extend(
             make_examples_for_video(
                 video_id=str(vid),
@@ -157,8 +160,8 @@ def main() -> int:
                 seed=seed + 1,
                 boundary_k=eval_boundary_k,
                 boundary_jitter_s=eval_boundary_jitter_s,
-                in_call_samples=eval_in_call_samples,
-                out_call_samples=eval_out_call_samples,
+                in_call_samples=0 if is_no_call else eval_in_call_samples,
+                out_call_samples=no_call_out_call_samples if is_no_call else eval_out_call_samples,
             )
         )
     logger.info(f"Eval examples: {len(eval_examples)} from {len(eval_video_ids)} videos")
