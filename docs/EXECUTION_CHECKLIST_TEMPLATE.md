@@ -100,4 +100,7 @@ Must end with:
 - Single hypothesis:
 - Single next action (decoder sweep <=500 configs OR one training tweak):
 
+Human approval (required before starting the next cycle):
+- User reply must be explicit: “Proceed”, “Iterate with X”, “Rollback to Y”, or “Method change”.
+
 Notes:

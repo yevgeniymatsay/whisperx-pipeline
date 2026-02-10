@@ -86,6 +86,14 @@ Decision (choose exactly one):
 - **Rollback**: previous run is better; reuse best prior config
 - **Method change**: only if two consecutive Iterate cycles fail and strict-almost is “not close”
 
+Human approval gate (required):
+- After writing the Run Review, **STOP** and wait for explicit user approval before starting the next cycle.
+- Do not begin another sweep/training/eval cycle until the user replies with one of: “Proceed”, “Iterate with X”, “Rollback to Y”, “Method change”.
+
+Clarifying questions gate (required when uncertain):
+- If the next best action depends on missing context, ask 1–3 specific questions before starting the next cycle (then wait for answers).
+- If no clarification is needed, propose exactly one next action and wait for approval.
+
 Strict-almost (reporting-only): merges==0 && FP_total==0 && oversplits<=1 (kept calls still use IoU_exact/coverage_exact under the frozen comparability key).
 
 No new cycle starts until the Run Review is recorded and the user approves the next action (checklist required; run ledger optional).
