@@ -1,0 +1,7 @@
+2026-02-11 19:35:41,121 - INFO - Found credentials from IAM Role: ecsInstanceRole
+2026-02-11 19:35:47,244 - INFO - Sweep setup: run=call_extractor/wavlm_large_v1/models/run_20260209_034309_8105f4c eval=10 eval_no_call=2 train_no_call=8 total_eval_vids=18
+2026-02-11 19:41:18,334 - INFO - sweep 25/64 done (latest merges=12 fp_no_call_sec/hr=6.782)
+2026-02-11 19:46:46,607 - INFO - sweep 50/64 done (latest merges=13 fp_no_call_sec/hr=7.061)
+2026-02-11 19:49:48,057 - INFO - sweep 64/64 done (latest merges=13 fp_no_call_sec/hr=7.619)
+2026-02-11 19:49:48,059 - INFO - Wrote selected config to configs/call_extractor/decode_prod_v1.config.json
+2026-02-11 19:49:48,059 - INFO - Wrote reports/prod_decode_sweepD_boundary_20260211_193538.json and reports/prod_decode_sweepD_boundary_20260211_193538.md
