@@ -198,30 +198,33 @@ class HFCaseEmbedding(Embedder):
     name = "bigstorm/case-speaker-embedding-v2-512"
 
     def __init__(self, device: str):
-        import torch
-        from transformers import AutoFeatureExtractor, AutoModel
+        # This model repo is a minimal PyTorch module (no Transformers feature extractor).
+        # Use its provided `CASESpeakerEncoder` wrapper from `model.py`.
+        import importlib.util
 
-        self._torch = torch
-        self._device = device
-        self._feat = AutoFeatureExtractor.from_pretrained(self.name)
-        self._model = AutoModel.from_pretrained(self.name).to(device)
-        self._model.eval()
+        from huggingface_hub import hf_hub_download
+
+        model_py = hf_hub_download(self.name, "model.py")
+        self._model_dir = str(Path(model_py).parent)
+
+        spec = importlib.util.spec_from_file_location("case_model", model_py)
+        if spec is None or spec.loader is None:  # pragma: no cover
+            raise RuntimeError(f"Failed to load CASE model.py from {model_py}")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)  # type: ignore[misc]
+
+        if not hasattr(mod, "CASESpeakerEncoder"):  # pragma: no cover
+            raise RuntimeError("CASE model.py missing CASESpeakerEncoder")
+        self._encoder = mod.CASESpeakerEncoder.from_pretrained(self._model_dir, device=device)
+
+    def min_speech_s(self) -> float:
+        # Model card says ~0.5s recommended; use that as the minimum for the pilot.
+        return 0.5
 
     def embed(self, audio_f32: np.ndarray, sr: int) -> np.ndarray:
-        inputs = self._feat(audio_f32, sampling_rate=int(sr), return_tensors="pt")
-        inputs = {k: v.to(self._device) for k, v in inputs.items()}
-        with self._torch.no_grad():
-            out = self._model(**inputs)
-        # Try common output fields, otherwise mean-pool last_hidden_state.
-        if hasattr(out, "embeddings"):
-            emb = out.embeddings
-        elif hasattr(out, "pooler_output") and out.pooler_output is not None:
-            emb = out.pooler_output
-        elif hasattr(out, "last_hidden_state"):
-            emb = out.last_hidden_state.mean(dim=1)
-        else:  # pragma: no cover
-            raise RuntimeError("Unsupported CASE model output; cannot derive embedding")
-        emb = emb.squeeze(0).detach().cpu().numpy()
+        if int(sr) != 16000:
+            raise ValueError(f"CASE expects 16kHz audio (got sr={sr})")
+        emb = self._encoder.encode(np.asarray(audio_f32, dtype=np.float32))
         return _l2_normalize(np.asarray(emb, dtype=np.float32))
 
 
