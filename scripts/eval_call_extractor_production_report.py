@@ -6,6 +6,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -38,9 +39,64 @@ def _load_json(path: Path) -> dict:
     return json.loads(path.read_text())
 
 
-def _load_segments(local_path: Path) -> list[dict]:
+def _load_segments_file(local_path: Path) -> dict[str, Any]:
     data = json.loads(local_path.read_text())
-    return list(data.get("segments", []))
+    if not isinstance(data, dict):
+        raise ValueError(f"Invalid segments file (expected object): {local_path}")
+    return data
+
+
+def _intersection_tol_s(a0: float, a1: float, b0: float, b1: float, tol_s: float) -> float:
+    tol = float(tol_s)
+    s = max(float(a0), float(b0) - tol)
+    e = min(float(a1), float(b1) + tol)
+    return max(0.0, e - s)
+
+
+def _median_dt_s(times_s) -> float:
+    import numpy as np
+
+    times_s = np.asarray(times_s, dtype=np.float64)
+    if times_s.size < 2:
+        return 0.0
+    d = np.diff(times_s)
+    d = d[d > 0]
+    if d.size == 0:
+        return 0.0
+    return float(np.median(d))
+
+
+def _smooth_in_call(*, times_s, in_call_p, smooth_win_s: float):
+    import numpy as np
+
+    eps = 1e-6
+    p = np.clip(np.asarray(in_call_p, dtype=np.float32), eps, 1.0 - eps)
+    dt_s = _median_dt_s(times_s)
+    if float(smooth_win_s) <= 0.0 or dt_s <= 0.0:
+        return p
+    win_steps = int(max(1, round(float(smooth_win_s) / float(dt_s))))
+    if win_steps <= 1:
+        return p
+    k = np.ones((int(win_steps),), dtype=np.float32) / float(win_steps)
+    p = np.convolve(p, k, mode="same")
+    return np.clip(p.astype(np.float32, copy=False), eps, 1.0 - eps)
+
+
+def _load_probs_npz(
+    *,
+    vid: str,
+    probs_s3_prefix: str,
+    local_probs_dir: Path,
+) -> tuple[Any, Any, Any, Any]:
+    import numpy as np
+
+    local_probs_dir.mkdir(parents=True, exist_ok=True)
+    local = local_probs_dir / f"{vid}.npz"
+    if not local.exists():
+        s3_key = f"{str(probs_s3_prefix).rstrip('/')}/probs/{vid}.npz"
+        s3_download_if_missing(S3_BUCKET, s3_key, local, region=AWS_REGION)
+    arr = np.load(local)
+    return arr["times_s"], arr["in_call"], arr["start"], arr["end"]
 
 
 def main() -> int:
@@ -58,6 +114,24 @@ def main() -> int:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Include train no-call videos when computing NO-CALL FP metrics (recommended; eval has only 2).",
+    )
+    parser.add_argument(
+        "--probs-s3-prefix",
+        type=str,
+        default=None,
+        help="Optional S3 prefix containing probs/{video_id}.npz for merge autopsy (defaults to run_s3_prefix read from segments JSON, if present).",
+    )
+    parser.add_argument(
+        "--merge-autopsy",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Compute merge autopsy details for merged predicted segments on eval (requires probs).",
+    )
+    parser.add_argument(
+        "--autopsy-boundary-win-s",
+        type=float,
+        default=2.0,
+        help="Window (seconds) around GT boundary for max(start_p)/max(end_p) stats.",
     )
     parser.add_argument("--match-tol-s", type=float, default=0.25)
     parser.add_argument("--overlap-eps-s", type=float, default=0.10)
@@ -135,6 +209,7 @@ def main() -> int:
 
     # Load segments for all vids we will evaluate.
     segs_by_vid: dict[str, list[tuple[float, float]]] = {}
+    meta_by_vid: dict[str, dict[str, Any]] = {}
     missing_segments: list[str] = []
     for vid in eval_set_vids:
         local = base_local / f"{vid}.json"
@@ -145,13 +220,23 @@ def main() -> int:
             except Exception:
                 missing_segments.append(vid)
                 continue
-        seg_bounds = boundaries_from_json_segments(_load_segments(local))
+        seg_file = _load_segments_file(local)
+        meta_by_vid[vid] = {
+            "decode_config": seg_file.get("decode_config"),
+            "run_s3_prefix": seg_file.get("run_s3_prefix"),
+        }
+        seg_bounds = boundaries_from_json_segments(list(seg_file.get("segments", [])))
         segs_by_vid[vid] = [(float(b.start_s), float(b.end_s)) for b in seg_bounds]
 
     if missing_segments:
-        raise FileNotFoundError(
-            f"Missing segments for {len(missing_segments)}/{len(eval_set_vids)} videos under {segments_s3_prefix}: {missing_segments}"
+        logger.warning(
+            "Missing segments for %d/%d videos under %s: %s",
+            len(missing_segments),
+            len(eval_set_vids),
+            segments_s3_prefix,
+            missing_segments,
         )
+        eval_set_vids = [vid for vid in eval_set_vids if vid not in set(missing_segments)]
 
     # Compute gate_metrics_v1 (eval videos only, consistent with existing eval script).
     gate_agg_eval = {
@@ -182,12 +267,25 @@ def main() -> int:
     # Per-video no-call breakdown
     no_call_rows: list[dict] = []
 
+    # Merge autopsy (eval only)
+    merge_autopsy_rows: list[dict[str, Any]] = []
+    probs_s3_prefix = str(args.probs_s3_prefix).rstrip("/") if args.probs_s3_prefix else None
+    local_probs_dir = base_local / "probs"
+    missing_audio_video_ids: list[str] = []
+
     for vid in eval_set_vids:
         gt_bounds = labels_by_vid.get(vid, [])
         pred_bounds = segs_by_vid.get(vid, [])
 
-        dur_s = audio_duration_s(vid)
-        audio_seconds_total += float(dur_s)
+        dur_s: float | None = None
+        try:
+            dur_s = float(audio_duration_s(vid))
+        except Exception as e:
+            logger.warning("Audio duration missing for %s: %s", vid, e)
+            missing_audio_video_ids.append(str(vid))
+
+        if dur_s is not None:
+            audio_seconds_total += float(dur_s)
 
         pred_seconds = sum(max(0.0, float(e) - float(s)) for s, e in pred_bounds)
         pred_segments = int(sum(1 for s, e in pred_bounds if float(e) > float(s)))
@@ -203,11 +301,12 @@ def main() -> int:
         if is_no_call:
             fp_no_call_seconds += float(pred_seconds)
             fp_no_call_segments += int(pred_segments)
-            no_call_audio_seconds += float(dur_s)
+            if dur_s is not None:
+                no_call_audio_seconds += float(dur_s)
             no_call_rows.append(
                 {
                     "video_id": vid,
-                    "audio_seconds": float(dur_s),
+                    "audio_seconds": float(dur_s) if dur_s is not None else None,
                     "pred_segments": int(pred_segments),
                     "pred_seconds": float(pred_seconds),
                 }
@@ -236,11 +335,115 @@ def main() -> int:
             else:
                 gate_agg_eval["false_positive_segments_call_outside_gt"] += int(m.false_positive_segments)
 
+            if bool(args.merge_autopsy):
+                # Determine where probs live (explicit arg preferred; else infer from segments JSON metadata).
+                vid_meta = meta_by_vid.get(vid, {})
+                inferred = vid_meta.get("run_s3_prefix")
+                ps3 = probs_s3_prefix or (str(inferred).rstrip("/") if inferred else None)
+                decode_cfg = vid_meta.get("decode_config") or {}
+                smooth_win_s = float(decode_cfg.get("viterbi_smooth_win_s", 0.0))
+
+                if ps3 is None:
+                    merge_autopsy_rows.append(
+                        {
+                            "video_id": vid,
+                            "error": "missing probs_s3_prefix (pass --probs-s3-prefix or decode with decode_from_probs_prod)",
+                        }
+                    )
+                else:
+                    tol_s = float(args.match_tol_s)
+                    eps_s = float(args.overlap_eps_s)
+                    pred_to_gt: list[list[int]] = [[] for _ in pred_bounds]
+                    for pi, (ps, pe) in enumerate(pred_bounds):
+                        for gi, (gs, ge) in enumerate(gt_bounds):
+                            if _intersection_tol_s(ps, pe, gs, ge, tol_s) >= eps_s:
+                                pred_to_gt[int(pi)].append(int(gi))
+
+                    merged_pred_idxs = [pi for pi, lst in enumerate(pred_to_gt) if len(lst) > 1]
+                    if merged_pred_idxs:
+                        try:
+                            times_s, in_call_p, start_p, end_p = _load_probs_npz(
+                                vid=str(vid),
+                                probs_s3_prefix=str(ps3),
+                                local_probs_dir=local_probs_dir,
+                            )
+                            p_sm = _smooth_in_call(times_s=times_s, in_call_p=in_call_p, smooth_win_s=float(smooth_win_s))
+                        except Exception as e:
+                            merge_autopsy_rows.append(
+                                {
+                                    "video_id": vid,
+                                    "error": f"failed to load probs for autopsy: {e}",
+                                    "probs_s3_prefix": str(ps3),
+                                    "merged_pred_indices": merged_pred_idxs,
+                                }
+                            )
+                            times_s = None
+                            p_sm = None
+                            start_p = None
+                            end_p = None
+
+                        for pi in merged_pred_idxs:
+                            ps, pe = pred_bounds[int(pi)]
+                            overlapped = [gt_bounds[int(gi)] for gi in pred_to_gt[int(pi)]]
+                            overlapped_sorted = sorted(overlapped, key=lambda x: (float(x[0]), float(x[1])))
+
+                            entry: dict[str, Any] = {
+                                "video_id": vid,
+                                "pred_index": int(pi),
+                                "pred_start_s": float(ps),
+                                "pred_end_s": float(pe),
+                                "pred_duration_s": float(max(0.0, float(pe) - float(ps))),
+                                "gt_overlaps": [
+                                    {
+                                        "start_s": float(gs),
+                                        "end_s": float(ge),
+                                        "duration_s": float(max(0.0, float(ge) - float(gs))),
+                                    }
+                                    for gs, ge in overlapped_sorted
+                                ],
+                                "smooth_win_s": float(smooth_win_s),
+                                "probs_s3_prefix": str(ps3),
+                            }
+
+                            if times_s is not None and p_sm is not None:
+                                inside = (times_s >= float(ps)) & (times_s <= float(pe))
+                                entry["min_in_call_smoothed_in_pred"] = float(p_sm[inside].min()) if bool(inside.any()) else None
+
+                                gap_rows: list[dict[str, Any]] = []
+                                win = float(args.autopsy_boundary_win_s)
+                                for (gs0, ge0), (gs1, ge1) in zip(overlapped_sorted, overlapped_sorted[1:]):
+                                    gap_start = float(ge0)
+                                    gap_end = float(gs1)
+                                    gap_dur = float(max(0.0, gap_end - gap_start))
+
+                                    gap_mask = (times_s >= gap_start) & (times_s <= gap_end) if gap_dur > 0 else None
+                                    min_gap = float(p_sm[gap_mask].min()) if gap_mask is not None and bool(gap_mask.any()) else None
+
+                                    b_t = float(ge0)  # boundary time between calls (end of earlier call)
+                                    win_mask = (times_s >= (b_t - win)) & (times_s <= (b_t + win))
+                                    max_start = float(start_p[win_mask].max()) if start_p is not None and bool(win_mask.any()) else None
+                                    max_end = float(end_p[win_mask].max()) if end_p is not None and bool(win_mask.any()) else None
+
+                                    gap_rows.append(
+                                        {
+                                            "boundary_t_s": float(b_t),
+                                            "gap_start_s": float(gap_start),
+                                            "gap_end_s": float(gap_end),
+                                            "gap_duration_s": float(gap_dur),
+                                            "min_in_call_smoothed_in_gap": min_gap,
+                                            "max_start_p_win": max_start,
+                                            "max_end_p_win": max_end,
+                                        }
+                                    )
+                                entry["between_call_gaps"] = gap_rows
+
+                            merge_autopsy_rows.append(entry)
+
         per_video_rows.append(
             {
                 "video_id": vid,
                 "is_no_call": bool(is_no_call),
-                "audio_seconds": float(dur_s),
+                "audio_seconds": float(dur_s) if dur_s is not None else None,
                 "gt_calls": int(len(gt_bounds)),
                 "pred_segments": int(pred_segments),
                 "pred_seconds": float(pred_seconds),
@@ -271,6 +474,7 @@ def main() -> int:
         "split_config_path": str(args.split_config),
         "label_prefix": str(label_prefix),
         "segments_s3_prefix": str(segments_s3_prefix),
+        "probs_s3_prefix": probs_s3_prefix,
         "match_tol_s": float(args.match_tol_s),
         "overlap_eps_s": float(args.overlap_eps_s),
         "min_coverage": float(args.min_coverage),
@@ -279,6 +483,8 @@ def main() -> int:
         "eval_no_call_video_ids": eval_no_call_vids,
         "train_no_call_video_ids": train_no_call_vids,
         "no_call_eval_plus_train_video_ids": no_call_vids,
+        "missing_segments_video_ids": missing_segments,
+        "missing_audio_video_ids": missing_audio_video_ids,
         "gate_metrics_eval": {
             **gate_agg_eval,
             "keep_rate": float(keep_rate),
@@ -296,6 +502,7 @@ def main() -> int:
             "segments_per_hour": float(segments_per_hour),
             "predicted_seconds_per_hour": float(predicted_seconds_per_hour),
         },
+        "merge_autopsy": merge_autopsy_rows,
         "per_video": sorted(per_video_rows, key=lambda r: (int(r["is_no_call"]), -float(r["pred_seconds"]))),
         "no_call_per_video": sorted(no_call_rows, key=lambda r: -float(r["pred_seconds"])),
     }
@@ -308,16 +515,24 @@ def main() -> int:
     args.out_json.parent.mkdir(parents=True, exist_ok=True)
     args.out_json.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
 
-    md_lines = [
+    md_lines: list[str] = [
         "# Call extractor production report",
         "",
         f"- git_sha: `{git_sha}`",
         f"- split_config_path: `{args.split_config}`",
         f"- label_prefix: `{label_prefix}`",
         f"- segments_s3_prefix: `{segments_s3_prefix}`",
+        f"- probs_s3_prefix: `{probs_s3_prefix}`",
         f"- match_tol_s: {args.match_tol_s}",
         f"- overlap_eps_s: {args.overlap_eps_s}",
         f"- min_coverage: {args.min_coverage}",
+    ]
+    if missing_segments:
+        md_lines.append(f"- missing_segments_video_ids: {missing_segments}")
+    if missing_audio_video_ids:
+        md_lines.append(f"- missing_audio_video_ids: {missing_audio_video_ids}")
+
+    md_lines += [
         "",
         "## Gate metrics (eval only; unchanged formulas)",
         f"- merges: {gate_agg_eval['merges']}",
@@ -339,9 +554,25 @@ def main() -> int:
         "## No-call per-video breakdown",
     ]
     for r in report["no_call_per_video"]:
+        a = r.get("audio_seconds")
+        a_str = f"{float(a):.3f}" if isinstance(a, (int, float)) else "n/a"
         md_lines.append(
-            f"- {r['video_id']}: pred_segments={r['pred_segments']} pred_seconds={r['pred_seconds']:.3f} audio_seconds={r['audio_seconds']:.3f}"
+            f"- {r['video_id']}: pred_segments={r['pred_segments']} pred_seconds={r['pred_seconds']:.3f} audio_seconds={a_str}"
         )
+
+    md_lines.append("")
+    md_lines.append("## Merge autopsy (eval only)")
+    merged = [r for r in merge_autopsy_rows if isinstance(r, dict) and r.get("gt_overlaps")]
+    md_lines.append(f"- merged_pred_segments: {len(merged)}")
+    for r in merged:
+        gt_overlaps = r.get("gt_overlaps") or []
+        md_lines.append(
+            f"- {r['video_id']} pred=[{float(r['pred_start_s']):.2f},{float(r['pred_end_s']):.2f}] gt_calls={len(gt_overlaps)} min_in_call_smoothed={r.get('min_in_call_smoothed_in_pred')}"
+        )
+        for g in (r.get("between_call_gaps") or []):
+            md_lines.append(
+                f"  - boundary_t={g.get('boundary_t_s')} gap_dur={g.get('gap_duration_s')} min_gap_in_call={g.get('min_in_call_smoothed_in_gap')} max_start_p_win={g.get('max_start_p_win')} max_end_p_win={g.get('max_end_p_win')}"
+            )
 
     args.out_md.parent.mkdir(parents=True, exist_ok=True)
     args.out_md.write_text("\n".join(md_lines) + "\n")
