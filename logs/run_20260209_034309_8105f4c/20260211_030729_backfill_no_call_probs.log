@@ -1,0 +1,26 @@
+2026-02-11 03:07:43,869 - INFO - Found credentials from IAM Role: ecsInstanceRole
+2026-02-11 03:07:44,390 - WARNING - Multiple mp3 keys for 4OweikRF7bg: audio/pretraining/NoCalls - 4OweikRF7bg.mp3 vs audio/pretraining-excluded/Cold_Calling_For_Beginners_A_Step-by-Step_Guide_To_Book_Sales_Meetings - 4OweikRF7bg.mp3 (keeping first)
+/home/ubuntu/.local/lib/python3.10/site-packages/torch/nn/functional.py:6041: UserWarning: Support for mismatched key_padding_mask and attn_mask is deprecated. Use same type for both instead.
+  warnings.warn(
+2026-02-11 03:07:51,445 - INFO - [1/8] MPHdNIiB_8E: segments=0 frames=25067
+/home/ubuntu/.local/lib/python3.10/site-packages/torch/nn/functional.py:6041: UserWarning: Support for mismatched key_padding_mask and attn_mask is deprecated. Use same type for both instead.
+  warnings.warn(
+2026-02-11 03:08:15,691 - INFO - [2/8] aW8jAYnvqyI: segments=0 frames=104814
+/home/ubuntu/.local/lib/python3.10/site-packages/torch/nn/functional.py:6041: UserWarning: Support for mismatched key_padding_mask and attn_mask is deprecated. Use same type for both instead.
+  warnings.warn(
+2026-02-11 03:08:37,675 - INFO - [3/8] hYjbrxLXJIU: segments=0 frames=94431
+/home/ubuntu/.local/lib/python3.10/site-packages/torch/nn/functional.py:6041: UserWarning: Support for mismatched key_padding_mask and attn_mask is deprecated. Use same type for both instead.
+  warnings.warn(
+2026-02-11 03:08:48,237 - INFO - [4/8] hs44BGJtOwg: segments=0 frames=44906
+/home/ubuntu/.local/lib/python3.10/site-packages/torch/nn/functional.py:6041: UserWarning: Support for mismatched key_padding_mask and attn_mask is deprecated. Use same type for both instead.
+  warnings.warn(
+2026-02-11 03:08:56,013 - INFO - [5/8] jvFLW5EClgk: segments=0 frames=32219
+/home/ubuntu/.local/lib/python3.10/site-packages/torch/nn/functional.py:6041: UserWarning: Support for mismatched key_padding_mask and attn_mask is deprecated. Use same type for both instead.
+  warnings.warn(
+2026-02-11 03:09:08,458 - INFO - [6/8] m2z1tgfv8Kc: segments=0 frames=52092
+/home/ubuntu/.local/lib/python3.10/site-packages/torch/nn/functional.py:6041: UserWarning: Support for mismatched key_padding_mask and attn_mask is deprecated. Use same type for both instead.
+  warnings.warn(
+2026-02-11 03:09:16,880 - INFO - [7/8] nNA0XQO_7jQ: segments=0 frames=35154
+/home/ubuntu/.local/lib/python3.10/site-packages/torch/nn/functional.py:6041: UserWarning: Support for mismatched key_padding_mask and attn_mask is deprecated. Use same type for both instead.
+  warnings.warn(
+2026-02-11 03:09:34,907 - INFO - [8/8] pjf5uhOMcTc: segments=0 frames=77528
