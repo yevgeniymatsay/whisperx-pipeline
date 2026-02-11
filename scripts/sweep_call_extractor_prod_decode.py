@@ -109,6 +109,18 @@ def main() -> int:
     parser.add_argument("--split-min-off-s", type=str, default="0.25,0.5,1.0")
     parser.add_argument("--max-segment-s", type=str, default="600,900,1800")
 
+    # Optional boundary-cue splitter (start/end peaks). Disabled by default.
+    parser.add_argument("--use-boundary-cues", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--boundary-mode", type=str, default="pair_end_start", choices=["pair_end_start", "max_score"])
+    parser.add_argument("--boundary-start-thr", type=str, default="0.70")
+    parser.add_argument("--boundary-end-thr", type=str, default="0.70")
+    parser.add_argument("--boundary-score-thr", type=str, default="0.70")
+    parser.add_argument("--boundary-smooth-win-s", type=str, default="0.10")
+    parser.add_argument("--boundary-nms-sep-s", type=str, default="0.50")
+    parser.add_argument("--boundary-pair-max-gap-s", type=str, default="5.00")
+    parser.add_argument("--boundary-split-margin-s", type=str, default="2.00")
+    parser.add_argument("--boundary-split-gap-s", type=str, default="0.20")
+
     parser.add_argument("--mean-in-call-min", type=str, default="0.35,0.45,0.55")
     parser.add_argument("--max-in-call-min", type=str, default="0.60,0.70")
 
@@ -177,6 +189,19 @@ def main() -> int:
         "max_in_call_min": _grid(args.max_in_call_min),
         "trim_s": _grid(args.trim_s),
     }
+    if bool(args.use_boundary_cues):
+        grids.update(
+            {
+                "boundary_start_thr": _grid(args.boundary_start_thr),
+                "boundary_end_thr": _grid(args.boundary_end_thr),
+                "boundary_score_thr": _grid(args.boundary_score_thr),
+                "boundary_smooth_win_s": _grid(args.boundary_smooth_win_s),
+                "boundary_nms_sep_s": _grid(args.boundary_nms_sep_s),
+                "boundary_pair_max_gap_s": _grid(args.boundary_pair_max_gap_s),
+                "boundary_split_margin_s": _grid(args.boundary_split_margin_s),
+                "boundary_split_gap_s": _grid(args.boundary_split_gap_s),
+            }
+        )
 
     keys = list(grids.keys())
     combos = list(itertools.product(*(grids[k] for k in keys)))
@@ -200,6 +225,16 @@ def main() -> int:
             viterbi_smooth_win_s=float(params["viterbi_smooth_win_s"]),
             split_lo=float(params["split_lo"]),
             split_min_off_s=float(params["split_min_off_s"]),
+            use_boundary_cues=bool(args.use_boundary_cues),
+            boundary_mode=str(args.boundary_mode),
+            boundary_start_thr=float(params.get("boundary_start_thr", ProdDecodeConfig.boundary_start_thr)),
+            boundary_end_thr=float(params.get("boundary_end_thr", ProdDecodeConfig.boundary_end_thr)),
+            boundary_score_thr=float(params.get("boundary_score_thr", ProdDecodeConfig.boundary_score_thr)),
+            boundary_smooth_win_s=float(params.get("boundary_smooth_win_s", ProdDecodeConfig.boundary_smooth_win_s)),
+            boundary_nms_sep_s=float(params.get("boundary_nms_sep_s", ProdDecodeConfig.boundary_nms_sep_s)),
+            boundary_pair_max_gap_s=float(params.get("boundary_pair_max_gap_s", ProdDecodeConfig.boundary_pair_max_gap_s)),
+            boundary_split_margin_s=float(params.get("boundary_split_margin_s", ProdDecodeConfig.boundary_split_margin_s)),
+            boundary_split_gap_s=float(params.get("boundary_split_gap_s", ProdDecodeConfig.boundary_split_gap_s)),
             max_segment_s=float(params["max_segment_s"]),
             mean_in_call_min=float(params["mean_in_call_min"]),
             max_in_call_min=float(params["max_in_call_min"]),
@@ -369,6 +404,16 @@ def main() -> int:
             viterbi_smooth_win_s=float(best["params"]["viterbi_smooth_win_s"]),
             split_lo=float(best["params"]["split_lo"]),
             split_min_off_s=float(best["params"]["split_min_off_s"]),
+            use_boundary_cues=bool(args.use_boundary_cues),
+            boundary_mode=str(args.boundary_mode),
+            boundary_start_thr=float(best["params"].get("boundary_start_thr", ProdDecodeConfig.boundary_start_thr)),
+            boundary_end_thr=float(best["params"].get("boundary_end_thr", ProdDecodeConfig.boundary_end_thr)),
+            boundary_score_thr=float(best["params"].get("boundary_score_thr", ProdDecodeConfig.boundary_score_thr)),
+            boundary_smooth_win_s=float(best["params"].get("boundary_smooth_win_s", ProdDecodeConfig.boundary_smooth_win_s)),
+            boundary_nms_sep_s=float(best["params"].get("boundary_nms_sep_s", ProdDecodeConfig.boundary_nms_sep_s)),
+            boundary_pair_max_gap_s=float(best["params"].get("boundary_pair_max_gap_s", ProdDecodeConfig.boundary_pair_max_gap_s)),
+            boundary_split_margin_s=float(best["params"].get("boundary_split_margin_s", ProdDecodeConfig.boundary_split_margin_s)),
+            boundary_split_gap_s=float(best["params"].get("boundary_split_gap_s", ProdDecodeConfig.boundary_split_gap_s)),
             max_segment_s=float(best["params"]["max_segment_s"]),
             mean_in_call_min=float(best["params"]["mean_in_call_min"]),
             max_in_call_min=float(best["params"]["max_in_call_min"]),

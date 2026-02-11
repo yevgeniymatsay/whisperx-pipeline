@@ -32,6 +32,18 @@ class ProdDecodeConfig:
     split_lo: float = 0.35
     split_min_off_s: float = 0.50
 
+    # Boundary-cue splitter (uses start/end heads to split even when `in_call` never dips)
+    use_boundary_cues: bool = False
+    boundary_mode: str = "pair_end_start"  # "pair_end_start" or "max_score"
+    boundary_start_thr: float = 0.70
+    boundary_end_thr: float = 0.70
+    boundary_score_thr: float = 0.70  # used only for max_score mode
+    boundary_smooth_win_s: float = 0.10
+    boundary_nms_sep_s: float = 0.50
+    boundary_pair_max_gap_s: float = 5.00
+    boundary_split_margin_s: float = 2.00
+    boundary_split_gap_s: float = 0.20  # avoid tol-overlap merges on tiny/zero-gap GT
+
     # Segment constraints
     min_duration_s: float = 2.0
     max_duration_s: float = 4 * 60 * 60  # 4 hours
@@ -78,6 +90,22 @@ def _smooth_in_call(
         return p
     p = _smooth(p, win_steps=win_steps)
     return np.clip(p, eps, 1.0 - eps)
+
+
+def _smooth_generic(
+    *,
+    times_s: np.ndarray,
+    p: np.ndarray,
+    smooth_win_s: float,
+) -> np.ndarray:
+    p = p.astype(np.float32, copy=False)
+    dt_s = _median_dt_s(times_s)
+    if float(smooth_win_s) <= 0.0 or dt_s <= 0.0:
+        return p
+    win_steps = int(max(1, round(float(smooth_win_s) / float(dt_s))))
+    if win_steps <= 1:
+        return p
+    return _smooth(p, win_steps=win_steps)
 
 
 def _run_duration_s(*, times_s: np.ndarray, i: int, j: int, dt_s: float) -> float:
@@ -174,6 +202,201 @@ def _split_segments_on_valleys(
     return out, did_any
 
 
+def _find_local_peaks(
+    *,
+    times_s: np.ndarray,
+    values: np.ndarray,
+    thr: float,
+    start_s: float,
+    end_s: float,
+    margin_s: float,
+) -> list[tuple[float, float]]:
+    """Return (t, value) peaks above threshold within [start+margin, end-margin]."""
+    t0 = float(start_s) + float(margin_s)
+    t1 = float(end_s) - float(margin_s)
+    if t1 <= t0:
+        return []
+
+    inside = (times_s >= t0) & (times_s <= t1)
+    idxs = np.flatnonzero(inside).astype(np.int64)
+    if idxs.size < 3:
+        return []
+
+    v = values[idxs].astype(np.float32, copy=False)
+    peaks: list[tuple[float, float]] = []
+    thr_f = float(thr)
+    for i in range(1, int(v.size) - 1):
+        cur = float(v[int(i)])
+        if cur < thr_f:
+            continue
+        prev = float(v[int(i - 1)])
+        nxt = float(v[int(i + 1)])
+        if cur >= prev and cur >= nxt and (cur > prev or cur > nxt):
+            t = float(times_s[int(idxs[int(i)])])
+            peaks.append((t, cur))
+    return peaks
+
+
+def _nms_time(
+    peaks: list[tuple[float, float]],
+    *,
+    min_sep_s: float,
+) -> list[tuple[float, float]]:
+    if not peaks:
+        return []
+    sep = float(min_sep_s)
+    if sep <= 0.0:
+        return sorted(peaks, key=lambda x: float(x[0]))
+
+    order = sorted(peaks, key=lambda x: float(x[1]), reverse=True)
+    kept: list[tuple[float, float]] = []
+    for t, v in order:
+        if all(abs(float(t) - float(kt)) >= sep for kt, _ in kept):
+            kept.append((float(t), float(v)))
+    kept.sort(key=lambda x: float(x[0]))
+    return kept
+
+
+def _split_one_segment_on_boundary_cues(
+    *,
+    times_s: np.ndarray,
+    p_sm: np.ndarray,
+    start_sm: np.ndarray,
+    end_sm: np.ndarray,
+    seg: tuple[float, float],
+    cfg: ProdDecodeConfig,
+) -> tuple[list[tuple[float, float]], bool]:
+    """Split a segment once using boundary cues (start/end peaks)."""
+    s_t, e_t = float(seg[0]), float(seg[1])
+    if e_t <= s_t:
+        return [], False
+
+    mode = str(cfg.boundary_mode)
+    margin_s = float(cfg.boundary_split_margin_s)
+    gap_s = float(cfg.boundary_split_gap_s)
+
+    split_times: list[float] = []
+
+    if mode == "pair_end_start":
+        end_peaks = _nms_time(
+            _find_local_peaks(
+                times_s=times_s,
+                values=end_sm,
+                thr=float(cfg.boundary_end_thr),
+                start_s=s_t,
+                end_s=e_t,
+                margin_s=margin_s,
+            ),
+            min_sep_s=float(cfg.boundary_nms_sep_s),
+        )
+        start_peaks = _nms_time(
+            _find_local_peaks(
+                times_s=times_s,
+                values=start_sm,
+                thr=float(cfg.boundary_start_thr),
+                start_s=s_t,
+                end_s=e_t,
+                margin_s=margin_s,
+            ),
+            min_sep_s=float(cfg.boundary_nms_sep_s),
+        )
+        if not end_peaks or not start_peaks:
+            return [seg], False
+
+        starts_only = [float(t) for t, _ in start_peaks]
+        max_gap = float(cfg.boundary_pair_max_gap_s)
+
+        for t_end, _ in end_peaks:
+            t_start = None
+            for ts in starts_only:
+                if float(ts) <= float(t_end):
+                    continue
+                if float(ts) - float(t_end) <= max_gap:
+                    t_start = float(ts)
+                    break
+            if t_start is None:
+                continue
+
+            mid_mask = (times_s >= float(t_end)) & (times_s <= float(t_start))
+            idxs = np.flatnonzero(mid_mask).astype(np.int64)
+            if idxs.size > 0:
+                k = int(idxs[int(np.argmin(p_sm[idxs]))])
+                split_times.append(float(times_s[int(k)]))
+            else:
+                split_times.append(float(t_end + (t_start - t_end) / 2.0))
+
+    elif mode == "max_score":
+        score = np.maximum(start_sm, end_sm)
+        peaks = _nms_time(
+            _find_local_peaks(
+                times_s=times_s,
+                values=score,
+                thr=float(cfg.boundary_score_thr),
+                start_s=s_t,
+                end_s=e_t,
+                margin_s=margin_s,
+            ),
+            min_sep_s=float(cfg.boundary_nms_sep_s),
+        )
+        split_times = [float(t) for t, _ in peaks]
+    else:
+        raise ValueError(f"Unsupported boundary_mode: {mode}")
+
+    if not split_times:
+        return [seg], False
+
+    split_times = sorted(set(float(t) for t in split_times))
+    out: list[tuple[float, float]] = []
+    cur_s = float(s_t)
+    join_tol = 1e-3
+    for t in split_times:
+        left_e = float(t) - gap_s
+        right_s = float(t) + gap_s
+        if left_e <= cur_s + join_tol:
+            cur_s = max(cur_s, right_s)
+            continue
+        out.append((float(cur_s), float(left_e)))
+        cur_s = float(right_s)
+    if float(e_t) > cur_s + join_tol:
+        out.append((float(cur_s), float(e_t)))
+
+    if len(out) <= 1:
+        return [seg], False
+    return out, True
+
+
+def _split_segments_on_boundary_cues(
+    *,
+    times_s: np.ndarray,
+    p_sm: np.ndarray,
+    start_sm: np.ndarray,
+    end_sm: np.ndarray,
+    segments: list[tuple[float, float]],
+    cfg: ProdDecodeConfig,
+) -> tuple[list[tuple[float, float]], bool]:
+    out: list[tuple[float, float]] = []
+    did_any = False
+    for seg in segments:
+        pending = [seg]
+        while pending:
+            cur = pending.pop()
+            parts, did = _split_one_segment_on_boundary_cues(
+                times_s=times_s,
+                p_sm=p_sm,
+                start_sm=start_sm,
+                end_sm=end_sm,
+                seg=cur,
+                cfg=cfg,
+            )
+            if did:
+                did_any = True
+                pending.extend(parts)
+            else:
+                out.extend(parts)
+    out.sort(key=lambda x: (float(x[0]), float(x[1])))
+    return out, did_any
+
+
 def _split_long_segments(
     *,
     segments: list[tuple[float, float]],
@@ -247,6 +470,28 @@ def decode_production_segments(
         return []
 
     segments, did_max_split = _split_long_segments(segments=segments, max_segment_s=float(cfg.max_segment_s))
+
+    did_boundary_split = False
+    if bool(cfg.use_boundary_cues):
+        start_sm = _smooth_generic(
+            times_s=times_s,
+            p=start_p,
+            smooth_win_s=float(cfg.boundary_smooth_win_s),
+        )
+        end_sm = _smooth_generic(
+            times_s=times_s,
+            p=end_p,
+            smooth_win_s=float(cfg.boundary_smooth_win_s),
+        )
+        segments, did_boundary_split = _split_segments_on_boundary_cues(
+            times_s=times_s,
+            p_sm=p_sm,
+            start_sm=start_sm,
+            end_sm=end_sm,
+            segments=segments,
+            cfg=cfg,
+        )
+
     segments, did_valley_split = _split_segments_on_valleys(
         times_s=times_s,
         p_sm=p_sm,
@@ -255,13 +500,14 @@ def decode_production_segments(
         split_min_off_s=float(cfg.split_min_off_s),
     )
 
-    split_reason = None
-    if did_max_split and did_valley_split:
-        split_reason = "max_segment+valley"
-    elif did_max_split:
-        split_reason = "max_segment"
-    elif did_valley_split:
-        split_reason = "valley"
+    reasons: list[str] = []
+    if did_max_split:
+        reasons.append("max_segment")
+    if did_boundary_split:
+        reasons.append("boundary")
+    if did_valley_split:
+        reasons.append("valley")
+    split_reason = "+".join(reasons) if reasons else None
 
     min_dur = float(cfg.min_duration_s)
     max_dur = float(cfg.max_duration_s)
@@ -307,4 +553,3 @@ def decode_production_segments(
 
     out.sort(key=lambda s: (float(s["start_s"]), float(s["end_s"])))
     return out
-
