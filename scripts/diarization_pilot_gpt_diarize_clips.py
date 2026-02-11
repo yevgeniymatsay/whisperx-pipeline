@@ -28,11 +28,46 @@ class AzureAudioConfig:
     deployment: str
 
 
+def _maybe_load_dotenv() -> None:
+    """Best-effort .env loader (no external dependency).
+
+    This mirrors the repo's Azure GPT client behavior: read key=value pairs from `.env`
+    and only set env vars that are not already defined.
+    """
+    path = Path(os.getcwd()) / ".env"
+    if not path.is_file():
+        return
+    try:
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export ") :].strip()
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip("'").strip('"')
+            if not key:
+                continue
+            os.environ.setdefault(key, value)
+    except OSError:
+        return
+
+
 def _load_azure_audio_config(*, deployment_override: Optional[str]) -> AzureAudioConfig:
-    endpoint = (os.environ.get("AZURE_OPENAI_ENDPOINT") or "").strip()
-    api_key = (os.environ.get("AZURE_OPENAI_API_KEY") or "").strip()
-    api_version = (os.environ.get("OPENAI_API_VERSION") or "").strip()
-    deployment = (deployment_override or os.environ.get("AZURE_OPENAI_DEPLOYMENT_TRANSCRIBE_DIARIZE") or "").strip()
+    def _read() -> tuple[str, str, str, str]:
+        endpoint = (os.environ.get("AZURE_OPENAI_ENDPOINT") or "").strip()
+        api_key = (os.environ.get("AZURE_OPENAI_API_KEY") or "").strip()
+        api_version = (os.environ.get("OPENAI_API_VERSION") or "").strip()
+        deployment = (deployment_override or os.environ.get("AZURE_OPENAI_DEPLOYMENT_TRANSCRIBE_DIARIZE") or "").strip()
+        return endpoint, api_key, api_version, deployment
+
+    endpoint, api_key, api_version, deployment = _read()
+    if not (endpoint and api_key and api_version and deployment):
+        _maybe_load_dotenv()
+        endpoint, api_key, api_version, deployment = _read()
 
     missing = [k for k, v in {
         "AZURE_OPENAI_ENDPOINT": endpoint,
@@ -172,4 +207,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
