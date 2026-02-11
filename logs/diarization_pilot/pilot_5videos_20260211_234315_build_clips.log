@@ -1,0 +1,16 @@
+PILOT_ID=pilot_5videos_20260211_234315
+2026-02-11 23:43:16,750 - INFO - Found credentials from IAM Role: ecsInstanceRole
+2026-02-11 23:43:17,459 - INFO - Selected 35 clips (from 68 total boundaries across 5 videos)
+2026-02-11 23:43:17,460 - INFO - Scanning S3 for MP3 keys under prefix='audio/pretraining/' (need 5 video_ids)
+2026-02-11 23:43:17,619 - INFO - Resolved audio: DEt3IRqqUVs -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/10_Live_Cold_Calls_from_6_Different_Sales_Reps - DEt3IRqqUVs.mp3
+2026-02-11 23:43:17,619 - INFO - Resolved audio: D4uiHjHW4AU -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/How_To_Book_6_Meetings_A_Day_(Live_SMMA_Cold_Calling) - D4uiHjHW4AU.mp3
+2026-02-11 23:43:17,619 - INFO - Resolved audio: -POaWp9_UaM -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/How_to_Book_3+_Meetings_a_Day_Web_Design_Cold_Calling_(Proven_Script) - -POaWp9_UaM.mp3
+2026-02-11 23:43:17,619 - INFO - Resolved audio: Qa-ppZFUp0g -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Not_Sleeping_Until_I_Book_in_30_SMMA_Appointments_(LIVE_Cold_Calling) - Qa-ppZFUp0g.mp3
+2026-02-11 23:43:17,619 - INFO - Resolved audio: CfMJ01KP_ns -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Watch_me_book_5-7_meetings_a_day_(ai_agency_cold_calling) - CfMJ01KP_ns.mp3
+2026-02-11 23:43:20,248 - INFO - Wrote 10/35 clips -> artifacts/diarization_pilot/pilot_5videos_20260211_234315/clips
+2026-02-11 23:43:21,158 - INFO - Wrote 20/35 clips -> artifacts/diarization_pilot/pilot_5videos_20260211_234315/clips
+2026-02-11 23:43:21,988 - INFO - Wrote 30/35 clips -> artifacts/diarization_pilot/pilot_5videos_20260211_234315/clips
+2026-02-11 23:43:22,078 - INFO - Wrote 35/35 clips -> artifacts/diarization_pilot/pilot_5videos_20260211_234315/clips
+2026-02-11 23:43:22,078 - INFO - Done. Output: artifacts/diarization_pilot/pilot_5videos_20260211_234315
+2026-02-11 23:43:22,078 - INFO - Metadata: artifacts/diarization_pilot/pilot_5videos_20260211_234315/metadata.jsonl
+DONE_PILOT_DIR=artifacts/diarization_pilot/pilot_5videos_20260211_234315
