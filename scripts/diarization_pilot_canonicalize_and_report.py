@@ -141,6 +141,16 @@ class SpeechBrainECAPA(Embedder):
     name = "speechbrain/spkrec-ecapa-voxceleb"
 
     def __init__(self, device: str):
+        # SpeechBrain imports call torchaudio.list_audio_backends(), but torchaudio>=2.9
+        # removed that function (moved to torchcodec). Patch it in for compatibility.
+        try:
+            import torchaudio  # type: ignore
+
+            if not hasattr(torchaudio, "list_audio_backends"):
+                torchaudio.list_audio_backends = lambda: ["torchcodec"]  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
         from speechbrain.inference.speaker import EncoderClassifier
 
         self._model = EncoderClassifier.from_hparams(source=self.name, run_opts={"device": device})
