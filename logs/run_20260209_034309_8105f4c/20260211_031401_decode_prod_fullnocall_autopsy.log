@@ -1,0 +1,20 @@
+2026-02-11 03:14:02,061 - INFO - run_s3_prefix=call_extractor/wavlm_large_v1/models/run_20260209_034309_8105f4c out_s3_prefix=call_extractor/wavlm_large_v1/models/run_20260209_034309_8105f4c/decoded_prod_fullnocall_autopsy_20260211_031401 subset=eval videos=18
+2026-02-11 03:14:02,076 - INFO - Found credentials from IAM Role: ecsInstanceRole
+2026-02-11 03:14:02,767 - INFO - Qa-ppZFUp0g: segments=63
+2026-02-11 03:14:03,162 - INFO - DEt3IRqqUVs: segments=12
+2026-02-11 03:14:03,809 - INFO - CfMJ01KP_ns: segments=41
+2026-02-11 03:14:04,540 - INFO - D4uiHjHW4AU: segments=44
+2026-02-11 03:14:04,885 - INFO - -POaWp9_UaM: segments=11
+2026-02-11 03:14:05,929 - INFO - FkgGv2iMjEo: segments=102
+2026-02-11 03:14:06,645 - INFO - 4ipwbOJRMck: segments=18
+2026-02-11 03:14:07,234 - INFO - 9g2gwfWIbUk: segments=51
+2026-02-11 03:14:07,606 - INFO - 15QzruVINDc: segments=1
+2026-02-11 03:14:07,956 - INFO - 4OweikRF7bg: segments=1
+2026-02-11 03:14:08,280 - INFO - MPHdNIiB_8E: segments=0
+2026-02-11 03:14:08,892 - INFO - aW8jAYnvqyI: segments=1
+2026-02-11 03:14:09,462 - INFO - hYjbrxLXJIU: segments=0
+2026-02-11 03:14:09,901 - INFO - hs44BGJtOwg: segments=0
+2026-02-11 03:14:10,277 - INFO - jvFLW5EClgk: segments=0
+2026-02-11 03:14:10,764 - INFO - m2z1tgfv8Kc: segments=0
+2026-02-11 03:14:11,108 - INFO - nNA0XQO_7jQ: segments=0
+2026-02-11 03:14:11,582 - INFO - pjf5uhOMcTc: segments=2
