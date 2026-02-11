@@ -12,18 +12,31 @@ This repo expects extremely high traceability and conservatism. For any code/con
 - **Retrospective:** record what worked/failed and the next hypothesis in the commit message (template below).
 
 ### Objective (non-negotiable)
-Extract “real call” conversation segments from long MP3s **without ever merging calls** and **without over-splitting calls** for any **kept** outputs. If separation is uncertain, **drop ambiguous** (output nothing) rather than output wrong segments.
+Extract “real call” conversation segments from long MP3s with a production decoder that prioritizes:
+- **No merges (hard requirement):** never merge separate calls into a single output segment.
+- **Oversplits acceptable:** splitting a call into multiple segments is allowed (judge LLM downstream).
+- **Very low false positives on no-call audio:** cap judge-LLM cost by keeping output near-zero on no-call videos.
+- **Drop rather than merge:** if separation is ambiguous (e.g., tiny/zero-gap), prefer dropping output over risking a merge.
 
-### Eval/sweep gates (GT-based)
-- **merges == 0**: no predicted segment overlaps >1 ground-truth call.
-- **oversplits == 0**: no ground-truth call overlaps >1 predicted segment.
-- **FP_total == 0**: no predicted segment overlaps zero ground-truth calls (spurious segments anywhere). FP is overlap-based and must **never** be redefined as containment/overhang.
-- **Kept calls (for keep_rate metrics):** IoU_exact >= 0.5 and coverage_exact >= min_coverage (min_coverage is frozen in the comparability key).
-- **strict_valid:** merges==0 && oversplits==0 && FP_total==0 under the frozen matching params (match_tol_s, overlap_eps_s).
+### GT-based comparability metrics (unchanged formulas; reporting-only)
+These metrics are computed via `pipeline.call_extractor_wavlm.metrics.compute_gate_metrics(...)` and are kept stable for comparability (do not redefine):
+- `merges`: count of predicted segments overlapping >1 GT call (under overlap-based matching).
+- `oversplits`: count of GT calls overlapping >1 predicted segment.
+- `FP_total`: count of predicted segments that overlap zero GT calls (spurious segments). FP is overlap-based and must **never** be redefined as containment/overhang.
+- `keep_rate_*`: uses 1:1 matched calls, with `IoU_exact` and `coverage_exact` thresholds (min_coverage is part of the frozen comparability key).
+
+**Important:** We are no longer optimizing for “strict SFT gates”. Judge LLM downstream will filter oversplits/contamination. We still compute these GT metrics for auditing and regression tracking.
 
 ### Production policy (no GT available)
-- **drop ambiguous**: conservative decoder must prefer “no output” over incorrect segmentation.
-- **Eval gates are GT-based:** production cannot compute merges/oversplits/FP_total. Production must rely on conservative decoder rules and “drop ambiguous”.
+- Production cannot compute GT merges/oversplits/FP_total. The production decoder must enforce:
+  - **drop ambiguous**: prefer no output over merge-risk output.
+  - **no-call conservatism**: output should be near-zero on no-call audio (use confidence filters and cost proxies).
+
+### Production metrics (required for decoder selection)
+For decoder sweeps/selection, report (in addition to GT comparability metrics):
+- **NO-CALL FP:** `fp_no_call_seconds`, `fp_no_call_seconds_per_hour`, and `fp_no_call_segments` on (eval no-call videos + train no-call videos).
+- **Purity/contamination:** purity vs `union(GT_calls)` and total `non_call_seconds`.
+- **Cost proxies:** `segments_per_hour` and `predicted_seconds_per_hour`.
 
 ### Metric/gate definition freeze (required)
 Once an execution-locked plan starts, **freeze** all metric definitions and gates. Any change to:
@@ -41,6 +54,16 @@ Additional required rules:
 - **Single source of truth:** all sweeps/evals must use `pipeline.call_extractor_wavlm.metrics.compute_gate_metrics(...)` (no duplicated formulas).
 - **No mid-stream changes:** do not change any scoring/selection code/config while a sweep/eval is running; finish the run, then start a new versioned run.
 - **Do not kill running sweeps:** do not terminate/interrupt a running sweep/eval for impatience (or because CPU time is increasing). Let it finish to preserve near-miss diagnostics. Only stop if (a) the user explicitly tells you to stop, or (b) you can prove it is misconfigured (wrong split/prefix/params) and you record why in the execution checklist before stopping.
+
+### GitHub artifacts policy (required)
+Commit to GitHub (main):
+- Decoder configs (e.g., `configs/call_extractor/decode_prod_*.config.json`)
+- Production reports under `reports/` (both `.md` and `.json`)
+- Full EC2 logs under `logs/<run_id>/<utc_ts>_<step>.log` (tmux/nohup + `tee`)
+
+Upload to S3 only (never commit):
+- Model weights/checkpoints
+- Large per-video arrays (e.g., `probs/*.npz`) and other large batch artifacts
 
 ### Cycle discipline (required: no open-ended looping)
 **A “cycle” = one bounded unit of work that produces new metrics** (training run, decode sweep, or eval run).

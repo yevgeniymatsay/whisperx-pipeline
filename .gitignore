@@ -41,6 +41,12 @@ artifacts/*
 !package.json
 !tsconfig.json
 !*.config.json
+!reports/**/*.json
+!reports/**/*.jsonl
 
 # Logs
 *.log
+!logs/**/*.log
+
+# Large local scratch plans (Codex desktop)
+terminalcodex.md
