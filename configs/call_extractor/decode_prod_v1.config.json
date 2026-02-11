@@ -1,19 +1,18 @@
 {
+  "max_duration_s": 14400,
   "max_in_call_min": 0.7,
   "max_segment_s": 900.0,
-  "max_duration_s": 14400,
   "mean_in_call_min": 0.45,
   "min_duration_s": 2.0,
-  "split_lo": 0.35,
-  "split_min_off_s": 0.5,
+  "split_lo": 0.3,
+  "split_min_off_s": 0.25,
   "trim_s": 0.0,
-  "viterbi_cost_mult": 1.0,
+  "viterbi_cost_mult": 0.5,
   "viterbi_end_scale": 0.0,
   "viterbi_min_off_s": 0.0,
-  "viterbi_min_on_s": 1.0,
+  "viterbi_min_on_s": 0.5,
   "viterbi_off_to_on_penalty": 9.4596,
   "viterbi_on_to_off_penalty": 9.4478,
-  "viterbi_smooth_win_s": 0.1,
+  "viterbi_smooth_win_s": 0.5,
   "viterbi_start_scale": 0.0
 }
-

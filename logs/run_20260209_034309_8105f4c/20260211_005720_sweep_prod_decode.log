@@ -1,0 +1,18 @@
+2026-02-11 00:57:21,836 - INFO - Found credentials from IAM Role: ecsInstanceRole
+2026-02-11 00:57:26,806 - INFO - Sweep setup: run=call_extractor/wavlm_large_v1/models/run_20260209_034309_8105f4c eval=10 eval_no_call=2 train_no_call=8 total_eval_vids=18
+2026-02-11 00:57:27,625 - WARNING - Missing probs for 8/18 eval-set vids; continuing without them: ['MPHdNIiB_8E', 'aW8jAYnvqyI', 'hYjbrxLXJIU', 'hs44BGJtOwg', 'jvFLW5EClgk', 'm2z1tgfv8Kc', 'nNA0XQO_7jQ', 'pjf5uhOMcTc']
+2026-02-11 00:58:29,972 - INFO - sweep 25/324 done (latest merges=17 fp_no_call_sec/hr=19.161)
+2026-02-11 00:59:34,564 - INFO - sweep 50/324 done (latest merges=18 fp_no_call_sec/hr=19.161)
+2026-02-11 01:00:37,202 - INFO - sweep 75/324 done (latest merges=17 fp_no_call_sec/hr=19.161)
+2026-02-11 01:01:42,092 - INFO - sweep 100/324 done (latest merges=18 fp_no_call_sec/hr=19.161)
+2026-02-11 01:02:41,549 - INFO - sweep 125/324 done (latest merges=18 fp_no_call_sec/hr=19.161)
+2026-02-11 01:03:42,631 - INFO - sweep 150/324 done (latest merges=17 fp_no_call_sec/hr=19.161)
+2026-02-11 01:04:43,005 - INFO - sweep 175/324 done (latest merges=17 fp_no_call_sec/hr=18.828)
+2026-02-11 01:05:44,743 - INFO - sweep 200/324 done (latest merges=17 fp_no_call_sec/hr=18.828)
+2026-02-11 01:06:45,978 - INFO - sweep 225/324 done (latest merges=17 fp_no_call_sec/hr=18.828)
+2026-02-11 01:07:47,254 - INFO - sweep 250/324 done (latest merges=17 fp_no_call_sec/hr=18.828)
+2026-02-11 01:08:48,856 - INFO - sweep 275/324 done (latest merges=17 fp_no_call_sec/hr=18.828)
+2026-02-11 01:09:49,476 - INFO - sweep 300/324 done (latest merges=17 fp_no_call_sec/hr=18.828)
+2026-02-11 01:10:49,097 - INFO - sweep 324/324 done (latest merges=17 fp_no_call_sec/hr=18.828)
+2026-02-11 01:10:49,100 - INFO - Wrote selected config to configs/call_extractor/decode_prod_v1.config.json
+2026-02-11 01:10:49,100 - INFO - Wrote reports/prod_decode_sweep_run_20260209_034309_8105f4c_20260211_005720.json and reports/prod_decode_sweep_run_20260209_034309_8105f4c_20260211_005720.md

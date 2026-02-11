@@ -1,0 +1,9 @@
+2026-02-11 00:56:34,781 - INFO - Found credentials from IAM Role: ecsInstanceRole
+2026-02-11 00:56:39,981 - INFO - Sweep setup: run=call_extractor/wavlm_large_v1/models/run_20260209_034309_8105f4c eval=10 eval_no_call=2 train_no_call=8 total_eval_vids=18
+2026-02-11 00:56:42,796 - WARNING - Missing probs for 8/18 eval-set vids; continuing without them: ['MPHdNIiB_8E', 'aW8jAYnvqyI', 'hYjbrxLXJIU', 'hs44BGJtOwg', 'jvFLW5EClgk', 'm2z1tgfv8Kc', 'nNA0XQO_7jQ', 'pjf5uhOMcTc']
+Traceback (most recent call last):
+  File "/home/ubuntu/whisperx-pipeline-git/scripts/sweep_call_extractor_prod_decode.py", line 428, in <module>
+    raise SystemExit(main())
+  File "/home/ubuntu/whisperx-pipeline-git/scripts/sweep_call_extractor_prod_decode.py", line 180, in main
+    raise ValueError(f"Grid too large: {len(combos)} > 500 (refuse to run)")
+ValueError: Grid too large: 17496 > 500 (refuse to run)
