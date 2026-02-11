@@ -205,6 +205,8 @@ class HFCaseEmbedding(Embedder):
         from huggingface_hub import hf_hub_download
 
         model_py = hf_hub_download(self.name, "model.py")
+        hf_hub_download(self.name, "config.json")
+        hf_hub_download(self.name, "pytorch_model.bin")
         self._model_dir = str(Path(model_py).parent)
 
         spec = importlib.util.spec_from_file_location("case_model", model_py)
