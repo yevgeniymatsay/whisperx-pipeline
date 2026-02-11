@@ -70,6 +70,42 @@ def overlap_seconds_with_union(
     return float(total)
 
 
+def total_seconds(intervals: Sequence[tuple[float, float]]) -> float:
+    """Sum of interval durations (expects non-overlapping intervals if used as a 'union' length)."""
+    return float(sum(max(0.0, float(e) - float(s)) for s, e in intervals))
+
+
+def overlap_seconds_between_unions(
+    union_a: Sequence[tuple[float, float]],
+    union_b: Sequence[tuple[float, float]],
+) -> float:
+    """Exact overlap seconds between two disjoint union lists."""
+    total = 0.0
+    for s, e in union_a:
+        total += overlap_seconds_with_union((float(s), float(e)), union_b)
+    return float(total)
+
+
+def per_call_coverages(
+    *,
+    gt_calls: Sequence[tuple[float, float]],
+    pred_intervals: Sequence[tuple[float, float]],
+) -> list[float]:
+    """Per-call coverage fraction: overlap(pred_union, gt_call) / duration(gt_call)."""
+    pred_union = merge_intervals(pred_intervals, join_tolerance_s=0.0)
+    coverages: list[float] = []
+    for gs, ge in gt_calls:
+        gs_f = float(gs)
+        ge_f = float(ge)
+        dur = max(0.0, ge_f - gs_f)
+        if dur <= 0.0:
+            continue
+        ov = overlap_seconds_with_union((gs_f, ge_f), pred_union)
+        ov = min(float(ov), float(dur))
+        coverages.append(float(ov) / float(dur))
+    return coverages
+
+
 @dataclass(frozen=True)
 class PurityAgg:
     pred_seconds: float
@@ -115,4 +151,3 @@ def quantiles(values: Iterable[float], qs: Sequence[float]) -> list[float | None
     if arr.size == 0:
         return [None for _ in qs]
     return [float(np.quantile(arr, float(q))) for q in qs]
-

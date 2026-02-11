@@ -25,7 +25,14 @@ from pipeline.call_extractor_wavlm.metrics import (
     METRICS_VERSION,
     compute_gate_metrics,
 )
-from pipeline.call_extractor_wavlm.production_metrics import merge_intervals, purity_vs_union, quantiles
+from pipeline.call_extractor_wavlm.production_metrics import (
+    merge_intervals,
+    overlap_seconds_between_unions,
+    per_call_coverages,
+    purity_vs_union,
+    quantiles,
+    total_seconds,
+)
 from pipeline.call_extractor_wavlm.types import CallBoundary
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -92,9 +99,6 @@ def main() -> int:
     parser.add_argument("--overlap-eps-s", type=float, default=0.10)
     parser.add_argument("--min-coverage", type=float, default=0.30)
 
-    # Selection objective knobs
-    parser.add_argument("--no-call-fp-budget-sec-per-hour", type=float, default=10.0)
-
     # Grid (defaults from the user-approved production plan; must stay <=500).
     parser.add_argument("--viterbi-smooth-win-s", type=str, default="0.1,0.5")
     parser.add_argument("--viterbi-min-on-s", type=str, default="0.5,1.0,2.0")
@@ -136,7 +140,7 @@ def main() -> int:
     train_no_call_vids = [vid for vid in train_video_ids if len(labels_by_vid.get(vid, [])) == 0]
     no_call_vids = list(sorted(set(eval_no_call_vids + train_no_call_vids)))
 
-    # Eval set for production metrics uses eval videos plus extra no-call videos (to estimate FP budget).
+    # Eval set for production metrics uses eval videos plus extra no-call videos (to estimate NO-CALL FP).
     eval_set_vids = list(sorted(set(eval_video_ids + no_call_vids)))
 
     logger.info(
@@ -181,8 +185,6 @@ def main() -> int:
 
     # Per-config evaluation.
     rows: list[dict[str, Any]] = []
-    budget = float(args.no_call_fp_budget_sec_per_hour)
-
     for idx, vals in enumerate(combos, start=1):
         params = {k: float(v) for k, v in zip(keys, vals)}
 
@@ -215,6 +217,11 @@ def main() -> int:
         kept_cov = 0
 
         segment_purities: list[float] = []
+        call_coverages: list[float] = []
+        calls_cov_ge_0_8 = 0
+        gt_union_seconds_total = 0.0
+        pred_union_seconds_total = 0.0
+        union_overlap_seconds_total = 0.0
         non_call_seconds_total = 0.0
         overlap_seconds_total = 0.0
         pred_seconds_total = 0.0
@@ -238,13 +245,26 @@ def main() -> int:
             gt_bounds = labels_by_vid.get(str(vid), [])
             gt_intervals = [(float(b.start_s), float(b.end_s)) for b in gt_bounds]
             gt_union = merge_intervals(gt_intervals, join_tolerance_s=0.0)
+            pred_union = merge_intervals(pred_intervals, join_tolerance_s=0.0)
 
             purity = purity_vs_union(pred_intervals=pred_intervals, gt_union_intervals=gt_union)
             segment_purities.extend(purity.segment_purities)
             non_call_seconds_total += float(purity.non_call_seconds)
             overlap_seconds_total += float(purity.overlap_seconds)
 
-            # No-call FP budget metrics
+            if str(vid) in eval_video_ids and len(gt_intervals) > 0:
+                covs = per_call_coverages(gt_calls=gt_intervals, pred_intervals=pred_intervals)
+                call_coverages.extend(covs)
+                calls_cov_ge_0_8 += int(sum(1 for c in covs if float(c) >= 0.8))
+
+                gt_union_s = total_seconds(gt_union)
+                pred_union_s = total_seconds(pred_union)
+                ov_union = overlap_seconds_between_unions(pred_union, gt_union)
+                gt_union_seconds_total += float(gt_union_s)
+                pred_union_seconds_total += float(pred_union_s)
+                union_overlap_seconds_total += float(ov_union)
+
+            # No-call FP metrics
             if len(gt_bounds) == 0:
                 fp_no_call_seconds += float(purity.pred_seconds)
                 fp_no_call_segments += int(len(pred_intervals))
@@ -276,6 +296,10 @@ def main() -> int:
         predicted_seconds_per_hour = (float(pred_seconds_total) / float(total_hours)) if total_hours > 0 else 0.0
 
         purity_p10, purity_med = quantiles(segment_purities, qs=[0.10, 0.50])
+        cov_p10, cov_med = quantiles(call_coverages, qs=[0.10, 0.50])
+        calls_cov_ge_0_8_rate = (float(calls_cov_ge_0_8) / float(gt_calls)) if gt_calls > 0 else 0.0
+        union_recall = (float(union_overlap_seconds_total) / float(gt_union_seconds_total)) if gt_union_seconds_total > 0 else 0.0
+        union_purity = (float(union_overlap_seconds_total) / float(pred_union_seconds_total)) if pred_union_seconds_total > 0 else 0.0
 
         keep_rate_iou_0_5 = (kept_iou_0_5 / gt_calls) if gt_calls > 0 else 0.0
         keep_rate_cov = (kept_cov / gt_calls) if gt_calls > 0 else 0.0
@@ -302,9 +326,14 @@ def main() -> int:
                 "purity_segment_median": purity_med,
                 "non_call_seconds_total": float(non_call_seconds_total),
                 "recovered_call_seconds": float(overlap_seconds_total),
+                "calls_coverage_ge_0_8": int(calls_cov_ge_0_8),
+                "calls_coverage_ge_0_8_rate": float(calls_cov_ge_0_8_rate),
+                "call_coverage_p10": cov_p10,
+                "call_coverage_median": cov_med,
+                "union_recall": float(union_recall),
+                "union_purity": float(union_purity),
                 "segments_per_hour": float(segments_per_hour),
                 "predicted_seconds_per_hour": float(predicted_seconds_per_hour),
-                "budget_pass": bool(fp_no_call_sec_per_hr <= budget),
             }
         )
 
@@ -315,10 +344,11 @@ def main() -> int:
     def sort_key(r: dict[str, Any]) -> tuple:
         return (
             int(r["merges"]),
-            0 if bool(r["budget_pass"]) else 1,
-            float(r["fp_no_call_seconds_per_hour"]),
+            -float(r.get("calls_coverage_ge_0_8_rate") or 0.0),
+            -float(r.get("union_recall") or 0.0),
+            -float(r.get("union_purity") or 0.0),
             float(r["non_call_seconds_total"]),
-            -float(r["recovered_call_seconds"]),
+            float(r["fp_no_call_seconds_per_hour"]),
             float(r["segments_per_hour"]),
         )
 
@@ -356,7 +386,6 @@ def main() -> int:
             "overlap_eps_s": float(args.overlap_eps_s),
             "min_coverage": float(args.min_coverage),
         },
-        "no_call_fp_budget_sec_per_hour": float(budget),
         "eval_video_ids": eval_video_ids,
         "eval_no_call_video_ids": eval_no_call_vids,
         "train_no_call_video_ids": train_no_call_vids,
@@ -386,7 +415,6 @@ def main() -> int:
     md.append(f"- match_tol_s: {args.match_tol_s}")
     md.append(f"- overlap_eps_s: {args.overlap_eps_s}")
     md.append(f"- min_coverage: {args.min_coverage}")
-    md.append(f"- no_call_fp_budget_sec_per_hour: {budget}")
     md.append(f"- grid_size: {len(combos)}")
     if missing_probs:
         md.append(f"- missing_probs_video_ids: {missing_probs}")
@@ -396,20 +424,22 @@ def main() -> int:
         md.append("- (none)")
     else:
         md.append(f"- merges: {best['merges']}")
-        md.append(f"- fp_no_call_seconds_per_hour: {best['fp_no_call_seconds_per_hour']:.3f}")
+        md.append(f"- calls_coverage_ge_0_8_rate: {best.get('calls_coverage_ge_0_8_rate', 0.0):.3f}")
+        md.append(f"- union_recall: {best.get('union_recall', 0.0):.3f}")
+        md.append(f"- union_purity: {best.get('union_purity', 0.0):.3f}")
         md.append(f"- non_call_seconds_total: {best['non_call_seconds_total']:.3f}")
-        md.append(f"- recovered_call_seconds: {best['recovered_call_seconds']:.3f}")
+        md.append(f"- fp_no_call_seconds_per_hour (reporting): {best['fp_no_call_seconds_per_hour']:.3f}")
         md.append(f"- segments_per_hour: {best['segments_per_hour']:.3f}")
         md.append(f"- keep_rate_iou_0_5 (reporting-only): {best['keep_rate_iou_0_5']:.3f}")
         md.append(f"- params: `{json.dumps(best['params'], sort_keys=True)}`")
     md.append("")
     md.append("## Top 10 table")
     md.append("")
-    md.append("| idx | merges | fp_no_call_sec/hr | non_call_s | recovered_call_s | seg/hr | keep@0.5 | params |")
-    md.append("|---:|---:|---:|---:|---:|---:|---:|---|")
+    md.append("| idx | merges | cov>=0.8 | union_recall | union_purity | fp_no_call_sec/hr | seg/hr | keep@0.5 | params |")
+    md.append("|---:|---:|---:|---:|---:|---:|---:|---:|---|")
     for r in rows_sorted[:10]:
         md.append(
-            f"| {r['idx']} | {r['merges']} | {r['fp_no_call_seconds_per_hour']:.3f} | {r['non_call_seconds_total']:.1f} | {r['recovered_call_seconds']:.1f} | {r['segments_per_hour']:.1f} | {r['keep_rate_iou_0_5']:.3f} | `{json.dumps(r['params'], sort_keys=True)}` |"
+            f"| {r['idx']} | {r['merges']} | {r.get('calls_coverage_ge_0_8_rate', 0.0):.3f} | {r.get('union_recall', 0.0):.3f} | {r.get('union_purity', 0.0):.3f} | {r['fp_no_call_seconds_per_hour']:.3f} | {r['segments_per_hour']:.1f} | {r['keep_rate_iou_0_5']:.3f} | `{json.dumps(r['params'], sort_keys=True)}` |"
         )
 
     args.out_md.parent.mkdir(parents=True, exist_ok=True)

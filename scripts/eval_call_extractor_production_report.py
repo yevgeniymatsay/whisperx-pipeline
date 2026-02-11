@@ -28,7 +28,14 @@ from pipeline.call_extractor_wavlm.metrics import (
     boundaries_from_json_segments,
     compute_gate_metrics,
 )
-from pipeline.call_extractor_wavlm.production_metrics import merge_intervals, purity_vs_union, quantiles
+from pipeline.call_extractor_wavlm.production_metrics import (
+    merge_intervals,
+    overlap_seconds_between_unions,
+    per_call_coverages,
+    purity_vs_union,
+    quantiles,
+    total_seconds,
+)
 from pipeline.call_extractor_wavlm.types import CallBoundary
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -255,6 +262,11 @@ def main() -> int:
 
     per_video_rows: list[dict] = []
     segment_purities_all: list[float] = []
+    call_coverages_all: list[float] = []
+    calls_cov_ge_0_8 = 0
+    gt_union_seconds_total = 0.0
+    pred_union_seconds_total = 0.0
+    union_overlap_seconds_total = 0.0
     non_call_seconds_total = 0.0
     pred_seconds_total = 0.0
     pred_segments_total = 0
@@ -293,9 +305,23 @@ def main() -> int:
         pred_segments_total += int(pred_segments)
 
         gt_union = merge_intervals(gt_bounds, join_tolerance_s=0.0)
+        pred_union = merge_intervals(pred_bounds, join_tolerance_s=0.0)
         purity = purity_vs_union(pred_intervals=pred_bounds, gt_union_intervals=gt_union)
         segment_purities_all.extend(purity.segment_purities)
         non_call_seconds_total += float(purity.non_call_seconds)
+
+        # Coverage / union metrics are computed for eval call videos only (split_v2 eval set).
+        if vid in eval_video_ids and len(gt_bounds) > 0:
+            covs = per_call_coverages(gt_calls=gt_bounds, pred_intervals=pred_bounds)
+            call_coverages_all.extend(covs)
+            calls_cov_ge_0_8 += int(sum(1 for c in covs if float(c) >= 0.8))
+
+            gt_union_s = total_seconds(gt_union)
+            pred_union_s = total_seconds(pred_union)
+            ov_union = overlap_seconds_between_unions(pred_union, gt_union)
+            gt_union_seconds_total += float(gt_union_s)
+            pred_union_seconds_total += float(pred_union_s)
+            union_overlap_seconds_total += float(ov_union)
 
         is_no_call = len(gt_bounds) == 0
         if is_no_call:
@@ -458,6 +484,10 @@ def main() -> int:
     predicted_seconds_per_hour = (float(pred_seconds_total) / float(pred_hours)) if pred_hours > 0 else 0.0
 
     purity_seg_p10, purity_seg_median = quantiles(segment_purities_all, qs=[0.10, 0.50])
+    cov_p10, cov_median = quantiles(call_coverages_all, qs=[0.10, 0.50])
+    calls_cov_ge_0_8_rate = (float(calls_cov_ge_0_8) / float(gate_agg_eval["gt_calls"])) if gate_agg_eval["gt_calls"] > 0 else 0.0
+    union_recall = (float(union_overlap_seconds_total) / float(gt_union_seconds_total)) if gt_union_seconds_total > 0 else 0.0
+    union_purity = (float(union_overlap_seconds_total) / float(pred_union_seconds_total)) if pred_union_seconds_total > 0 else 0.0
 
     no_call_hours = float(no_call_audio_seconds) / 3600.0 if no_call_audio_seconds > 0 else 0.0
     fp_no_call_seconds_per_hour = (float(fp_no_call_seconds) / float(no_call_hours)) if no_call_hours > 0 else 0.0
@@ -501,6 +531,12 @@ def main() -> int:
             "non_call_seconds_total": float(non_call_seconds_total),
             "segments_per_hour": float(segments_per_hour),
             "predicted_seconds_per_hour": float(predicted_seconds_per_hour),
+            "calls_coverage_ge_0_8": int(calls_cov_ge_0_8),
+            "calls_coverage_ge_0_8_rate": float(calls_cov_ge_0_8_rate),
+            "call_coverage_p10": cov_p10,
+            "call_coverage_median": cov_median,
+            "union_recall": float(union_recall),
+            "union_purity": float(union_purity),
         },
         "merge_autopsy": merge_autopsy_rows,
         "per_video": sorted(per_video_rows, key=lambda r: (int(r["is_no_call"]), -float(r["pred_seconds"]))),
@@ -550,6 +586,11 @@ def main() -> int:
         f"- non_call_seconds_total: {non_call_seconds_total:.3f}",
         f"- segments_per_hour: {segments_per_hour:.3f}",
         f"- predicted_seconds_per_hour: {predicted_seconds_per_hour:.3f}",
+        f"- calls_coverage_ge_0_8_rate: {calls_cov_ge_0_8_rate:.3f}",
+        f"- call_coverage_p10: {cov_p10}",
+        f"- call_coverage_median: {cov_median}",
+        f"- union_recall: {union_recall:.3f}",
+        f"- union_purity: {union_purity:.3f}",
         "",
         "## No-call per-video breakdown",
     ]
