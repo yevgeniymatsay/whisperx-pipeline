@@ -5,11 +5,13 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import parse_qs, urlparse
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -26,6 +28,48 @@ class AzureAudioConfig:
     api_key: str
     api_version: str
     deployment: str
+
+
+def _normalize_endpoint(endpoint: str) -> str:
+    raw = (endpoint or "").strip()
+    if not raw:
+        return ""
+    # Allow values like:
+    # - https://{resource}.openai.azure.com
+    # - https://{resource}.cognitiveservices.azure.com
+    # - https://{resource}.cognitiveservices.azure.com/openai/deployments/{dep}/audio/transcriptions?api-version=...
+    if not raw.startswith(("http://", "https://")):
+        raw = "https://" + raw
+    parsed = urlparse(raw)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+    return raw.rstrip("/")
+
+
+_DEPLOYMENT_RE = re.compile(r"/openai/deployments/([^/]+)/")
+
+
+def _extract_api_version_and_deployment(raw_endpoint: str) -> tuple[Optional[str], Optional[str]]:
+    raw = (raw_endpoint or "").strip()
+    if not raw:
+        return None, None
+    if not raw.startswith(("http://", "https://")):
+        raw = "https://" + raw
+    parsed = urlparse(raw)
+
+    api_version: Optional[str] = None
+    if parsed.query:
+        qs = parse_qs(parsed.query)
+        v = qs.get("api-version")
+        if v and v[0]:
+            api_version = v[0]
+
+    deployment: Optional[str] = None
+    m = _DEPLOYMENT_RE.search(parsed.path)
+    if m:
+        deployment = m.group(1)
+
+    return api_version, deployment
 
 
 def _maybe_load_dotenv() -> None:
@@ -69,15 +113,22 @@ def _load_azure_audio_config(*, deployment_override: Optional[str]) -> AzureAudi
         _maybe_load_dotenv()
         endpoint, api_key, api_version, deployment = _read()
 
+    extracted_api_version, extracted_deployment = _extract_api_version_and_deployment(endpoint)
+    if not api_version and extracted_api_version:
+        api_version = extracted_api_version
+    if not deployment and extracted_deployment:
+        deployment = extracted_deployment
+
+    endpoint_norm = _normalize_endpoint(endpoint)
     missing = [k for k, v in {
-        "AZURE_OPENAI_ENDPOINT": endpoint,
+        "AZURE_OPENAI_ENDPOINT": endpoint_norm,
         "AZURE_OPENAI_API_KEY": api_key,
         "OPENAI_API_VERSION": api_version,
         "AZURE_OPENAI_DEPLOYMENT_TRANSCRIBE_DIARIZE (or --deployment)": deployment,
     }.items() if not v]
     if missing:
         raise RuntimeError("Missing Azure OpenAI env vars: " + ", ".join(missing))
-    return AzureAudioConfig(endpoint=endpoint, api_key=api_key, api_version=api_version, deployment=deployment)
+    return AzureAudioConfig(endpoint=endpoint_norm, api_key=api_key, api_version=api_version, deployment=deployment)
 
 
 def _make_azure_client(cfg: AzureAudioConfig):
