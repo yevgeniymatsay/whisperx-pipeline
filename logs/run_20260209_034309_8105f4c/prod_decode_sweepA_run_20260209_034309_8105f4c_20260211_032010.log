@@ -1,0 +1,20 @@
+2026-02-11 03:20:11,166 - INFO - Found credentials from IAM Role: ecsInstanceRole
+2026-02-11 03:20:16,164 - INFO - Sweep setup: run=call_extractor/wavlm_large_v1/models/run_20260209_034309_8105f4c eval=10 eval_no_call=2 train_no_call=8 total_eval_vids=18
+2026-02-11 03:21:45,624 - INFO - sweep 25/405 done (latest merges=17 fp_no_call_sec/hr=7.506)
+2026-02-11 03:23:14,470 - INFO - sweep 50/405 done (latest merges=17 fp_no_call_sec/hr=8.769)
+2026-02-11 03:24:40,484 - INFO - sweep 75/405 done (latest merges=17 fp_no_call_sec/hr=6.822)
+2026-02-11 03:26:04,998 - INFO - sweep 100/405 done (latest merges=15 fp_no_call_sec/hr=8.563)
+2026-02-11 03:27:29,203 - INFO - sweep 125/405 done (latest merges=17 fp_no_call_sec/hr=7.865)
+2026-02-11 03:28:53,096 - INFO - sweep 150/405 done (latest merges=17 fp_no_call_sec/hr=7.500)
+2026-02-11 03:30:16,896 - INFO - sweep 175/405 done (latest merges=17 fp_no_call_sec/hr=8.111)
+2026-02-11 03:31:40,605 - INFO - sweep 200/405 done (latest merges=14 fp_no_call_sec/hr=8.576)
+2026-02-11 03:33:04,523 - INFO - sweep 225/405 done (latest merges=16 fp_no_call_sec/hr=6.849)
+2026-02-11 03:34:28,303 - INFO - sweep 250/405 done (latest merges=17 fp_no_call_sec/hr=6.849)
+2026-02-11 03:35:51,675 - INFO - sweep 275/405 done (latest merges=16 fp_no_call_sec/hr=7.520)
+2026-02-11 03:37:16,446 - INFO - sweep 300/405 done (latest merges=16 fp_no_call_sec/hr=6.842)
+2026-02-11 03:38:41,547 - INFO - sweep 325/405 done (latest merges=17 fp_no_call_sec/hr=8.576)
+2026-02-11 03:40:06,033 - INFO - sweep 350/405 done (latest merges=16 fp_no_call_sec/hr=6.842)
+2026-02-11 03:41:30,056 - INFO - sweep 375/405 done (latest merges=16 fp_no_call_sec/hr=6.842)
+2026-02-11 03:42:54,056 - INFO - sweep 400/405 done (latest merges=18 fp_no_call_sec/hr=7.898)
+2026-02-11 03:43:10,919 - INFO - sweep 405/405 done (latest merges=18 fp_no_call_sec/hr=6.842)
+2026-02-11 03:43:10,922 - INFO - Wrote /tmp/prod_sweep_run_20260209_034309_8105f4c_20260211_032010/prod_decode_sweepA_run_20260209_034309_8105f4c_20260211_032010.json and /tmp/prod_sweep_run_20260209_034309_8105f4c_20260211_032010/prod_decode_sweepA_run_20260209_034309_8105f4c_20260211_032010.md

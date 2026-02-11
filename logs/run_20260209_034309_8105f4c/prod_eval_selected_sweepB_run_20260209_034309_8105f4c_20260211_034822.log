@@ -1,0 +1,4 @@
+2026-02-11 03:48:34,086 - INFO - Found credentials from IAM Role: ecsInstanceRole
+2026-02-11 03:48:38,548 - INFO - Production eval sets: eval=10 eval_no_call=2 train_no_call=8 include_train_no_call=True total_eval_vids=18
+2026-02-11 03:48:38,846 - WARNING - Multiple mp3 keys for 4OweikRF7bg: audio/pretraining/NoCalls - 4OweikRF7bg.mp3 vs audio/pretraining-excluded/Cold_Calling_For_Beginners_A_Step-by-Step_Guide_To_Book_Sales_Meetings - 4OweikRF7bg.mp3 (keeping first)
+2026-02-11 03:48:41,886 - INFO - Wrote /tmp/prod_sweep_run_20260209_034309_8105f4c_20260211_032010/prod_eval_selected_sweepB_run_20260209_034309_8105f4c_20260211_034822.json and /tmp/prod_sweep_run_20260209_034309_8105f4c_20260211_032010/prod_eval_selected_sweepB_run_20260209_034309_8105f4c_20260211_034822.md
