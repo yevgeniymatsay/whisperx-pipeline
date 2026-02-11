@@ -1,0 +1,9 @@
+{
+  "baseline_run_id": "run_20260209_100848_76185f0",
+  "baseline_run_s3_prefix": "call_extractor/wavlm_large_v1/models/run_20260209_100848_76185f0",
+  "notes": "Production candidate pointers only (no metric definitions). Use split_v2 for all eval/sweeps.",
+  "primary_run_id": "run_20260209_034309_8105f4c",
+  "primary_run_s3_prefix": "call_extractor/wavlm_large_v1/models/run_20260209_034309_8105f4c",
+  "version": "prod_candidate_v1"
+}
+
