@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -157,7 +158,7 @@ def _dump_json(path: Path, obj: Any) -> None:
     tmp.replace(path)
 
 
-def _transcribe_diarize(
+def _transcribe_diarize_single(
     client,
     *,
     deployment: str,
@@ -198,6 +199,143 @@ def _transcribe_diarize(
     raise RuntimeError(f"Azure diarize failed after {retries+1} attempts: {last_err}") from last_err
 
 
+def _write_wav_chunk(
+    *,
+    input_path: Path,
+    start_s: float,
+    duration_s: float,
+    output_path: Path,
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "ffmpeg",
+        "-v",
+        "error",
+        "-nostdin",
+        "-y",
+        "-i",
+        str(input_path),
+        "-ss",
+        str(float(start_s)),
+        "-t",
+        str(float(duration_s)),
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        "-c:a",
+        "pcm_s16le",
+        str(output_path),
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
+
+
+def _transcribe_diarize(
+    client,
+    *,
+    deployment: str,
+    audio_path: Path,
+    clip_duration_s: Optional[float],
+    language: str,
+    chunking_strategy: str,
+    timeout_s: float,
+    retries: int,
+    sleep_base_s: float,
+    max_model_seconds: float,
+    chunk_seconds: float,
+    chunk_overlap_s: float,
+    chunk_dir: Path,
+) -> Dict[str, Any]:
+    """Diarize a clip, chunking locally if it exceeds the model max duration.
+
+    Azure diarization has a hard max duration (observed ~1500s). `chunking_strategy="auto"`
+    does not bypass that; we must split long clips into sub-clips ourselves.
+    """
+    dur = float(clip_duration_s) if clip_duration_s is not None else None
+    if dur is None or dur <= 0.0 or dur <= float(max_model_seconds):
+        return _transcribe_diarize_single(
+            client,
+            deployment=deployment,
+            audio_path=audio_path,
+            language=language,
+            chunking_strategy=chunking_strategy,
+            timeout_s=timeout_s,
+            retries=retries,
+            sleep_base_s=sleep_base_s,
+        )
+
+    max_s = float(max_model_seconds)
+    chunk_s = float(min(float(chunk_seconds), max_s))
+    # Keep some overlap for boundary continuity, but ensure progress.
+    overlap_s = float(max(0.0, min(float(chunk_overlap_s), max(0.0, chunk_s - 1.0))))
+    step_s = float(max(1.0, chunk_s - overlap_s))
+
+    combined_segments: list[dict[str, Any]] = []
+    chunk_meta: list[dict[str, Any]] = []
+
+    chunk_idx = 0
+    start_s = 0.0
+    while start_s < dur - 1e-6:
+        this_dur = float(min(chunk_s, dur - start_s))
+        if this_dur <= 0.0:
+            break
+
+        chunk_path = chunk_dir / f"{audio_path.stem}.chunk{chunk_idx:03d}.wav"
+        _write_wav_chunk(input_path=audio_path, start_s=float(start_s), duration_s=float(this_dur), output_path=chunk_path)
+
+        resp = _transcribe_diarize_single(
+            client,
+            deployment=deployment,
+            audio_path=chunk_path,
+            language=language,
+            chunking_strategy=chunking_strategy,
+            timeout_s=timeout_s,
+            retries=retries,
+            sleep_base_s=sleep_base_s,
+        )
+
+        for seg in resp.get("segments") or []:
+            try:
+                s = float(seg.get("start"))
+                e = float(seg.get("end"))
+            except Exception:
+                continue
+            if e <= s:
+                continue
+            speaker = str(seg.get("speaker") or "").strip()
+            seg_out = dict(seg)
+            # Prefix speaker labels by chunk to avoid accidental identity collisions across chunks.
+            if speaker:
+                seg_out["speaker"] = f"c{chunk_idx}:{speaker}"
+            seg_out["start"] = float(s + start_s)
+            seg_out["end"] = float(e + start_s)
+            combined_segments.append(seg_out)
+
+        chunk_meta.append(
+            {
+                "chunk_index": int(chunk_idx),
+                "chunk_start_s": float(start_s),
+                "chunk_duration_s": float(this_dur),
+                "chunk_path": str(chunk_path),
+            }
+        )
+        chunk_idx += 1
+        start_s += step_s
+
+    combined_segments.sort(key=lambda s: (float(s.get("start", 0.0) or 0.0), float(s.get("end", 0.0) or 0.0)))
+    return {
+        "duration": float(dur),
+        "segments": combined_segments,
+        "chunking": {
+            "mode": "local_chunks",
+            "max_model_seconds": float(max_s),
+            "chunk_seconds": float(chunk_s),
+            "chunk_overlap_s": float(overlap_s),
+            "chunks": chunk_meta,
+        },
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run gpt-4o-transcribe-diarize over call clips (diarized_json).")
     parser.add_argument("--pilot-dir", type=Path, required=True, help="Pilot output dir created by diarization_pilot_build_clips.py")
@@ -213,11 +351,20 @@ def main() -> int:
     parser.add_argument("--timeout-s", type=float, default=600.0, help="Per-request timeout seconds (default: 600)")
     parser.add_argument("--retries", type=int, default=3, help="Retry count on transient failures")
     parser.add_argument("--sleep-base-s", type=float, default=2.0, help="Base retry backoff in seconds")
+    parser.add_argument("--max-model-seconds", type=float, default=1500.0, help="Max duration supported by diarization model (default: 1500)")
+    parser.add_argument("--chunk-seconds", type=float, default=1400.0, help="Chunk length for long clips (default: 1400)")
+    parser.add_argument("--chunk-overlap-s", type=float, default=10.0, help="Overlap between chunks (default: 10)")
     parser.add_argument(
         "--continue-on-error",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Continue processing other clips after an error (default: true)",
+    )
+    parser.add_argument(
+        "--retry-failures",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Re-process clips that already have diarized_failures/*.error.json (default: false)",
     )
     parser.add_argument("--shard-count", type=int, default=1, help="Process only 1/N clips (default: 1)")
     parser.add_argument("--shard-index", type=int, default=0, help="Which shard [0..N-1] to process (default: 0)")
@@ -234,6 +381,7 @@ def main() -> int:
 
     diarized_dir = pilot_dir / "diarized"
     failures_dir = pilot_dir / "diarized_failures"
+    chunks_dir = pilot_dir / "chunks"
     rows = _read_metadata_jsonl(meta_path)
     if args.limit is not None:
         rows = rows[: int(args.limit)]
@@ -253,12 +401,13 @@ def main() -> int:
     for row in rows:
         clip_id = str(row["clip_id"])
         clip_path = Path(row["clip_path"])
+        clip_duration_s = float(row.get("clip_duration_s") or 0.0) if row.get("clip_duration_s") is not None else None
         out_path = diarized_dir / f"{clip_id}.diarized_json.json"
         fail_path = failures_dir / f"{clip_id}.error.json"
         if out_path.exists() and out_path.stat().st_size > 0:
             skipped += 1
             continue
-        if fail_path.exists() and fail_path.stat().st_size > 0:
+        if (not bool(args.retry_failures)) and fail_path.exists() and fail_path.stat().st_size > 0:
             # Avoid retrying known-bad clips unless the user deletes failures/.
             skipped += 1
             continue
@@ -271,11 +420,16 @@ def main() -> int:
                 client,
                 deployment=cfg.deployment,
                 audio_path=clip_path,
+                clip_duration_s=clip_duration_s,
                 language=str(args.language),
                 chunking_strategy=str(args.chunking_strategy),
                 timeout_s=float(args.timeout_s),
                 retries=int(args.retries),
                 sleep_base_s=float(args.sleep_base_s),
+                max_model_seconds=float(args.max_model_seconds),
+                chunk_seconds=float(args.chunk_seconds),
+                chunk_overlap_s=float(args.chunk_overlap_s),
+                chunk_dir=chunks_dir / clip_id,
             )
             # Stamp minimal provenance (no secrets).
             data.setdefault("metadata", {})
@@ -285,6 +439,9 @@ def main() -> int:
                 "azure_deployment": cfg.deployment,
                 "language": str(args.language),
                 "chunking_strategy": str(args.chunking_strategy),
+                "max_model_seconds": float(args.max_model_seconds),
+                "chunk_seconds": float(args.chunk_seconds),
+                "chunk_overlap_s": float(args.chunk_overlap_s),
             })
             _dump_json(out_path, data)
             done += 1
