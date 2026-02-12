@@ -5,9 +5,9 @@
 - Baseline Git SHA: 5793ed2
 - Branch: `codex/gemini-pilot-v1`
 - Scope (files/symbols):
-  - `scripts/run_gemini_local_dir_sweep_and_eval.py` (new)
-  - `scripts/_run_eval_batch.py` (cache safety; no destructive cleanup)
-  - `scripts/eval_gemini_call_detector.py` (GT-based eval report generator)
+  - `gemini_pilot/scripts/run_gemini_local_dir_sweep_and_eval.py` (new)
+  - `gemini_pilot/scripts/_run_eval_batch.py` (cache safety; no destructive cleanup)
+  - `gemini_pilot/scripts/eval_gemini_call_detector.py` (GT-based eval report generator)
   - `gemini_pilot/runner.py`:
     - optional parallel per-audio model requests (`--model-concurrency`)
     - store full response metadata for later auditing (no prompt/schema changes)
@@ -37,12 +37,12 @@
   - Non-comparable note: `n/a` (implementation/throughput change only; does not change prompt/schema)
   - Version bumps: `n/a`
 - 2026-02-12: remove GT-based eval script/parser from the pilot sweep flow
-  - What changed: removed `scripts/eval_gemini_call_detector.py` and associated unit tests; local-dir runner no longer runs eval.
+  - What changed: removed `gemini_pilot/scripts/eval_gemini_call_detector.py` and associated unit tests; local-dir runner no longer runs eval.
   - Why: for this cycle we only want raw model outputs saved for manual inspection.
   - Non-comparable note: `n/a`
   - Version bumps: `n/a`
 - 2026-02-12: re-add GT-based eval report generator under `gemini_pilot/eval/`
-  - What changed: restored `scripts/eval_gemini_call_detector.py` + unit tests; local-dir runner runs eval after the sweep to produce `<run_id>_eval.(json|md)`.
+  - What changed: restored `gemini_pilot/scripts/eval_gemini_call_detector.py` + unit tests; local-dir runner runs eval after the sweep to produce `<run_id>_eval.(json|md)`.
   - Why: keep the exact eval artifact style you already used (`gemini_pilot/eval/run_..._eval.json` + `.md`) while keeping raw model outputs intact.
   - Non-comparable note: `n/a`
   - Version bumps: `n/a`

@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-Re-download YouTube audio as M4A (AAC) and upload to S3.
+Re-download expired-listing YouTube audio as M4A (AAC) and upload to S3.
 
-Extracts YouTube video IDs from existing MP3 filenames in S3
-(audio/pretraining/), re-downloads in native M4A (AAC) format
-via yt-dlp, uploads to audio_m4a_aac/pretraining/, and deletes
-the local file immediately after each upload.
+Reads MP3 filenames from rezora-data-pipeline bucket (audio/),
+extracts YouTube video IDs, re-downloads in native M4A (AAC) format
+via yt-dlp, uploads to rezora-whisperx bucket (audio_m4a_aac/expired_listing/),
+and deletes the local file immediately after each upload.
 
 Usage:
-    python scripts/redownload_audio_m4a.py                         # Dry-run
-    python scripts/redownload_audio_m4a.py --execute                # Download + upload
-    python scripts/redownload_audio_m4a.py --execute --limit 5      # First 5 only
-    python scripts/redownload_audio_m4a.py --execute --video-id ID  # Single video
-    python scripts/redownload_audio_m4a.py --execute --concurrency 3
+    python gemini_pilot/scripts/redownload_audio_m4a_expired.py                         # Dry-run
+    python gemini_pilot/scripts/redownload_audio_m4a_expired.py --execute                # Download + upload
+    python gemini_pilot/scripts/redownload_audio_m4a_expired.py --execute --limit 5      # First 5 only
+    python gemini_pilot/scripts/redownload_audio_m4a_expired.py --execute --video-id ID  # Single video
+    python gemini_pilot/scripts/redownload_audio_m4a_expired.py --execute --concurrency 3
 """
 
 import argparse
@@ -43,24 +43,23 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = REPO_ROOT / "data"
-MANIFEST_PATH = DATA_DIR / "m4a_redownload_manifest.json"
-DOWNLOAD_DIR = REPO_ROOT / "artifacts" / "m4a_downloads"
+MANIFEST_PATH = DATA_DIR / "m4a_expired_listing_manifest.json"
+DOWNLOAD_DIR = Path("/Volumes/Yevgeniy's Drive/m4a_downloads_expired")
 
 # ---------------------------------------------------------------------------
-# S3 config
+# S3 config — cross-bucket: read from data-pipeline, write to whisperx
 # ---------------------------------------------------------------------------
-BUCKET = "rezora-whisperx-us-east-1-864981718771"
-SOURCE_PREFIX = "audio/pretraining/"
-DEST_PREFIX = "audio_m4a_aac/pretraining/"
+SOURCE_BUCKET = "rezora-data-pipeline-864981718771"
+SOURCE_PREFIX = "audio/"
+DEST_BUCKET = "rezora-whisperx-us-east-1-864981718771"
+DEST_PREFIX = "audio_m4a_aac/expired_listing/"
 
 # ---------------------------------------------------------------------------
-# Video ID regex — same as pipeline/call_extractor_wavlm/io.py:20
-# plus a fallback for the one oddly-named file.
+# Video ID regex — all 433 files follow standard "Title - VIDEO_ID.mp3"
 # ---------------------------------------------------------------------------
-_STANDARD_RE = re.compile(r" - ([A-Za-z0-9_-]{11})\.mp3$")
-_PRETRAINING_PREFIX_RE = re.compile(r"^pretraining-([A-Za-z0-9_-]{11})-")
+_VIDEO_ID_RE = re.compile(r" - ([A-Za-z0-9_-]{11})\.mp3$")
 
 # ---------------------------------------------------------------------------
 # Graceful stop (matches scripts/run_on_ec2.py pattern)
@@ -91,33 +90,22 @@ _manifest_lock = threading.Lock()
 
 def extract_video_id(filename: str) -> str | None:
     """Extract 11-char YouTube video ID from an MP3 filename."""
-    m = _STANDARD_RE.search(filename)
-    if m:
-        return m.group(1)
-    m = _PRETRAINING_PREFIX_RE.search(filename)
-    if m:
-        logger.info("Used fallback regex for: %s", filename)
-        return m.group(1)
-    return None
+    m = _VIDEO_ID_RE.search(filename)
+    return m.group(1) if m else None
 
 
 def list_s3_mp3_files(s3_client) -> list[dict]:
-    """List MP3 files from audio/pretraining/, filtering out NoCalls."""
+    """List MP3 files from the source bucket."""
     paginator = s3_client.get_paginator("list_objects_v2")
     files: list[dict] = []
-    skipped_nocalls = 0
     skipped_no_id = 0
 
-    for page in paginator.paginate(Bucket=BUCKET, Prefix=SOURCE_PREFIX):
+    for page in paginator.paginate(Bucket=SOURCE_BUCKET, Prefix=SOURCE_PREFIX):
         for obj in page.get("Contents", []):
             key = obj["Key"]
             if not key.endswith(".mp3"):
                 continue
             filename = key.split("/")[-1]
-
-            if filename.startswith("NoCalls"):
-                skipped_nocalls += 1
-                continue
 
             video_id = extract_video_id(filename)
             if not video_id:
@@ -135,9 +123,8 @@ def list_s3_mp3_files(s3_client) -> list[dict]:
             )
 
     logger.info(
-        "Found %d eligible MP3s (skipped %d NoCalls, %d no-ID)",
+        "Found %d eligible MP3s (skipped %d no-ID)",
         len(files),
-        skipped_nocalls,
         skipped_no_id,
     )
     return files
@@ -147,9 +134,9 @@ def list_existing_m4a_files(s3_client) -> set[str]:
     """Get video IDs already uploaded to the M4A destination."""
     paginator = s3_client.get_paginator("list_objects_v2")
     existing: set[str] = set()
-    m4a_id_re = re.compile(r"([A-Za-z0-9_-]{11})\.m4a$")
+    m4a_id_re = re.compile(r"[- ]([A-Za-z0-9_-]{11})\.m4a$")
 
-    for page in paginator.paginate(Bucket=BUCKET, Prefix=DEST_PREFIX):
+    for page in paginator.paginate(Bucket=DEST_BUCKET, Prefix=DEST_PREFIX):
         for obj in page.get("Contents", []):
             key = obj["Key"]
             filename = key.split("/")[-1]
@@ -188,7 +175,7 @@ def download_m4a(video_id: str, download_dir: Path) -> Path | None:
     Prefers native AAC (m4a) stream. Falls back to best audio + transcode.
     """
     url = f"https://www.youtube.com/watch?v={video_id}"
-    output_template = str(download_dir / "%(id)s.%(ext)s")
+    output_template = str(download_dir / "%(title)s - %(id)s.%(ext)s")
 
     cmd = [
         "yt-dlp",
@@ -246,9 +233,9 @@ def download_m4a(video_id: str, download_dir: Path) -> Path | None:
 
 
 def upload_to_s3(s3_client, local_path: Path) -> str:
-    """Upload M4A file to S3. Returns the destination key."""
+    """Upload M4A file to S3 dest bucket. Returns the destination key."""
     dest_key = f"{DEST_PREFIX}{local_path.name}"
-    s3_client.upload_file(str(local_path), BUCKET, dest_key)
+    s3_client.upload_file(str(local_path), DEST_BUCKET, dest_key)
     return dest_key
 
 
@@ -300,7 +287,7 @@ def process_one_video(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Re-download YouTube audio in M4A (AAC) and upload to S3"
+        description="Re-download expired-listing audio in M4A (AAC) and upload to S3"
     )
     parser.add_argument(
         "--execute",
@@ -329,7 +316,7 @@ def main():
         "--download-dir",
         type=Path,
         default=DOWNLOAD_DIR,
-        help="Temp download directory",
+        help="Temp download directory (default: external SSD)",
     )
     args = parser.parse_args()
 
@@ -343,10 +330,20 @@ def main():
         logger.error("yt-dlp not found. Install with: brew install yt-dlp")
         sys.exit(1)
 
+    # Verify download dir is accessible (external SSD)
+    if not args.download_dir.parent.exists():
+        logger.error(
+            "Download directory parent not found: %s — is the external drive mounted?",
+            args.download_dir.parent,
+        )
+        sys.exit(1)
+
     s3 = boto3.client("s3")
 
-    # --- Step 1-3: List, filter, extract ---
-    logger.info("Listing MP3 files from s3://%s/%s ...", BUCKET, SOURCE_PREFIX)
+    # --- Step 1-3: List and extract ---
+    logger.info(
+        "Listing MP3 files from s3://%s/%s ...", SOURCE_BUCKET, SOURCE_PREFIX
+    )
     mp3_files = list_s3_mp3_files(s3)
 
     # Deduplicate by video_id (keep first seen)
@@ -369,14 +366,17 @@ def main():
             sys.exit(1)
 
     # --- Step 4: Check existing M4A files for resume ---
-    logger.info("Checking existing M4A files in s3://%s/%s ...", BUCKET, DEST_PREFIX)
+    logger.info(
+        "Checking existing M4A files in s3://%s/%s ...", DEST_BUCKET, DEST_PREFIX
+    )
     existing = list_existing_m4a_files(s3)
 
     # --- Step 5: Build manifest ---
     manifest = {
         "created_at": datetime.now(tz=timezone.utc).isoformat(),
-        "bucket": BUCKET,
+        "source_bucket": SOURCE_BUCKET,
         "source_prefix": SOURCE_PREFIX,
+        "dest_bucket": DEST_BUCKET,
         "dest_prefix": DEST_PREFIX,
         "total_eligible": len(mp3_files),
         "videos": {},
@@ -398,6 +398,8 @@ def main():
 
     # --- Step 6: Summary / dry-run ---
     print(f"\n{'=' * 60}")
+    print(f"  Source:  s3://{SOURCE_BUCKET}/{SOURCE_PREFIX}")
+    print(f"  Dest:   s3://{DEST_BUCKET}/{DEST_PREFIX}")
     print(f"  Total eligible MP3s:    {len(mp3_files)}")
     print(f"  Already uploaded (M4A): {len(mp3_files) - len(pending)}")
     print(f"  Pending downloads:      {len(pending)}")

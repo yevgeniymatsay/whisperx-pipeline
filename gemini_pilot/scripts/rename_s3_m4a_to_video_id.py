@@ -4,8 +4,8 @@
 Skips .temp.m4a files and files already in VIDEO_ID.m4a format.
 
 Usage:
-    python scripts/rename_s3_m4a_to_video_id.py          # Dry-run
-    python scripts/rename_s3_m4a_to_video_id.py --execute # Actually rename
+    python gemini_pilot/scripts/rename_s3_m4a_to_video_id.py          # Dry-run
+    python gemini_pilot/scripts/rename_s3_m4a_to_video_id.py --execute # Actually rename
 """
 from __future__ import annotations
 

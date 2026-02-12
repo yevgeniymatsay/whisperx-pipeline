@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import argparse
 import sys
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-import subprocess
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from gemini_pilot.runner import run_cli as run_gemini_pilot_cli  # noqa: E402
@@ -119,7 +119,7 @@ def main() -> int:
         return pilot_rc
 
     # 2) Run eval (JSON + Markdown under gemini_pilot/eval/)
-    eval_script = REPO_ROOT / "scripts" / "eval_gemini_call_detector.py"
+    eval_script = REPO_ROOT / "gemini_pilot" / "scripts" / "eval_gemini_call_detector.py"
     eval_cmd = [
         sys.executable,
         str(eval_script),

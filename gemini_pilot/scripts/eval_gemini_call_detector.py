@@ -7,7 +7,7 @@ This script reads Gemini pilot run artifacts (`*.result.json` with
 - gemini_pilot/eval/<run_id>_eval.md
 
 Usage:
-    python scripts/eval_gemini_call_detector.py \
+    python gemini_pilot/scripts/eval_gemini_call_detector.py \
         --run-dir artifacts/gemini_pilot/run_XXXXXXXX \
         --gt-s3-prefix s3://rezora-whisperx-us-east-1-864981718771/labeling/corrected_boundaries/v1/ \
         --iou-threshold 0.3

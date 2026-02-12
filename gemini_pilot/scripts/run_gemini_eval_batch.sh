@@ -2,7 +2,7 @@
 # Run gemini_pilot call-timestamp extraction on all 10 labeled videos.
 #
 # Usage:
-#   bash scripts/run_gemini_eval_batch.sh
+#   bash gemini_pilot/scripts/run_gemini_eval_batch.sh
 #
 # Prerequisites:
 #   - GEMINI_API_KEY set (or in gemini_pilot/.env)
@@ -14,10 +14,12 @@
 #   ci-FdcWiJiA (7), CfMJ01KP_ns (6)
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
 BUCKET="s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining"
 OUT_DIR="artifacts/gemini_pilot/eval_batch_$(date +%Y%m%d_%H%M%S)"
 
-python scripts/gemini_pilot_extract_call_timestamps.py \
+python "${REPO_ROOT}/gemini_pilot/scripts/gemini_pilot_extract_call_timestamps.py" \
   --audio-s3-uri "${BUCKET}/Not_Sleeping_Until_I_Book_in_30_SMMA_Appointments_(LIVE_Cold_Calling) - Qa-ppZFUp0g.mp3" \
   --audio-s3-uri "${BUCKET}/How_To_Book_6_Meetings_A_Day_(Live_SMMA_Cold_Calling) - D4uiHjHW4AU.mp3" \
   --audio-s3-uri "${BUCKET}/10_Live_Cold_Calls_from_6_Different_Sales_Reps - DEt3IRqqUVs.mp3" \
@@ -34,4 +36,4 @@ echo ""
 echo "Run complete → ${OUT_DIR}"
 echo ""
 echo "To evaluate:"
-echo "  python scripts/eval_gemini_call_detector.py --run-dir ${OUT_DIR}"
+echo "  python ${REPO_ROOT}/gemini_pilot/scripts/eval_gemini_call_detector.py --run-dir ${OUT_DIR}"

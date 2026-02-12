@@ -9,7 +9,7 @@
   - `gemini_pilot/prompts.py`
   - `gemini_pilot/runner.py`
   - `gemini_pilot/README.md`
-  - `scripts/gemini_pilot_extract_call_timestamps.py`
+  - `gemini_pilot/scripts/gemini_pilot_extract_call_timestamps.py`
   - `tests/whisperx_pipeline/test_gemini_pilot_runner.py`
   - `.env.example`
   - `requirements.txt`
@@ -81,13 +81,13 @@ This cycle is exploratory and does not produce GT comparability metrics.
   - Cloud cleanup: uploaded Gemini Files API object was deleted once after all models (HTTP 200).
 
 ## Checks Run
-- `python -m py_compile /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/*.py /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py`
+- `python -m py_compile /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/*.py /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/scripts/gemini_pilot_extract_call_timestamps.py`
 - `pytest /Users/yevgeniymatsay/whisperx-pipeline/tests/whisperx_pipeline/test_gemini_pilot_runner.py -q`
-- `python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py --help`
+- `python /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/scripts/gemini_pilot_extract_call_timestamps.py --help`
 - `./.venv/bin/pip install -r requirements.txt`
-- `./.venv/bin/python -m py_compile /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/*.py /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py`
+- `./.venv/bin/python -m py_compile /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/*.py /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/scripts/gemini_pilot_extract_call_timestamps.py`
 - `./.venv/bin/pytest /Users/yevgeniymatsay/whisperx-pipeline/tests/whisperx_pipeline/test_gemini_pilot_runner.py -q`
-- `./.venv/bin/python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py --help`
+- `./.venv/bin/python /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/scripts/gemini_pilot_extract_call_timestamps.py --help`
 
 ## Frozen policy for this cycle
 - Models fixed to five-model probe by default:

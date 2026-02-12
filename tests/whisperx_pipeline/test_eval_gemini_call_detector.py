@@ -7,7 +7,7 @@ from pathlib import Path
 
 def _load_eval_module() -> dict:
     repo_root = Path(__file__).resolve().parents[2]
-    path = repo_root / "scripts" / "eval_gemini_call_detector.py"
+    path = repo_root / "gemini_pilot" / "scripts" / "eval_gemini_call_detector.py"
     return runpy.run_path(str(path))
 
 

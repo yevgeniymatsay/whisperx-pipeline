@@ -46,7 +46,7 @@ Override with repeatable `--model`.
 Dry-run (no Gemini calls):
 
 ```bash
-python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py \
+python /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/scripts/gemini_pilot_extract_call_timestamps.py \
   --audio-path /absolute/path/to/sample.mp3 \
   --audio-s3-uri s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/example.mp3 \
   --dry-run
@@ -55,14 +55,14 @@ python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call
 Live run (local audio, default models):
 
 ```bash
-python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py \
+python /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/scripts/gemini_pilot_extract_call_timestamps.py \
   --audio-path /absolute/path/to/sample.mp3
 ```
 
 Live run (local audio, run the 5 default models in parallel, print full JSON):
 
 ```bash
-python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py \
+python /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/scripts/gemini_pilot_extract_call_timestamps.py \
   --audio-path /absolute/path/to/sample.mp3 \
   --model-concurrency 5 \
   --print-max-chars 0
@@ -71,7 +71,7 @@ python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call
 Live run (S3 audio + explicit model set):
 
 ```bash
-python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py \
+python /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/scripts/gemini_pilot_extract_call_timestamps.py \
   --audio-s3-uri s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/example.mp3 \
   --model gemini-3-flash-preview \
   --model gemini-2.0-flash
@@ -86,7 +86,7 @@ If you want to limit terminal printing, use:
 If you have exactly 10 `.m4a` files already downloaded locally:
 
 ```bash
-python /Users/yevgeniymatsay/whisperx-pipeline/scripts/run_gemini_local_dir_sweep_and_eval.py \
+python /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/scripts/run_gemini_local_dir_sweep_and_eval.py \
   --audio-dir "/Volumes/Yevgeniy's Drive/tmp_gemini_audio"
 ```
 
