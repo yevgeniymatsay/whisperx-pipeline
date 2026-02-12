@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import hashlib
 import json
 import logging
-import os
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,7 +23,8 @@ from .config import (
     sanitize_token,
     utc_now_compact,
 )
-from .prompts import CALL_TIMESTAMP_PROMPT_V1
+from .prompts import CALL_TIMESTAMP_PROMPT_V2
+from .schema import CALL_SEGMENT_SCHEMA, SCHEMA_VERSION
 logger = logging.getLogger(__name__)
 
 try:  # Optional, but recommended for a readable pilot UX.
@@ -34,6 +36,9 @@ except Exception:  # pragma: no cover
 
 _STRUCTURED_OUTPUT_TEMPERATURE: int = 0
 _STRUCTURED_OUTPUT_MIME_TYPE: str = "application/json"
+_DEFAULT_PRINT_MAX_CHARS: int = 12000
+
+_THREAD_LOCAL = threading.local()
 
 
 @dataclass(frozen=True)
@@ -146,6 +151,23 @@ def _make_gemini_client(*, api_key: str, timeout_s: float):
     return genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=timeout_ms))
 
 
+def _get_thread_gemini_client(*, api_key: str, timeout_s: float):
+    """Return a per-thread Gemini client for safe parallel calls.
+
+    We avoid sharing a single client across threads to reduce the risk of
+    thread-safety issues in the underlying HTTP stack.
+    """
+    cached = getattr(_THREAD_LOCAL, "gemini_client", None)
+    cached_key = getattr(_THREAD_LOCAL, "gemini_api_key", None)
+    cached_timeout_s = getattr(_THREAD_LOCAL, "gemini_timeout_s", None)
+    if cached is None or cached_key != api_key or cached_timeout_s != float(timeout_s):
+        cached = _make_gemini_client(api_key=api_key, timeout_s=float(timeout_s))
+        _THREAD_LOCAL.gemini_client = cached
+        _THREAD_LOCAL.gemini_api_key = api_key
+        _THREAD_LOCAL.gemini_timeout_s = float(timeout_s)
+    return cached
+
+
 def _to_jsonable(obj: Any) -> Any:
     if obj is None:
         return None
@@ -157,51 +179,6 @@ def _to_jsonable(obj: Any) -> Any:
     if isinstance(obj, (dict, list, str, int, float, bool)):
         return obj
     return {"repr": repr(obj)}
-
-def _sha1_json(obj: Any) -> str:
-    data = json.dumps(obj, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    return hashlib.sha1(data).hexdigest()
-
-
-def _build_response_json_schema(*, model: str) -> dict[str, Any]:
-    """Build a JSON Schema dict for structured outputs.
-
-    Note: Gemini 2.0 models require explicit `propertyOrdering` (per Gemini docs).
-    """
-    try:
-        from pydantic import BaseModel, Field
-        from pydantic.config import ConfigDict
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(
-            "Missing `pydantic` in the current Python interpreter. "
-            "Install dependencies with `pip install -r requirements.txt` in the same interpreter/venv "
-            "you use to run this script."
-        ) from exc
-
-    class _CallSegment(BaseModel):
-        model_config = ConfigDict(extra="forbid")
-        start: str = Field(description="Start timestamp in HH:MM:SS (zero-padded).")
-        end: str = Field(description="End timestamp in HH:MM:SS (zero-padded).")
-
-    class _CallSegmentsResponse(BaseModel):
-        model_config = ConfigDict(extra="forbid")
-        segments: list[_CallSegment] = Field(description="Candidate real-call segments. Empty list if none.")
-
-    schema: dict[str, Any] = _CallSegmentsResponse.model_json_schema()
-
-    # Gemini 2.0 structured outputs require explicit propertyOrdering; other models accept it but
-    # don't require it. Keep it minimal and only add when needed.
-    if model.strip().startswith("gemini-2.0"):
-        schema.setdefault("propertyOrdering", ["segments"])
-        try:
-            items = schema["properties"]["segments"]["items"]
-            if isinstance(items, dict):
-                items.setdefault("propertyOrdering", ["start", "end"])
-        except Exception:
-            # If schema structure differs, don't guess; the model can still return valid JSON.
-            pass
-
-    return schema
 
 
 def _extract_response_text(response: Any) -> str:
@@ -283,12 +260,11 @@ def _run_single_model(
             if not isinstance(file_mime_type, str) or not file_mime_type:
                 file_mime_type = audio_input.mime_type
 
-            response_json_schema = _build_response_json_schema(model=model)
-            schema_sha1 = _sha1_json(response_json_schema)
             config = types.GenerateContentConfig(
                 temperature=_STRUCTURED_OUTPUT_TEMPERATURE,
                 response_mime_type=_STRUCTURED_OUTPUT_MIME_TYPE,
-                response_json_schema=response_json_schema,
+                response_schema=CALL_SEGMENT_SCHEMA,
+                system_instruction=prompt,
             )
             contents = [
                 types.Content(
@@ -299,7 +275,6 @@ def _run_single_model(
                                 mime_type=file_mime_type,
                             )
                         ),
-                        types.Part(text=prompt),
                     ]
                 )
             ]
@@ -308,12 +283,14 @@ def _run_single_model(
             response_meta = {
                 "response_id": getattr(response, "response_id", None),
                 "model_version": getattr(response, "model_version", None),
+                # Full server response for debugging/auditing (kept alongside raw text).
+                "response": _to_jsonable(response),
                 "usage_metadata": _to_jsonable(getattr(response, "usage_metadata", None)),
                 "prompt_feedback": _to_jsonable(getattr(response, "prompt_feedback", None)),
                 "request_config": {
                     "temperature": _STRUCTURED_OUTPUT_TEMPERATURE,
                     "response_mime_type": _STRUCTURED_OUTPUT_MIME_TYPE,
-                    "response_json_schema_sha1": schema_sha1,
+                    "schema_version": SCHEMA_VERSION,
                 },
                 "upload_file": {
                     "name": getattr(uploaded_file, "name", None),
@@ -350,7 +327,13 @@ def run_pilot(args: argparse.Namespace) -> int:
     console = Console() if Console is not None else None
 
     models = resolve_models(list(args.model or []))
-    prompt = CALL_TIMESTAMP_PROMPT_V1
+    prompt = CALL_TIMESTAMP_PROMPT_V2
+    model_concurrency = int(getattr(args, "model_concurrency", 1) or 1)
+    if model_concurrency < 1:
+        raise ValueError("--model-concurrency must be >= 1")
+    print_max_chars = int(getattr(args, "print_max_chars", _DEFAULT_PRINT_MAX_CHARS) or 0)
+    if print_max_chars < 0:
+        raise ValueError("--print-max-chars must be >= 0 (use 0 for no truncation)")
     run_id = f"run_{utc_now_compact()}"
     out_dir = Path(args.out_dir) if args.out_dir else (Path("artifacts") / "gemini_pilot" / run_id)
     cache_dir = Path(args.cache_dir)
@@ -364,6 +347,8 @@ def run_pilot(args: argparse.Namespace) -> int:
                     [
                         f"run_id: {run_id}",
                         f"models: {', '.join(models)}",
+                        f"model_concurrency: {model_concurrency}",
+                        f"print_max_chars: {print_max_chars}",
                         f"out_dir: {out_dir}",
                         f"cache_dir: {cache_dir}",
                     ]
@@ -390,11 +375,14 @@ def run_pilot(args: argparse.Namespace) -> int:
             "retry_backoff_s": float(args.retry_backoff_s),
             "continue_on_error": bool(args.continue_on_error),
             "cache_dir": str(cache_dir),
+            "model_concurrency": model_concurrency,
+            "print_max_chars": print_max_chars,
         },
         "prompt": {
-            "name": "call_timestamp_prompt_v1",
+            "version": "v2",
             "text": prompt,
         },
+        "schema_version": SCHEMA_VERSION,
         "audio_inputs": [
             {
                 "source_id": a.source_id,
@@ -443,6 +431,7 @@ def run_pilot(args: argparse.Namespace) -> int:
         try:
             if console is not None:
                 console.log(f"[bold]Upload[/bold] input={audio_input.source_id}")
+
             uploaded_file = client.files.upload(
                 file=str(audio_input.local_path), config={"mimeType": audio_input.mime_type}
             )
@@ -504,99 +493,211 @@ def run_pilot(args: argparse.Namespace) -> int:
             continue
 
         try:
-            for model in models:
-                done += 1
-                model_slug = sanitize_token(model, fallback="model")
-                raw_path = input_dir / f"{model_slug}.raw.txt"
-                json_path = input_dir / f"{model_slug}.result.json"
-                err_path = input_dir / f"{model_slug}.error.json"
-                try:
-                    response_text, response_meta = _run_single_model(
-                        client=client,
+            if model_concurrency <= 1 or len(models) <= 1:
+                for model in models:
+                    done += 1
+                    model_slug = sanitize_token(model, fallback="model")
+                    raw_path = input_dir / f"{model_slug}.raw.txt"
+                    json_path = input_dir / f"{model_slug}.result.json"
+                    err_path = input_dir / f"{model_slug}.error.json"
+                    try:
+                        response_text, response_meta = _run_single_model(
+                            client=client,
+                            audio_input=audio_input,
+                            uploaded_file=uploaded_file,
+                            model=model,
+                            prompt=prompt,
+                            max_retries=int(args.max_retries),
+                            retry_backoff_s=float(args.retry_backoff_s),
+                            console=console,
+                        )
+                        raw_path.write_text((response_text or "") + "\n", encoding="utf-8")
+                        payload = {
+                            "status": "ok",
+                            "source_id": audio_input.source_id,
+                            "source_kind": audio_input.source_kind,
+                            "source_ref": audio_input.source_ref,
+                            "local_path": str(audio_input.local_path),
+                            "mime_type": audio_input.mime_type,
+                            "model": model,
+                            "raw_text_path": str(raw_path),
+                            "response_meta": response_meta,
+                        }
+                        _write_json(json_path, payload)
+                        results.append(
+                            {
+                                "status": "ok",
+                                "source_id": audio_input.source_id,
+                                "model": model,
+                                "result_json": str(json_path),
+                            }
+                        )
+                        logger.info(
+                            "OK %d/%d input=%s model=%s raw_chars=%d",
+                            done,
+                            total,
+                            audio_input.source_id,
+                            model,
+                            len(response_text or ""),
+                        )
+                        if console is not None:
+                            text = response_text or ""
+                            truncated = ""
+                            if print_max_chars > 0 and len(text) > print_max_chars:
+                                truncated = (
+                                    f"\n\n[dim]... truncated to {print_max_chars} chars "
+                                    f"(full output in {raw_path})[/dim]"
+                                )
+                                text = text[:print_max_chars]
+                            if Panel is not None:
+                                console.print(
+                                    Panel(text + truncated, title=f"Gemini Output ({model})", subtitle=str(raw_path))
+                                )
+                            else:
+                                console.print(text + truncated)
+                    except Exception as exc:  # noqa: BLE001
+                        errors += 1
+                        payload = {
+                            "status": "error",
+                            "source_id": audio_input.source_id,
+                            "source_kind": audio_input.source_kind,
+                            "source_ref": audio_input.source_ref,
+                            "local_path": str(audio_input.local_path),
+                            "mime_type": audio_input.mime_type,
+                            "model": model,
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                        }
+                        _write_json(err_path, payload)
+                        results.append(
+                            {
+                                "status": "error",
+                                "source_id": audio_input.source_id,
+                                "model": model,
+                                "error_json": str(err_path),
+                            }
+                        )
+                        logger.error(
+                            "ERR %d/%d input=%s model=%s: %s: %s",
+                            done,
+                            total,
+                            audio_input.source_id,
+                            model,
+                            type(exc).__name__,
+                            exc,
+                        )
+                        if not args.continue_on_error:
+                            abort_run = True
+                            break
+            else:
+                max_workers = min(model_concurrency, len(models))
+                if console is not None:
+                    console.log(
+                        f"[bold]Generate[/bold] input={audio_input.source_id} "
+                        f"models={len(models)} concurrency={max_workers}"
+                    )
+
+                def _call(model: str) -> tuple[str, dict[str, Any]]:
+                    thread_client = _get_thread_gemini_client(api_key=api_key, timeout_s=float(args.timeout_s))
+                    return _run_single_model(
+                        client=thread_client,
                         audio_input=audio_input,
                         uploaded_file=uploaded_file,
                         model=model,
                         prompt=prompt,
                         max_retries=int(args.max_retries),
                         retry_backoff_s=float(args.retry_backoff_s),
-                        console=console,
+                        console=None,  # avoid interleaved rich output across threads
                     )
-                    raw_path.write_text((response_text or "") + "\n", encoding="utf-8")
-                    payload = {
-                        "status": "ok",
-                        "source_id": audio_input.source_id,
-                        "source_kind": audio_input.source_kind,
-                        "source_ref": audio_input.source_ref,
-                        "local_path": str(audio_input.local_path),
-                        "mime_type": audio_input.mime_type,
-                        "model": model,
-                        "raw_text_path": str(raw_path),
-                        "response_meta": response_meta,
-                    }
-                    _write_json(json_path, payload)
-                    results.append(
-                        {
-                            "status": "ok",
-                            "source_id": audio_input.source_id,
-                            "model": model,
-                            "result_json": str(json_path),
-                        }
-                    )
-                    logger.info(
-                        "OK %d/%d input=%s model=%s raw_chars=%d",
-                        done,
-                        total,
-                        audio_input.source_id,
-                        model,
-                        len(response_text or ""),
-                    )
-                    if console is not None:
-                        max_chars = int(os.environ.get("GEMINI_PILOT_PRINT_MAX_CHARS", "12000") or "12000")
-                        text = response_text or ""
-                        truncated = ""
-                        if max_chars > 0 and len(text) > max_chars:
-                            truncated = f"\n\n[dim]... truncated to {max_chars} chars (full output in {raw_path})[/dim]"
-                            text = text[:max_chars]
-                        if Panel is not None:
-                            console.print(
-                                Panel(text + truncated, title=f"Gemini Output ({model})", subtitle=str(raw_path))
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+                    future_to_model = {pool.submit(_call, model): model for model in models}
+                    for fut in concurrent.futures.as_completed(future_to_model):
+                        model = future_to_model[fut]
+                        done += 1
+                        model_slug = sanitize_token(model, fallback="model")
+                        raw_path = input_dir / f"{model_slug}.raw.txt"
+                        json_path = input_dir / f"{model_slug}.result.json"
+                        err_path = input_dir / f"{model_slug}.error.json"
+                        try:
+                            response_text, response_meta = fut.result()
+                            raw_path.write_text((response_text or "") + "\n", encoding="utf-8")
+                            payload = {
+                                "status": "ok",
+                                "source_id": audio_input.source_id,
+                                "source_kind": audio_input.source_kind,
+                                "source_ref": audio_input.source_ref,
+                                "local_path": str(audio_input.local_path),
+                                "mime_type": audio_input.mime_type,
+                                "model": model,
+                                "raw_text_path": str(raw_path),
+                                "response_meta": response_meta,
+                            }
+                            _write_json(json_path, payload)
+                            results.append(
+                                {
+                                    "status": "ok",
+                                    "source_id": audio_input.source_id,
+                                    "model": model,
+                                    "result_json": str(json_path),
+                                }
                             )
-                        else:
-                            console.print(text + truncated)
-                except Exception as exc:  # noqa: BLE001
-                    errors += 1
-                    payload = {
-                        "status": "error",
-                        "source_id": audio_input.source_id,
-                        "source_kind": audio_input.source_kind,
-                        "source_ref": audio_input.source_ref,
-                        "local_path": str(audio_input.local_path),
-                        "mime_type": audio_input.mime_type,
-                        "model": model,
-                        "error_type": type(exc).__name__,
-                        "error": str(exc),
-                    }
-                    _write_json(err_path, payload)
-                    results.append(
-                        {
-                            "status": "error",
-                            "source_id": audio_input.source_id,
-                            "model": model,
-                            "error_json": str(err_path),
-                        }
-                    )
-                    logger.error(
-                        "ERR %d/%d input=%s model=%s: %s: %s",
-                        done,
-                        total,
-                        audio_input.source_id,
-                        model,
-                        type(exc).__name__,
-                        exc,
-                    )
-                    if not args.continue_on_error:
-                        abort_run = True
-                        break
+                            logger.info(
+                                "OK %d/%d input=%s model=%s raw_chars=%d",
+                                done,
+                                total,
+                                audio_input.source_id,
+                                model,
+                                len(response_text or ""),
+                            )
+                            if console is not None:
+                                text = response_text or ""
+                                truncated = ""
+                                if print_max_chars > 0 and len(text) > print_max_chars:
+                                    truncated = (
+                                        f"\n\n[dim]... truncated to {print_max_chars} chars "
+                                        f"(full output in {raw_path})[/dim]"
+                                    )
+                                    text = text[:print_max_chars]
+                                if Panel is not None:
+                                    console.print(
+                                        Panel(text + truncated, title=f"Gemini Output ({model})", subtitle=str(raw_path))
+                                    )
+                                else:
+                                    console.print(text + truncated)
+                        except Exception as exc:  # noqa: BLE001
+                            errors += 1
+                            payload = {
+                                "status": "error",
+                                "source_id": audio_input.source_id,
+                                "source_kind": audio_input.source_kind,
+                                "source_ref": audio_input.source_ref,
+                                "local_path": str(audio_input.local_path),
+                                "mime_type": audio_input.mime_type,
+                                "model": model,
+                                "error_type": type(exc).__name__,
+                                "error": str(exc),
+                            }
+                            _write_json(err_path, payload)
+                            results.append(
+                                {
+                                    "status": "error",
+                                    "source_id": audio_input.source_id,
+                                    "model": model,
+                                    "error_json": str(err_path),
+                                }
+                            )
+                            logger.error(
+                                "ERR %d/%d input=%s model=%s: %s: %s",
+                                done,
+                                total,
+                                audio_input.source_id,
+                                model,
+                                type(exc).__name__,
+                                exc,
+                            )
+                            if not args.continue_on_error:
+                                abort_run = True
             if abort_run:
                 summary = {
                     "run_id": run_id,
@@ -633,6 +734,17 @@ def run_pilot(args: argparse.Namespace) -> int:
         "out_dir": str(out_dir),
     }
     _write_json(out_dir / "run_summary.json", summary)
+
+    # Cleanup S3-cached audio files (never touch user-provided local files).
+    if args.cleanup_audio:
+        for audio_input in audio_inputs:
+            if audio_input.source_kind == "s3" and audio_input.local_path.exists():
+                try:
+                    audio_input.local_path.unlink()
+                    logger.info("Cleaned up cached audio: %s", audio_input.local_path)
+                except OSError as exc:
+                    logger.warning("Failed to clean up %s: %s", audio_input.local_path, exc)
+
     logger.info("Done requests=%d errors=%d out_dir=%s", done, errors, out_dir)
     return 0 if errors == 0 else 1
 
@@ -696,6 +808,24 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Base exponential backoff in seconds (default: {DEFAULT_RETRY_BACKOFF_S}).",
     )
     parser.add_argument(
+        "--model-concurrency",
+        type=int,
+        default=1,
+        help=(
+            "Parallel requests across models per audio input (default: 1). "
+            "For the 5-model sweep, set to 5 to run models concurrently."
+        ),
+    )
+    parser.add_argument(
+        "--print-max-chars",
+        type=int,
+        default=_DEFAULT_PRINT_MAX_CHARS,
+        help=(
+            "Max chars of each model response to print to terminal (default: 12000). "
+            "Use 0 for no truncation. Raw output is always saved to disk."
+        ),
+    )
+    parser.add_argument(
         "--continue-on-error",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -706,6 +836,12 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Resolve inputs/models/output paths without calling Gemini (default: false).",
+    )
+    parser.add_argument(
+        "--cleanup-audio",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Delete S3-cached audio files after the run completes (default: true).",
     )
     return parser
 

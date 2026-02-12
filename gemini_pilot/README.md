@@ -59,6 +59,15 @@ python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call
   --audio-path /absolute/path/to/sample.mp3
 ```
 
+Live run (local audio, run the 5 default models in parallel, print full JSON):
+
+```bash
+python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py \
+  --audio-path /absolute/path/to/sample.mp3 \
+  --model-concurrency 5 \
+  --print-max-chars 0
+```
+
 Live run (S3 audio + explicit model set):
 
 ```bash
@@ -68,9 +77,18 @@ python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call
   --model gemini-2.0-flash
 ```
 
-If you want to limit terminal printing, set:
+If you want to limit terminal printing, use:
 
-`GEMINI_PILOT_PRINT_MAX_CHARS=6000`
+`--print-max-chars 6000`
+
+## Local-dir sweep + eval (10 files × 5 models)
+
+If you have exactly 10 `.m4a` files already downloaded locally:
+
+```bash
+python /Users/yevgeniymatsay/whisperx-pipeline/scripts/run_gemini_local_dir_sweep_and_eval.py \
+  --audio-dir "/Volumes/Yevgeniy's Drive/tmp_gemini_audio"
+```
 
 ## Output layout
 

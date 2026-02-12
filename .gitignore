@@ -48,5 +48,11 @@ artifacts/*
 *.log
 !logs/**/*.log
 
+# Local caches
+.cache/
+
+# Gemini pilot eval outputs (kept under artifacts/ now; ignore any legacy runs here)
+gemini_pilot/eval/
+
 # Large local scratch plans (Codex desktop)
 terminalcodex.md
