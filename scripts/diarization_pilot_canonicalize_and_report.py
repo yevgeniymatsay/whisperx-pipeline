@@ -336,7 +336,7 @@ def main() -> int:
     parser.add_argument(
         "--embedder",
         action="append",
-        default=["case", "ecapa", "titanet"],
+        default=None,
         help="Which embedders to run: case|ecapa|titanet (repeatable)",
     )
     args = parser.parse_args()
@@ -359,7 +359,8 @@ def main() -> int:
         rows = rows[: int(args.limit)]
 
     device = str(args.device)
-    embedder_names = [e.strip().lower() for e in (args.embedder or [])]
+    embedder_names_raw = args.embedder if args.embedder is not None else ["case", "ecapa", "titanet"]
+    embedder_names = [e.strip().lower() for e in embedder_names_raw]
     embedders: list[tuple[str, Embedder]] = []
     if "case" in embedder_names:
         embedders.append(("case", HFCaseEmbedding(device=device)))
