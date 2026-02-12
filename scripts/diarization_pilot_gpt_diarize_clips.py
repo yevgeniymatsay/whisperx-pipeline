@@ -164,6 +164,7 @@ def _transcribe_diarize(
     audio_path: Path,
     language: str,
     chunking_strategy: str,
+    timeout_s: float,
     retries: int,
     sleep_base_s: float,
 ) -> Dict[str, Any]:
@@ -178,6 +179,7 @@ def _transcribe_diarize(
                     chunking_strategy=chunking_strategy,
                     response_format="diarized_json",
                     timestamp_granularities=["segment"],
+                    timeout=float(timeout_s),
                 )
             if hasattr(resp, "model_dump"):
                 return resp.model_dump()
@@ -208,8 +210,15 @@ def main() -> int:
         choices=["auto"],
         help="Chunking strategy required by diarization models (default: auto)",
     )
+    parser.add_argument("--timeout-s", type=float, default=600.0, help="Per-request timeout seconds (default: 600)")
     parser.add_argument("--retries", type=int, default=3, help="Retry count on transient failures")
     parser.add_argument("--sleep-base-s", type=float, default=2.0, help="Base retry backoff in seconds")
+    parser.add_argument(
+        "--continue-on-error",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Continue processing other clips after an error (default: true)",
+    )
     parser.add_argument("--limit", type=int, default=None, help="Optional max number of clips to process")
     args = parser.parse_args()
 
@@ -222,6 +231,7 @@ def main() -> int:
     client = _make_azure_client(cfg)
 
     diarized_dir = pilot_dir / "diarized"
+    failures_dir = pilot_dir / "diarized_failures"
     rows = _read_metadata_jsonl(meta_path)
     if args.limit is not None:
         rows = rows[: int(args.limit)]
@@ -229,40 +239,66 @@ def main() -> int:
 
     done = 0
     skipped = 0
+    errors = 0
     for row in rows:
         clip_id = str(row["clip_id"])
         clip_path = Path(row["clip_path"])
         out_path = diarized_dir / f"{clip_id}.diarized_json.json"
+        fail_path = failures_dir / f"{clip_id}.error.json"
         if out_path.exists() and out_path.stat().st_size > 0:
+            skipped += 1
+            continue
+        if fail_path.exists() and fail_path.stat().st_size > 0:
+            # Avoid retrying known-bad clips unless the user deletes failures/.
             skipped += 1
             continue
 
         if not clip_path.exists():
             raise SystemExit(f"Missing clip audio: {clip_path} (clip_id={clip_id})")
 
-        data = _transcribe_diarize(
-            client,
-            deployment=cfg.deployment,
-            audio_path=clip_path,
-            language=str(args.language),
-            chunking_strategy=str(args.chunking_strategy),
-            retries=int(args.retries),
-            sleep_base_s=float(args.sleep_base_s),
-        )
-        # Stamp minimal provenance (no secrets).
-        data.setdefault("metadata", {})
-        data["metadata"].update({
-            "clip_id": clip_id,
-            "source_clip_path": str(clip_path),
-            "azure_deployment": cfg.deployment,
-            "language": str(args.language),
-        })
-        _dump_json(out_path, data)
-        done += 1
-        if done % 10 == 0 or done == len(rows):
-            logger.info(f"Diarized {done}/{len(rows)} clips (skipped={skipped})")
+        try:
+            data = _transcribe_diarize(
+                client,
+                deployment=cfg.deployment,
+                audio_path=clip_path,
+                language=str(args.language),
+                chunking_strategy=str(args.chunking_strategy),
+                timeout_s=float(args.timeout_s),
+                retries=int(args.retries),
+                sleep_base_s=float(args.sleep_base_s),
+            )
+            # Stamp minimal provenance (no secrets).
+            data.setdefault("metadata", {})
+            data["metadata"].update({
+                "clip_id": clip_id,
+                "source_clip_path": str(clip_path),
+                "azure_deployment": cfg.deployment,
+                "language": str(args.language),
+                "chunking_strategy": str(args.chunking_strategy),
+            })
+            _dump_json(out_path, data)
+            done += 1
+            logger.info(f"OK clip={clip_id} done={done} skipped={skipped} errors={errors}")
+        except Exception as e:  # noqa: BLE001
+            errors += 1
+            payload = {
+                "clip_id": clip_id,
+                "clip_path": str(clip_path),
+                "azure_deployment": cfg.deployment,
+                "language": str(args.language),
+                "chunking_strategy": str(args.chunking_strategy),
+                "timeout_s": float(args.timeout_s),
+                "retries": int(args.retries),
+                "error_type": type(e).__name__,
+                "error": str(e),
+            }
+            _dump_json(fail_path, payload)
+            logger.error(f"ERR clip={clip_id} errors={errors}: {type(e).__name__}: {e}")
+            if not bool(args.continue_on_error):
+                raise
+            continue
 
-    logger.info(f"Done. diarized={done} skipped={skipped} out_dir={diarized_dir}")
+    logger.info(f"Done. diarized={done} skipped={skipped} errors={errors} out_dir={diarized_dir}")
     return 0
 
 
