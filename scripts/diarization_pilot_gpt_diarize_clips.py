@@ -163,6 +163,7 @@ def _transcribe_diarize(
     deployment: str,
     audio_path: Path,
     language: str,
+    chunking_strategy: str,
     retries: int,
     sleep_base_s: float,
 ) -> Dict[str, Any]:
@@ -174,6 +175,7 @@ def _transcribe_diarize(
                     model=deployment,
                     file=f,
                     language=language,
+                    chunking_strategy=chunking_strategy,
                     response_format="diarized_json",
                     timestamp_granularities=["segment"],
                 )
@@ -199,6 +201,13 @@ def main() -> int:
     parser.add_argument("--pilot-dir", type=Path, required=True, help="Pilot output dir created by diarization_pilot_build_clips.py")
     parser.add_argument("--deployment", type=str, default=None, help="Azure deployment name override")
     parser.add_argument("--language", type=str, default="en", help="Language code (default: en)")
+    parser.add_argument(
+        "--chunking-strategy",
+        type=str,
+        default="auto",
+        choices=["auto"],
+        help="Chunking strategy required by diarization models (default: auto)",
+    )
     parser.add_argument("--retries", type=int, default=3, help="Retry count on transient failures")
     parser.add_argument("--sleep-base-s", type=float, default=2.0, help="Base retry backoff in seconds")
     parser.add_argument("--limit", type=int, default=None, help="Optional max number of clips to process")
@@ -236,6 +245,7 @@ def main() -> int:
             deployment=cfg.deployment,
             audio_path=clip_path,
             language=str(args.language),
+            chunking_strategy=str(args.chunking_strategy),
             retries=int(args.retries),
             sleep_base_s=float(args.sleep_base_s),
         )
