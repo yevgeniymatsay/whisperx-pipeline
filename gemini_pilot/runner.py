@@ -32,6 +32,9 @@ except Exception:  # pragma: no cover
     Console = None  # type: ignore[misc,assignment]
     Panel = None  # type: ignore[misc,assignment]
 
+_STRUCTURED_OUTPUT_TEMPERATURE: int = 0
+_STRUCTURED_OUTPUT_MIME_TYPE: str = "application/json"
+
 
 @dataclass(frozen=True)
 class AudioInput:
@@ -155,6 +158,51 @@ def _to_jsonable(obj: Any) -> Any:
         return obj
     return {"repr": repr(obj)}
 
+def _sha1_json(obj: Any) -> str:
+    data = json.dumps(obj, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    return hashlib.sha1(data).hexdigest()
+
+
+def _build_response_json_schema(*, model: str) -> dict[str, Any]:
+    """Build a JSON Schema dict for structured outputs.
+
+    Note: Gemini 2.0 models require explicit `propertyOrdering` (per Gemini docs).
+    """
+    try:
+        from pydantic import BaseModel, Field
+        from pydantic.config import ConfigDict
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            "Missing `pydantic` in the current Python interpreter. "
+            "Install dependencies with `pip install -r requirements.txt` in the same interpreter/venv "
+            "you use to run this script."
+        ) from exc
+
+    class _CallSegment(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        start: str = Field(description="Start timestamp in HH:MM:SS (zero-padded).")
+        end: str = Field(description="End timestamp in HH:MM:SS (zero-padded).")
+
+    class _CallSegmentsResponse(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        segments: list[_CallSegment] = Field(description="Candidate real-call segments. Empty list if none.")
+
+    schema: dict[str, Any] = _CallSegmentsResponse.model_json_schema()
+
+    # Gemini 2.0 structured outputs require explicit propertyOrdering; other models accept it but
+    # don't require it. Keep it minimal and only add when needed.
+    if model.strip().startswith("gemini-2.0"):
+        schema.setdefault("propertyOrdering", ["segments"])
+        try:
+            items = schema["properties"]["segments"]["items"]
+            if isinstance(items, dict):
+                items.setdefault("propertyOrdering", ["start", "end"])
+        except Exception:
+            # If schema structure differs, don't guess; the model can still return valid JSON.
+            pass
+
+    return schema
+
 
 def _extract_response_text(response: Any) -> str:
     text = ""
@@ -213,37 +261,60 @@ def _run_single_model(
     *,
     client: Any,
     audio_input: AudioInput,
+    uploaded_file: Any,
     model: str,
     prompt: str,
     max_retries: int,
     retry_backoff_s: float,
-    file_ready_timeout_s: float,
     console: Any,
 ) -> tuple[str, dict[str, Any]]:
-    uploaded_file = None
     last_err: BaseException | None = None
     for attempt in range(max_retries + 1):
         try:
             if console is not None:
-                console.log(f"[bold]Upload[/bold] input={audio_input.source_id} model={model}")
-            uploaded_file = client.files.upload(file=str(audio_input.local_path), config={"mimeType": audio_input.mime_type})
-
-            state = _file_state_name(uploaded_file)
-            if console is not None and state == "PROCESSING":
-                with console.status(f"Processing upload on Google servers... ({uploaded_file.name})"):
-                    uploaded_file = _wait_for_file_ready(client, uploaded_file, timeout_s=float(file_ready_timeout_s))
-            else:
-                uploaded_file = _wait_for_file_ready(client, uploaded_file, timeout_s=float(file_ready_timeout_s))
-
-            if console is not None:
                 console.log(f"[bold]Generate[/bold] model={model} file={uploaded_file.name}")
-            response = client.models.generate_content(model=model, contents=[prompt, uploaded_file])
+            from google.genai import types
+
+            # Keep the pilot deterministic while we compare models.
+            file_uri = getattr(uploaded_file, "uri", None)
+            if not isinstance(file_uri, str) or not file_uri:
+                raise RuntimeError(f"Uploaded Gemini file missing uri (name={getattr(uploaded_file, 'name', None)})")
+            file_mime_type = getattr(uploaded_file, "mime_type", None)
+            if not isinstance(file_mime_type, str) or not file_mime_type:
+                file_mime_type = audio_input.mime_type
+
+            response_json_schema = _build_response_json_schema(model=model)
+            schema_sha1 = _sha1_json(response_json_schema)
+            config = types.GenerateContentConfig(
+                temperature=_STRUCTURED_OUTPUT_TEMPERATURE,
+                response_mime_type=_STRUCTURED_OUTPUT_MIME_TYPE,
+                response_json_schema=response_json_schema,
+            )
+            contents = [
+                types.Content(
+                    parts=[
+                        types.Part(
+                            file_data=types.FileData(
+                                file_uri=file_uri,
+                                mime_type=file_mime_type,
+                            )
+                        ),
+                        types.Part(text=prompt),
+                    ]
+                )
+            ]
+            response = client.models.generate_content(model=model, contents=contents, config=config)
             response_text = _extract_response_text(response)
             response_meta = {
                 "response_id": getattr(response, "response_id", None),
                 "model_version": getattr(response, "model_version", None),
                 "usage_metadata": _to_jsonable(getattr(response, "usage_metadata", None)),
                 "prompt_feedback": _to_jsonable(getattr(response, "prompt_feedback", None)),
+                "request_config": {
+                    "temperature": _STRUCTURED_OUTPUT_TEMPERATURE,
+                    "response_mime_type": _STRUCTURED_OUTPUT_MIME_TYPE,
+                    "response_json_schema_sha1": schema_sha1,
+                },
                 "upload_file": {
                     "name": getattr(uploaded_file, "name", None),
                     "uri": getattr(uploaded_file, "uri", None),
@@ -267,20 +338,6 @@ def _run_single_model(
                 sleep_s,
             )
             time.sleep(sleep_s)
-        finally:
-            if uploaded_file is not None:
-                try:
-                    if console is not None:
-                        console.log(f"[bold]Delete[/bold] uploaded file {uploaded_file.name}")
-                    client.files.delete(name=uploaded_file.name)
-                except Exception as delete_exc:  # noqa: BLE001
-                    logger.warning(
-                        "Failed to delete uploaded Gemini file (model=%s, input=%s): %s",
-                        model,
-                        audio_input.source_id,
-                        delete_exc,
-                    )
-                uploaded_file = None
     assert last_err is not None
     raise RuntimeError(
         f"Gemini request failed after {max_retries + 1} attempts "
@@ -378,68 +435,30 @@ def run_pilot(args: argparse.Namespace) -> int:
     done = 0
     errors = 0
     results: list[dict[str, Any]] = []
+    abort_run = False
     for audio_input in audio_inputs:
         input_dir = out_dir / "outputs" / audio_input.source_id
         input_dir.mkdir(parents=True, exist_ok=True)
-        for model in models:
-            done += 1
-            model_slug = sanitize_token(model, fallback="model")
-            raw_path = input_dir / f"{model_slug}.raw.txt"
-            json_path = input_dir / f"{model_slug}.result.json"
-            err_path = input_dir / f"{model_slug}.error.json"
-            try:
-                response_text, response_meta = _run_single_model(
-                    client=client,
-                    audio_input=audio_input,
-                    model=model,
-                    prompt=prompt,
-                    max_retries=int(args.max_retries),
-                    retry_backoff_s=float(args.retry_backoff_s),
-                    file_ready_timeout_s=float(args.timeout_s),
-                    console=console,
-                )
-                raw_path.write_text((response_text or "") + "\n", encoding="utf-8")
-                payload = {
-                    "status": "ok",
-                    "source_id": audio_input.source_id,
-                    "source_kind": audio_input.source_kind,
-                    "source_ref": audio_input.source_ref,
-                    "local_path": str(audio_input.local_path),
-                    "mime_type": audio_input.mime_type,
-                    "model": model,
-                    "raw_text_path": str(raw_path),
-                    "response_meta": response_meta,
-                }
-                _write_json(json_path, payload)
-                results.append(
-                    {
-                        "status": "ok",
-                        "source_id": audio_input.source_id,
-                        "model": model,
-                        "result_json": str(json_path),
-                    }
-                )
-                logger.info(
-                    "OK %d/%d input=%s model=%s raw_chars=%d",
-                    done,
-                    total,
-                    audio_input.source_id,
-                    model,
-                    len(response_text or ""),
-                )
-                if console is not None:
-                    max_chars = int(os.environ.get("GEMINI_PILOT_PRINT_MAX_CHARS", "12000") or "12000")
-                    text = response_text or ""
-                    truncated = ""
-                    if max_chars > 0 and len(text) > max_chars:
-                        truncated = f"\n\n[dim]... truncated to {max_chars} chars (full output in {raw_path})[/dim]"
-                        text = text[:max_chars]
-                    if Panel is not None:
-                        console.print(Panel(text + truncated, title=f"Gemini Output ({model})", subtitle=str(raw_path)))
-                    else:
-                        console.print(text + truncated)
-            except Exception as exc:  # noqa: BLE001
-                errors += 1
+        uploaded_file = None
+        try:
+            if console is not None:
+                console.log(f"[bold]Upload[/bold] input={audio_input.source_id}")
+            uploaded_file = client.files.upload(
+                file=str(audio_input.local_path), config={"mimeType": audio_input.mime_type}
+            )
+
+            state = _file_state_name(uploaded_file)
+            if console is not None and state == "PROCESSING":
+                with console.status(f"Processing upload on Google servers... ({uploaded_file.name})"):
+                    uploaded_file = _wait_for_file_ready(client, uploaded_file, timeout_s=float(args.timeout_s))
+            else:
+                uploaded_file = _wait_for_file_ready(client, uploaded_file, timeout_s=float(args.timeout_s))
+        except Exception as exc:  # noqa: BLE001
+            # Upload failure means we can't query any models for this input.
+            for model in models:
+                done += 1
+                model_slug = sanitize_token(model, fallback="model")
+                err_path = input_dir / f"{model_slug}.error.json"
                 payload = {
                     "status": "error",
                     "source_id": audio_input.source_id,
@@ -449,7 +468,7 @@ def run_pilot(args: argparse.Namespace) -> int:
                     "mime_type": audio_input.mime_type,
                     "model": model,
                     "error_type": type(exc).__name__,
-                    "error": str(exc),
+                    "error": f"Upload failed: {exc}",
                 }
                 _write_json(err_path, payload)
                 results.append(
@@ -469,6 +488,7 @@ def run_pilot(args: argparse.Namespace) -> int:
                     type(exc).__name__,
                     exc,
                 )
+                errors += 1
                 if not args.continue_on_error:
                     summary = {
                         "run_id": run_id,
@@ -481,6 +501,127 @@ def run_pilot(args: argparse.Namespace) -> int:
                     }
                     _write_json(out_dir / "run_summary.json", summary)
                     return 1
+            continue
+
+        try:
+            for model in models:
+                done += 1
+                model_slug = sanitize_token(model, fallback="model")
+                raw_path = input_dir / f"{model_slug}.raw.txt"
+                json_path = input_dir / f"{model_slug}.result.json"
+                err_path = input_dir / f"{model_slug}.error.json"
+                try:
+                    response_text, response_meta = _run_single_model(
+                        client=client,
+                        audio_input=audio_input,
+                        uploaded_file=uploaded_file,
+                        model=model,
+                        prompt=prompt,
+                        max_retries=int(args.max_retries),
+                        retry_backoff_s=float(args.retry_backoff_s),
+                        console=console,
+                    )
+                    raw_path.write_text((response_text or "") + "\n", encoding="utf-8")
+                    payload = {
+                        "status": "ok",
+                        "source_id": audio_input.source_id,
+                        "source_kind": audio_input.source_kind,
+                        "source_ref": audio_input.source_ref,
+                        "local_path": str(audio_input.local_path),
+                        "mime_type": audio_input.mime_type,
+                        "model": model,
+                        "raw_text_path": str(raw_path),
+                        "response_meta": response_meta,
+                    }
+                    _write_json(json_path, payload)
+                    results.append(
+                        {
+                            "status": "ok",
+                            "source_id": audio_input.source_id,
+                            "model": model,
+                            "result_json": str(json_path),
+                        }
+                    )
+                    logger.info(
+                        "OK %d/%d input=%s model=%s raw_chars=%d",
+                        done,
+                        total,
+                        audio_input.source_id,
+                        model,
+                        len(response_text or ""),
+                    )
+                    if console is not None:
+                        max_chars = int(os.environ.get("GEMINI_PILOT_PRINT_MAX_CHARS", "12000") or "12000")
+                        text = response_text or ""
+                        truncated = ""
+                        if max_chars > 0 and len(text) > max_chars:
+                            truncated = f"\n\n[dim]... truncated to {max_chars} chars (full output in {raw_path})[/dim]"
+                            text = text[:max_chars]
+                        if Panel is not None:
+                            console.print(
+                                Panel(text + truncated, title=f"Gemini Output ({model})", subtitle=str(raw_path))
+                            )
+                        else:
+                            console.print(text + truncated)
+                except Exception as exc:  # noqa: BLE001
+                    errors += 1
+                    payload = {
+                        "status": "error",
+                        "source_id": audio_input.source_id,
+                        "source_kind": audio_input.source_kind,
+                        "source_ref": audio_input.source_ref,
+                        "local_path": str(audio_input.local_path),
+                        "mime_type": audio_input.mime_type,
+                        "model": model,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    }
+                    _write_json(err_path, payload)
+                    results.append(
+                        {
+                            "status": "error",
+                            "source_id": audio_input.source_id,
+                            "model": model,
+                            "error_json": str(err_path),
+                        }
+                    )
+                    logger.error(
+                        "ERR %d/%d input=%s model=%s: %s: %s",
+                        done,
+                        total,
+                        audio_input.source_id,
+                        model,
+                        type(exc).__name__,
+                        exc,
+                    )
+                    if not args.continue_on_error:
+                        abort_run = True
+                        break
+            if abort_run:
+                summary = {
+                    "run_id": run_id,
+                    "dry_run": False,
+                    "completed_requests": done,
+                    "total_requests": total,
+                    "errors": errors,
+                    "results": results,
+                    "out_dir": str(out_dir),
+                }
+                _write_json(out_dir / "run_summary.json", summary)
+                return 1
+        finally:
+            if uploaded_file is not None:
+                try:
+                    if console is not None:
+                        console.log(f"[bold]Delete[/bold] uploaded file {uploaded_file.name}")
+                    client.files.delete(name=uploaded_file.name)
+                except Exception as delete_exc:  # noqa: BLE001
+                    logger.warning(
+                        "Failed to delete uploaded Gemini file (input=%s): %s",
+                        audio_input.source_id,
+                        delete_exc,
+                    )
+                uploaded_file = None
 
     summary = {
         "run_id": run_id,
@@ -519,7 +660,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         action="append",
         default=[],
-        help="Gemini model override (repeatable). Defaults to gemini-3-flash-preview and gemini-2.0-flash.",
+        help=(
+            "Gemini model override (repeatable). Defaults to: gemini-2.5-flash, gemini-2.0-flash, "
+            "gemini-2.5-pro, gemini-3-pro-preview, gemini-3-flash-preview."
+        ),
     )
     parser.add_argument(
         "--out-dir",

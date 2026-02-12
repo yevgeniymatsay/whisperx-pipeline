@@ -9,7 +9,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
-DEFAULT_MODELS: tuple[str, ...] = ("gemini-3-flash-preview", "gemini-2.0-flash")
+DEFAULT_MODELS: tuple[str, ...] = (
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-2.5-pro",
+    "gemini-3-pro-preview",
+    "gemini-3-flash-preview",
+)
 DEFAULT_TIMEOUT_S: float = 300.0
 DEFAULT_MAX_RETRIES: int = 2
 DEFAULT_RETRY_BACKOFF_S: float = 2.0

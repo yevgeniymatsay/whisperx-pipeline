@@ -38,6 +38,22 @@
   - Why: make local pilot runs auditable/readable without changing the raw-output-first contract.
   - Non-comparable note: `n/a`
   - Version bumps: `n/a`
+- 2026-02-12: expanded default model set + switched to structured outputs (JSON Schema) at temperature=0
+  - What changed:
+    - Default models now include `gemini-2.5-flash`, `gemini-2.0-flash`, `gemini-2.5-pro`, `gemini-3-pro-preview`, `gemini-3-flash-preview`.
+    - Requests use `response_json_schema` + `response_mime_type=application/json` + `temperature=0`.
+    - Upload once per audio input (reuse file across models) + delete once at end of input loop.
+  - Why:
+    - Compare model families under the same deterministic, schema-constrained contract.
+    - Reduce oversplitting/noise and improve repeatability while keeping raw output capture.
+    - Reduce upload overhead per input.
+  - Non-comparable note: `n/a`
+  - Version bumps: `n/a`
+- 2026-02-12: removed `audio_timestamp` request flag after SDK rejected it on Gemini API
+  - What changed: stopped passing `audio_timestamp` in `GenerateContentConfig`.
+  - Why: runtime error: `ValueError: audio_timestamp parameter is not supported in Gemini API.`
+  - Non-comparable note: `n/a`
+  - Version bumps: `n/a`
 
 ## Checklist
 - [x] History-first (`git log -n 20 -- <paths>` + summarize relevant failures)
@@ -59,6 +75,10 @@ This cycle is exploratory and does not produce GT comparability metrics.
   - Run artifacts: `artifacts/gemini_pilot/run_20260212_054610/`
   - Models: `gemini-3-flash-preview`, `gemini-2.0-flash`
   - Cloud cleanup: uploaded Gemini Files API objects were deleted after each model run (HTTP 200).
+- 2026-02-12: ran pilot on `/private/tmp/DEt3IRqqUVs.mp3` (local file) with structured outputs + 5-model default set
+  - Run artifacts: `artifacts/gemini_pilot/run_20260212_060809/`
+  - Models: `gemini-2.5-flash`, `gemini-2.0-flash`, `gemini-2.5-pro`, `gemini-3-pro-preview`, `gemini-3-flash-preview`
+  - Cloud cleanup: uploaded Gemini Files API object was deleted once after all models (HTTP 200).
 
 ## Checks Run
 - `python -m py_compile /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/*.py /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py`
@@ -70,8 +90,13 @@ This cycle is exploratory and does not produce GT comparability metrics.
 - `./.venv/bin/python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py --help`
 
 ## Frozen policy for this cycle
-- Models fixed to two-model probe by default:
-  - `gemini-3-flash-preview`
+- Models fixed to five-model probe by default:
+  - `gemini-2.5-flash`
   - `gemini-2.0-flash`
-- Raw output capture only (no schema-enforced JSON prompt contract, no parsing).
+  - `gemini-2.5-pro`
+  - `gemini-3-pro-preview`
+  - `gemini-3-flash-preview`
+- Raw output capture only (no parsing), but schema-enforced JSON output enabled:
+  - `response_json_schema` + `response_mime_type=application/json`
+  - `temperature=0`
 - No ffmpeg clipping in v1.

@@ -7,13 +7,10 @@ A real call segment means active back-and-forth call conversation. Exclude:
 - monologues or narration that are not actual call conversation.
 
 Output rules (strict):
-1) If no real call segments exist, return exactly:
-NO_CALL_SEGMENTS
-
-2) Otherwise return one segment per line in this exact format:
-CALL_SEGMENT HH:MM:SS --> HH:MM:SS
-
-3) Times must be ascending and non-overlapping.
-4) Return only those lines. No explanations, bullets, JSON, or extra text.
+1) Return JSON that matches the provided response schema exactly (no extra keys, no extra text).
+2) If no real call segments exist, return {"segments": []}.
+3) Otherwise, return segments as a list of {start, end}.
+4) Timestamps must be in HH:MM:SS (zero-padded).
+5) Segments must be ascending and non-overlapping.
+6) Prefer fewer segments: only split when there is a clear stretch of excluded content between call parts.
 """
-

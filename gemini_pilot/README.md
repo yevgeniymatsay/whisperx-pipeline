@@ -9,7 +9,7 @@ This pilot is intentionally separate from the WavLM call extractor and does not 
 - Accepts local audio files and/or `s3://bucket/key` audio URIs.
 - Runs Gemini per input across one or more models.
 - Saves:
-  - raw model text response,
+  - raw model text response (JSON text),
   - minimal request/response metadata (no parsing in v1).
 
 This pilot uses the Gemini Files API (`files.upload`) and then references the uploaded file in `generate_content`.
@@ -28,10 +28,18 @@ You can start from `gemini_pilot/.env.example`.
 
 ## Default models
 
-- `gemini-3-flash-preview`
+- `gemini-2.5-flash`
 - `gemini-2.0-flash`
+- `gemini-2.5-pro`
+- `gemini-3-pro-preview`
+- `gemini-3-flash-preview`
 
 Override with repeatable `--model`.
+
+## Request config (frozen for comparisons)
+
+- Structured output via `response_schema` + `response_mime_type=application/json`
+- `temperature=0`
 
 ## Commands
 
@@ -44,7 +52,7 @@ python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call
   --dry-run
 ```
 
-Live run (local audio, default two models):
+Live run (local audio, default models):
 
 ```bash
 python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py \
@@ -59,6 +67,10 @@ python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call
   --model gemini-3-flash-preview \
   --model gemini-2.0-flash
 ```
+
+If you want to limit terminal printing, set:
+
+`GEMINI_PILOT_PRINT_MAX_CHARS=6000`
 
 ## Output layout
 

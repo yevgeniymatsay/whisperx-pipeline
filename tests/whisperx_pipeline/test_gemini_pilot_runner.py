@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from gemini_pilot.config import DEFAULT_MODELS
 from gemini_pilot.runner import run_cli
 
 
@@ -27,7 +28,7 @@ def test_cli_dry_run_with_local_and_s3_inputs(tmp_path) -> None:
     summary = json.loads((out_dir / "run_summary.json").read_text(encoding="utf-8"))
     assert manifest["dry_run"] is True
     assert summary["dry_run"] is True
-    assert summary["planned_requests"] == 4  # 2 inputs x 2 default models
+    assert summary["planned_requests"] == 2 * len(DEFAULT_MODELS)  # 2 inputs x N default models
 
 
 def test_cli_help_does_not_include_parse_toggle(capsys) -> None:
