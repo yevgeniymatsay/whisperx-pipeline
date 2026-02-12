@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +24,13 @@ from .config import (
 )
 from .prompts import CALL_TIMESTAMP_PROMPT_V1
 logger = logging.getLogger(__name__)
+
+try:  # Optional, but recommended for a readable pilot UX.
+    from rich.console import Console
+    from rich.panel import Panel
+except Exception:  # pragma: no cover
+    Console = None  # type: ignore[misc,assignment]
+    Panel = None  # type: ignore[misc,assignment]
 
 
 @dataclass(frozen=True)
@@ -189,7 +197,9 @@ def _wait_for_file_ready(client: Any, uploaded_file: Any, *, timeout_s: float, p
         state = _file_state_name(file_ref)
         if state == "PROCESSING":
             if (time.time() - start) > float(timeout_s):
-                raise RuntimeError(f"Gemini file stuck in PROCESSING after {timeout_s:.1f}s: {getattr(file_ref, 'name', None)}")
+                raise RuntimeError(
+                    f"Gemini file stuck in PROCESSING after {timeout_s:.1f}s: {getattr(file_ref, 'name', None)}"
+                )
             time.sleep(float(poll_s))
             file_ref = client.files.get(name=file_ref.name)
             continue
@@ -208,20 +218,26 @@ def _run_single_model(
     max_retries: int,
     retry_backoff_s: float,
     file_ready_timeout_s: float,
+    console: Any,
 ) -> tuple[str, dict[str, Any]]:
     uploaded_file = None
     last_err: BaseException | None = None
     for attempt in range(max_retries + 1):
         try:
-            uploaded_file = client.files.upload(
-                file=str(audio_input.local_path),
-                config={"mimeType": audio_input.mime_type},
-            )
-            uploaded_file = _wait_for_file_ready(client, uploaded_file, timeout_s=float(file_ready_timeout_s))
-            response = client.models.generate_content(
-                model=model,
-                contents=[prompt, uploaded_file],
-            )
+            if console is not None:
+                console.log(f"[bold]Upload[/bold] input={audio_input.source_id} model={model}")
+            uploaded_file = client.files.upload(file=str(audio_input.local_path), config={"mimeType": audio_input.mime_type})
+
+            state = _file_state_name(uploaded_file)
+            if console is not None and state == "PROCESSING":
+                with console.status(f"Processing upload on Google servers... ({uploaded_file.name})"):
+                    uploaded_file = _wait_for_file_ready(client, uploaded_file, timeout_s=float(file_ready_timeout_s))
+            else:
+                uploaded_file = _wait_for_file_ready(client, uploaded_file, timeout_s=float(file_ready_timeout_s))
+
+            if console is not None:
+                console.log(f"[bold]Generate[/bold] model={model} file={uploaded_file.name}")
+            response = client.models.generate_content(model=model, contents=[prompt, uploaded_file])
             response_text = _extract_response_text(response)
             response_meta = {
                 "response_id": getattr(response, "response_id", None),
@@ -254,6 +270,8 @@ def _run_single_model(
         finally:
             if uploaded_file is not None:
                 try:
+                    if console is not None:
+                        console.log(f"[bold]Delete[/bold] uploaded file {uploaded_file.name}")
                     client.files.delete(name=uploaded_file.name)
                 except Exception as delete_exc:  # noqa: BLE001
                     logger.warning(
@@ -272,6 +290,8 @@ def _run_single_model(
 
 def run_pilot(args: argparse.Namespace) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    console = Console() if Console is not None else None
+
     models = resolve_models(list(args.model or []))
     prompt = CALL_TIMESTAMP_PROMPT_V1
     run_id = f"run_{utc_now_compact()}"
@@ -279,6 +299,21 @@ def run_pilot(args: argparse.Namespace) -> int:
     cache_dir = Path(args.cache_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     cache_dir.mkdir(parents=True, exist_ok=True)
+
+    if console is not None and Panel is not None:
+        console.print(
+            Panel.fit(
+                "\n".join(
+                    [
+                        f"run_id: {run_id}",
+                        f"models: {', '.join(models)}",
+                        f"out_dir: {out_dir}",
+                        f"cache_dir: {cache_dir}",
+                    ]
+                ),
+                title="Gemini Pilot (Raw Output)",
+            )
+        )
 
     audio_inputs = _resolve_audio_inputs(
         audio_paths=list(args.audio_path or []),
@@ -361,6 +396,7 @@ def run_pilot(args: argparse.Namespace) -> int:
                     max_retries=int(args.max_retries),
                     retry_backoff_s=float(args.retry_backoff_s),
                     file_ready_timeout_s=float(args.timeout_s),
+                    console=console,
                 )
                 raw_path.write_text((response_text or "") + "\n", encoding="utf-8")
                 payload = {
@@ -391,6 +427,17 @@ def run_pilot(args: argparse.Namespace) -> int:
                     model,
                     len(response_text or ""),
                 )
+                if console is not None:
+                    max_chars = int(os.environ.get("GEMINI_PILOT_PRINT_MAX_CHARS", "12000") or "12000")
+                    text = response_text or ""
+                    truncated = ""
+                    if max_chars > 0 and len(text) > max_chars:
+                        truncated = f"\n\n[dim]... truncated to {max_chars} chars (full output in {raw_path})[/dim]"
+                        text = text[:max_chars]
+                    if Panel is not None:
+                        console.print(Panel(text + truncated, title=f"Gemini Output ({model})", subtitle=str(raw_path)))
+                    else:
+                        console.print(text + truncated)
             except Exception as exc:  # noqa: BLE001
                 errors += 1
                 payload = {
