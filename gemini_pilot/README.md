@@ -10,9 +10,9 @@ This pilot is intentionally separate from the WavLM call extractor and does not 
 - Runs Gemini per input across one or more models.
 - Saves:
   - raw model text response,
-  - optional parsed candidate call segments (`start_s`, `end_s`) if enabled.
+  - minimal request/response metadata (no parsing in v1).
 
-Default mode is raw-output-first (`--no-parse-timestamps`), so you can evaluate Gemini quality before relying on parser logic.
+This pilot uses the Gemini Files API (`files.upload`) and then references the uploaded file in `generate_content`.
 
 ## Environment
 
@@ -22,6 +22,9 @@ Set one of:
 - `GOOGLE_API_KEY`.
 
 The runner also loads a local `.env` file (best effort) if shell vars are missing.
+
+Recommended: put Gemini-only keys in `gemini_pilot/.env` (gitignored) to keep it separate from other pipeline env.
+You can start from `gemini_pilot/.env.example`.
 
 ## Default models
 
@@ -46,14 +49,6 @@ Live run (local audio, default two models):
 ```bash
 python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py \
   --audio-path /absolute/path/to/sample.mp3
-```
-
-Live run with optional timestamp parsing enabled:
-
-```bash
-python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py \
-  --audio-path /absolute/path/to/sample.mp3 \
-  --parse-timestamps
 ```
 
 Live run (S3 audio + explicit model set):

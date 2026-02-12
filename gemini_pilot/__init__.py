@@ -1,10 +1,3 @@
-"""Standalone Gemini audio pilot for call timestamp probing."""
+"""Standalone Gemini audio pilot for raw output capture."""
 
-from .timestamps import TimestampParseResult, TimestampSegment, parse_timestamp_response
-
-__all__ = [
-    "TimestampParseResult",
-    "TimestampSegment",
-    "parse_timestamp_response",
-]
-
+__all__: list[str] = []

@@ -5,7 +5,7 @@ import hashlib
 import json
 import logging
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -22,8 +22,6 @@ from .config import (
     utc_now_compact,
 )
 from .prompts import CALL_TIMESTAMP_PROMPT_V1
-from .timestamps import parse_timestamp_response
-
 logger = logging.getLogger(__name__)
 
 
@@ -304,7 +302,8 @@ def run_pilot(args: argparse.Namespace) -> int:
         _write_json(out_dir / "run_summary.json", summary)
         return 0
 
-    api_key = resolve_gemini_api_key(cwd=Path.cwd())
+    # Prefer a pilot-local env file at gemini_pilot/.env (gitignored) over repo-wide .env.
+    api_key = resolve_gemini_api_key(cwd=Path(__file__).resolve().parent)
     client = _make_gemini_client(api_key=api_key, timeout_s=float(args.timeout_s))
 
     total = len(audio_inputs) * len(models)
@@ -330,22 +329,6 @@ def run_pilot(args: argparse.Namespace) -> int:
                     retry_backoff_s=float(args.retry_backoff_s),
                 )
                 raw_path.write_text((response_text or "") + "\n", encoding="utf-8")
-                parse_payload: dict[str, Any]
-                if args.parse_timestamps:
-                    parsed = parse_timestamp_response(response_text)
-                    parse_payload = {
-                        "enabled": True,
-                        "ambiguous": bool(parsed.ambiguous),
-                        "no_call_segments": bool(parsed.no_call_segments),
-                        "warnings": list(parsed.warnings),
-                        "segments": [asdict(seg) for seg in parsed.segments],
-                        "dropped_due_to_ambiguity": bool(parsed.ambiguous),
-                    }
-                else:
-                    parse_payload = {
-                        "enabled": False,
-                        "reason": "raw_output_first_mode",
-                    }
                 payload = {
                     "status": "ok",
                     "source_id": audio_input.source_id,
@@ -355,7 +338,6 @@ def run_pilot(args: argparse.Namespace) -> int:
                     "mime_type": audio_input.mime_type,
                     "model": model,
                     "raw_text_path": str(raw_path),
-                    "parse": parse_payload,
                     "response_meta": response_meta,
                 }
                 _write_json(json_path, payload)
@@ -368,13 +350,12 @@ def run_pilot(args: argparse.Namespace) -> int:
                     }
                 )
                 logger.info(
-                    "OK %d/%d input=%s model=%s segments=%d ambiguous=%s",
+                    "OK %d/%d input=%s model=%s raw_chars=%d",
                     done,
                     total,
                     audio_input.source_id,
                     model,
-                    (len(parse_payload.get("segments", [])) if parse_payload.get("enabled") else -1),
-                    (parse_payload.get("ambiguous") if parse_payload.get("enabled") else "n/a"),
+                    len(response_text or ""),
                 )
             except Exception as exc:  # noqa: BLE001
                 errors += 1
@@ -500,12 +481,6 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Resolve inputs/models/output paths without calling Gemini (default: false).",
-    )
-    parser.add_argument(
-        "--parse-timestamps",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Parse CALL_SEGMENT lines from model text. Default false for raw-output-first evaluation.",
     )
     return parser
 

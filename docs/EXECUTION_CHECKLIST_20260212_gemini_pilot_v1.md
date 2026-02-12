@@ -7,11 +7,10 @@
   - `gemini_pilot/__init__.py`
   - `gemini_pilot/config.py`
   - `gemini_pilot/prompts.py`
-  - `gemini_pilot/timestamps.py`
   - `gemini_pilot/runner.py`
   - `gemini_pilot/README.md`
   - `scripts/gemini_pilot_extract_call_timestamps.py`
-  - `tests/whisperx_pipeline/test_gemini_pilot_timestamps.py`
+  - `tests/whisperx_pipeline/test_gemini_pilot_runner.py`
   - `.env.example`
   - `requirements.txt`
 
@@ -29,11 +28,11 @@
 - FP semantics (must stay spurious-only): `n/a (no GT eval in this cycle)`
 
 ## Plan-change log (required if anything above changes)
-- Date:
-- What changed:
-- Why:
-- Non-comparable note:
-- Version bumps:
+- 2026-02-12: removed parser module and default parsing behavior
+  - What changed: dropped `gemini_pilot/timestamps.py` + parser tests; runner now captures raw output only.
+  - Why: v1 goal is to evaluate Gemini raw output quality before introducing parsing logic.
+  - Non-comparable note: `n/a`
+  - Version bumps: `n/a`
 
 ## Checklist
 - [x] History-first (`git log -n 20 -- <paths>` + summarize relevant failures)
@@ -52,16 +51,16 @@ This cycle is exploratory and does not produce GT comparability metrics.
 
 ## Checks Run
 - `python -m py_compile /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/*.py /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py`
-- `pytest /Users/yevgeniymatsay/whisperx-pipeline/tests/whisperx_pipeline/test_gemini_pilot_timestamps.py -q`
+- `pytest /Users/yevgeniymatsay/whisperx-pipeline/tests/whisperx_pipeline/test_gemini_pilot_runner.py -q`
 - `python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py --help`
 - `./.venv/bin/pip install -r requirements.txt`
 - `./.venv/bin/python -m py_compile /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/*.py /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py`
-- `./.venv/bin/pytest /Users/yevgeniymatsay/whisperx-pipeline/tests/whisperx_pipeline/test_gemini_pilot_timestamps.py -q`
+- `./.venv/bin/pytest /Users/yevgeniymatsay/whisperx-pipeline/tests/whisperx_pipeline/test_gemini_pilot_runner.py -q`
 - `./.venv/bin/python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py --help`
 
 ## Frozen policy for this cycle
 - Models fixed to two-model probe by default:
   - `gemini-3-flash-preview`
   - `gemini-2.0-flash`
-- Timestamp-only extraction output (no schema-enforced JSON prompt contract).
+- Raw output capture only (no schema-enforced JSON prompt contract, no parsing).
 - No ffmpeg clipping in v1.

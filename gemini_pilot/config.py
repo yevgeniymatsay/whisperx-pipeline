@@ -68,7 +68,9 @@ def resolve_gemini_api_key(*, cwd: Path | None = None) -> str:
 
     key = _read()
     if not key:
-        maybe_load_dotenv(cwd=cwd)
+        disable = (os.environ.get("GEMINI_PILOT_DISABLE_DOTENV") or "").strip().lower()
+        if disable not in {"1", "true", "yes"}:
+            maybe_load_dotenv(cwd=cwd)
         key = _read()
     if not key:
         raise RuntimeError(
@@ -131,4 +133,3 @@ def cached_audio_path_for_s3_uri(uri: str, *, cache_dir: Path) -> Path:
     digest = hashlib.sha1(uri.encode("utf-8")).hexdigest()[:12]
     filename = f"{stem}_{digest}{suffix}"
     return cache_dir / filename
-
