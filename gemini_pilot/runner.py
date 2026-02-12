@@ -168,6 +168,37 @@ def _extract_response_text(response: Any) -> str:
     return "\n".join(parts).strip()
 
 
+def _file_state_name(file_obj: Any) -> str | None:
+    state = getattr(file_obj, "state", None)
+    if state is None:
+        return None
+    # SDK returns an enum-like object with a .name field in some cases.
+    name = getattr(state, "name", None)
+    if isinstance(name, str) and name:
+        return name
+    if isinstance(state, str) and state:
+        return state
+    return None
+
+
+def _wait_for_file_ready(client: Any, uploaded_file: Any, *, timeout_s: float, poll_s: float = 1.0) -> Any:
+    """Wait until an uploaded file is ready for use by the model."""
+    start = time.time()
+    file_ref = uploaded_file
+    while True:
+        state = _file_state_name(file_ref)
+        if state == "PROCESSING":
+            if (time.time() - start) > float(timeout_s):
+                raise RuntimeError(f"Gemini file stuck in PROCESSING after {timeout_s:.1f}s: {getattr(file_ref, 'name', None)}")
+            time.sleep(float(poll_s))
+            file_ref = client.files.get(name=file_ref.name)
+            continue
+        if state == "FAILED":
+            err = getattr(file_ref, "error", None)
+            raise RuntimeError(f"Gemini file processing FAILED: {getattr(file_ref, 'name', None)} error={err}")
+        return file_ref
+
+
 def _run_single_model(
     *,
     client: Any,
@@ -176,6 +207,7 @@ def _run_single_model(
     prompt: str,
     max_retries: int,
     retry_backoff_s: float,
+    file_ready_timeout_s: float,
 ) -> tuple[str, dict[str, Any]]:
     uploaded_file = None
     last_err: BaseException | None = None
@@ -185,6 +217,7 @@ def _run_single_model(
                 file=str(audio_input.local_path),
                 config={"mimeType": audio_input.mime_type},
             )
+            uploaded_file = _wait_for_file_ready(client, uploaded_file, timeout_s=float(file_ready_timeout_s))
             response = client.models.generate_content(
                 model=model,
                 contents=[prompt, uploaded_file],
@@ -327,6 +360,7 @@ def run_pilot(args: argparse.Namespace) -> int:
                     prompt=prompt,
                     max_retries=int(args.max_retries),
                     retry_backoff_s=float(args.retry_backoff_s),
+                    file_ready_timeout_s=float(args.timeout_s),
                 )
                 raw_path.write_text((response_text or "") + "\n", encoding="utf-8")
                 payload = {
