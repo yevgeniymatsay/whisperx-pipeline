@@ -1,0 +1,59 @@
+2026-02-12 03:22:21,693 - INFO - Found credentials from IAM Role: ecsInstanceRole
+2026-02-12 03:22:26,599 - INFO - Selected 160 clips (from 160 total boundaries across 48 videos)
+2026-02-12 03:22:26,599 - INFO - Scanning S3 for MP3 keys under prefix='audio/pretraining/' (need 38 video_ids)
+2026-02-12 03:22:26,705 - INFO - Resolved audio: DEt3IRqqUVs -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/10_Live_Cold_Calls_from_6_Different_Sales_Reps - DEt3IRqqUVs.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: GcjtU_V-mW4 -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/47_LIVE_COLD_CALLS__Tech_Sales_Day_in_The_Life___SaaS_Account_Executive__BDRSDR - GcjtU_V-mW4.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: ci-FdcWiJiA -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/50_LIVE_COLD_CALLS__REAL_Objections__Best_Responses_To_Use - ci-FdcWiJiA.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: Ox_LARRQmlw -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Actual_Live_Sales_Call_-_Life_Insurance_Lead! - Ox_LARRQmlw.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: 4ipwbOJRMck -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Closing_a_$20k_Deal_Live_Cold_Call - 4ipwbOJRMck.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: PnTbJdhNbPk -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Closing_a_STUBBORN_$4000_Sales_Call_LIVE_FOOTAGE - PnTbJdhNbPk.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: VZwqygti-nc -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Cold_Calling_Dentists_LIVE_-_$10kmo_Strategy - VZwqygti-nc.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: mxCrbMSfup4 -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/How_I_Get_3_Freelance_Brand_Scaling_Clients_Per_Day_(Live_Cold_Call) - mxCrbMSfup4.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: VXOSVmvwV0c -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/How_To_Book_3+_Web_Design_Meetings_Per_Day_[Live_Cold_Calling] - VXOSVmvwV0c.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: D4uiHjHW4AU -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/How_To_Book_6_Meetings_A_Day_(Live_SMMA_Cold_Calling) - D4uiHjHW4AU.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: -POaWp9_UaM -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/How_to_Book_3+_Meetings_a_Day_Web_Design_Cold_Calling_(Proven_Script) - -POaWp9_UaM.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: Uytq1t3zAz8 -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Jeremy_Miner_SELLING_Live - Uytq1t3zAz8.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: bCxvXMhbFls -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/LIVE_COLD_CALLING_-_How_I_effortlessly_book_meetings_through_cold_calls - bCxvXMhbFls.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: ZjhxWa0N4II -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/LIVE_COLD_CALL_-_Booking_Big_Social_Media_Marketing_Clients - ZjhxWa0N4II.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: -UzXRV8nHn4 -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/LIVE_COLD_CALL_OBJECTION_HANDLING - -UzXRV8nHn4.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: 6L-8f1eYOOY -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/LIVE_Dialing_Insurance_Leads - 6L-8f1eYOOY.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: dZWKwNqDXIo -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/LIVE_Dialing_Insurance_Leads - dZWKwNqDXIo.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: FBmODQn9grE -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/LIVE_SALES_CALL_Life_Insurance_Agent_Closes_A_Lead! - FBmODQn9grE.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: RtOncKiOT48 -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/LIVE_SMMA_COLD_CALLING_FOLLOW_UP_CALL_REVEALED_(so_you_can_copy_me) - RtOncKiOT48.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: FkgGv2iMjEo -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/LIVE_SMMA_beginner's_first_time_cold_calling_(BRUTAL) - FkgGv2iMjEo.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: N7XqeLuVOzk -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/LIVE_Solar_Sales_Call-Close_Over_The_Phone - N7XqeLuVOzk.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: JT1XSpK1pkM -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/LIVE_Tech_Sales_Cold_Calling_(BRUTAL) - JT1XSpK1pkM.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: UWLJ81ezcpU -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Let’s_Call_Some_Leads__Real_Life_Sales_Calls - UWLJ81ezcpU.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: FotSodGIVM8 -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Live_Calls - FotSodGIVM8.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: pgYGE9jmNPA -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Live_Calls - pgYGE9jmNPA.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: gDdoZC9Nhgk -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Live_Cold_Calls_For_My_Ai_Marketing_Agency! - gDdoZC9Nhgk.mp3
+2026-02-12 03:22:26,705 - INFO - Resolved audio: RL6Y5qig0Wg -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Live_Dialing_Insurance_Leads!_[Final_Expense_Insurance] - RL6Y5qig0Wg.mp3
+2026-02-12 03:22:26,706 - INFO - Resolved audio: pCcAlwOYYx8 -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Live_Outbound_Sales_Call_-_Full_Appointment_Setter_Training - pCcAlwOYYx8.mp3
+2026-02-12 03:22:26,706 - INFO - Resolved audio: EVwBLXWlZiI -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Live_Sales_Call_w_A_Digital_Agency_Prospect!!! - EVwBLXWlZiI.mp3
+2026-02-12 03:22:26,706 - INFO - Resolved audio: 6UWzVyNtbS0 -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/MOCK_CALL_PRACTICE_Simple_Outbound_Call__Interactive_Session_7 - 6UWzVyNtbS0.mp3
+2026-02-12 03:22:26,706 - INFO - Resolved audio: Qa-ppZFUp0g -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Not_Sleeping_Until_I_Book_in_30_SMMA_Appointments_(LIVE_Cold_Calling) - Qa-ppZFUp0g.mp3
+2026-02-12 03:22:26,706 - INFO - Resolved audio: dyFaLq3kfHs -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Recruitment_Consultant_cold_calling_live_with_a_client_-_live_cold_call_UK - dyFaLq3kfHs.mp3
+2026-02-12 03:22:26,706 - INFO - Resolved audio: Krnsw9WZtRA -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Selling_AI_Receptionists_To_Local_Businesses_With_Cold_Calls_($5k_Per) - Krnsw9WZtRA.mp3
+2026-02-12 03:22:26,706 - INFO - Resolved audio: S8yFUyD_JXU -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/The_Only_LIVE_COLD_CALL_You_Need_To_Watch - S8yFUyD_JXU.mp3
+2026-02-12 03:22:26,706 - INFO - Resolved audio: lioFo9pz9x8 -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/WATCH_Me_COLD_CALL_An_AGENT_LIVE - lioFo9pz9x8.mp3
+2026-02-12 03:22:26,706 - INFO - Resolved audio: bPv8JzD_bMI -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Watch_Me_LIVE_Cold_Call_and_Close_a_Freelance_Brand_Scaling_Client - bPv8JzD_bMI.mp3
+2026-02-12 03:22:26,706 - INFO - Resolved audio: 9g2gwfWIbUk -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Watch_Me_Make_$500_In_33_Mins_Selling_Life_Insurance_(Live_Call) - 9g2gwfWIbUk.mp3
+2026-02-12 03:22:26,706 - INFO - Resolved audio: CfMJ01KP_ns -> s3://rezora-whisperx-us-east-1-864981718771/audio/pretraining/Watch_me_book_5-7_meetings_a_day_(ai_agency_cold_calling) - CfMJ01KP_ns.mp3
+2026-02-12 03:22:31,814 - INFO - Wrote 10/160 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/clips
+2026-02-12 03:22:33,135 - INFO - Wrote 20/160 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/clips
+2026-02-12 03:22:33,808 - INFO - Wrote 30/160 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/clips
+2026-02-12 03:22:34,016 - INFO - Wrote 40/160 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/clips
+2026-02-12 03:22:36,601 - INFO - Wrote 50/160 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/clips
+2026-02-12 03:22:39,341 - INFO - Wrote 60/160 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/clips
+2026-02-12 03:22:40,459 - INFO - Wrote 70/160 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/clips
+2026-02-12 03:22:43,890 - INFO - Wrote 80/160 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/clips
+2026-02-12 03:22:44,076 - INFO - Wrote 90/160 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/clips
+2026-02-12 03:22:44,259 - INFO - Wrote 100/160 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/clips
+2026-02-12 03:22:46,416 - INFO - Wrote 110/160 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/clips
+2026-02-12 03:22:49,015 - INFO - Wrote 120/160 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/clips
+2026-02-12 03:22:50,718 - INFO - Wrote 130/160 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/clips
+2026-02-12 03:22:52,100 - INFO - Wrote 140/160 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/clips
+2026-02-12 03:22:54,532 - INFO - Wrote 150/160 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/clips
+2026-02-12 03:22:58,331 - INFO - Wrote 160/160 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/clips
+2026-02-12 03:22:58,331 - INFO - Done. Output: artifacts/diarization_teacher/teacher_v3_20260212_032220
+2026-02-12 03:22:58,331 - INFO - Metadata: artifacts/diarization_teacher/teacher_v3_20260212_032220/metadata.jsonl

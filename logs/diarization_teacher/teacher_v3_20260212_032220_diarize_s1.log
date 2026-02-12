@@ -1,0 +1,55 @@
+2026-02-12 03:38:49,576 - INFO - Processing 40 clips -> artifacts/diarization_teacher/teacher_v3_20260212_032220/diarized (shard 1/4)
+2026-02-12 03:44:32,384 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 03:49:00,245 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 03:49:00,264 - INFO - OK clip=4ipwbOJRMck_call000 done=1 skipped=1 errors=0
+2026-02-12 03:49:07,580 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 03:49:07,582 - INFO - OK clip=JT1XSpK1pkM_call000 done=2 skipped=14 errors=0
+2026-02-12 03:49:11,278 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 03:49:11,279 - INFO - OK clip=Krnsw9WZtRA_call002 done=3 skipped=14 errors=0
+2026-02-12 03:49:17,972 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 03:49:17,973 - INFO - OK clip=Krnsw9WZtRA_call006 done=4 skipped=14 errors=0
+2026-02-12 03:55:36,336 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 03:55:36,436 - INFO - OK clip=PnTbJdhNbPk_call000 done=5 skipped=14 errors=0
+2026-02-12 03:56:16,792 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 03:56:16,795 - INFO - OK clip=Qa-ppZFUp0g_call003 done=6 skipped=14 errors=0
+2026-02-12 03:56:22,025 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 03:56:22,026 - INFO - OK clip=Qa-ppZFUp0g_call007 done=7 skipped=14 errors=0
+2026-02-12 03:56:29,857 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 03:56:29,858 - INFO - OK clip=Qa-ppZFUp0g_call011 done=8 skipped=14 errors=0
+2026-02-12 03:56:48,973 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 03:56:48,975 - INFO - OK clip=Qa-ppZFUp0g_call015 done=9 skipped=14 errors=0
+2026-02-12 03:56:52,979 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 03:56:52,980 - INFO - OK clip=Qa-ppZFUp0g_call019 done=10 skipped=14 errors=0
+2026-02-12 03:56:56,838 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 03:56:56,839 - INFO - OK clip=Qa-ppZFUp0g_call023 done=11 skipped=14 errors=0
+2026-02-12 03:57:27,667 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 03:57:27,670 - INFO - OK clip=RL6Y5qig0Wg_call000 done=12 skipped=14 errors=0
+2026-02-12 03:58:04,208 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 03:58:04,212 - INFO - OK clip=RL6Y5qig0Wg_call004 done=13 skipped=14 errors=0
+2026-02-12 04:02:00,603 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 04:02:00,648 - INFO - OK clip=RtOncKiOT48_call001 done=14 skipped=14 errors=0
+2026-02-12 04:02:07,221 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 04:02:07,222 - INFO - OK clip=UWLJ81ezcpU_call002 done=15 skipped=14 errors=0
+2026-02-12 04:02:36,985 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 04:02:36,988 - INFO - OK clip=UWLJ81ezcpU_call006 done=16 skipped=14 errors=0
+2026-02-12 04:03:07,003 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 04:03:07,006 - INFO - OK clip=VXOSVmvwV0c_call002 done=17 skipped=14 errors=0
+2026-02-12 04:03:37,373 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 04:03:37,376 - INFO - OK clip=VZwqygti-nc_call003 done=18 skipped=14 errors=0
+2026-02-12 04:06:30,408 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 04:06:30,448 - INFO - OK clip=bCxvXMhbFls_call000 done=19 skipped=14 errors=0
+2026-02-12 04:07:02,887 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 04:07:02,890 - INFO - OK clip=bPv8JzD_bMI_call003 done=20 skipped=14 errors=0
+2026-02-12 04:07:08,204 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 04:07:08,206 - INFO - OK clip=ci-FdcWiJiA_call003 done=21 skipped=14 errors=0
+2026-02-12 04:07:31,980 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 04:07:31,982 - INFO - OK clip=dZWKwNqDXIo_call000 done=22 skipped=14 errors=0
+2026-02-12 04:09:41,136 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 04:09:41,147 - INFO - OK clip=dZWKwNqDXIo_call004 done=23 skipped=14 errors=0
+2026-02-12 04:09:51,256 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 04:09:51,257 - INFO - OK clip=gDdoZC9Nhgk_call002 done=24 skipped=14 errors=0
+2026-02-12 04:10:57,085 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 04:10:57,089 - INFO - OK clip=gDdoZC9Nhgk_call006 done=25 skipped=14 errors=0
+2026-02-12 04:11:41,377 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 04:11:41,380 - INFO - OK clip=mxCrbMSfup4_call002 done=26 skipped=14 errors=0
+2026-02-12 04:11:41,380 - INFO - Done. diarized=26 skipped=14 errors=0 out_dir=artifacts/diarization_teacher/teacher_v3_20260212_032220/diarized

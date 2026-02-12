@@ -1,0 +1,157 @@
+2026-02-12 00:23:05,060 - DEBUG - Registered checkpoint save hook for _speechbrain_save
+2026-02-12 00:23:05,060 - DEBUG - Registered checkpoint load hook for _speechbrain_load
+2026-02-12 00:23:05,060 - DEBUG - Registered checkpoint save hook for save
+2026-02-12 00:23:05,060 - DEBUG - Registered checkpoint load hook for load
+2026-02-12 00:23:05,077 - INFO - Applied quirks (see `speechbrain.utils.quirks`): [allow_tf32, disable_jit_profiling]
+2026-02-12 00:23:05,077 - INFO - Excluded quirks specified by the `SB_DISABLE_QUIRKS` environment (comma-separated list): []
+2026-02-12 00:23:05,077 - DEBUG - Registered checkpoint save hook for _save
+2026-02-12 00:23:05,077 - DEBUG - Registered checkpoint load hook for _recover
+2026-02-12 00:23:05,085 - INFO - Fetch hyperparams.yaml: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 00:23:05,104 - INFO - Fetch custom.py: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 00:23:05,146 - DEBUG - Registered checkpoint save hook for _save
+2026-02-12 00:23:05,146 - DEBUG - Registered checkpoint load hook for _load
+2026-02-12 00:23:05,146 - DEBUG - Registered parameter transfer hook for _load
+/home/ubuntu/venvs/diarization-pilot/lib/python3.10/site-packages/speechbrain/utils/autocast.py:188: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  wrapped_fwd = torch.cuda.amp.custom_fwd(fwd, cast_inputs=cast_inputs)
+2026-02-12 00:23:05,278 - DEBUG - Registered checkpoint save hook for save
+2026-02-12 00:23:05,278 - DEBUG - Registered checkpoint load hook for load_if_possible
+2026-02-12 00:23:05,278 - DEBUG - Fetching files for pretraining (no collection directory set)
+2026-02-12 00:23:05,278 - INFO - Fetch embedding_model.ckpt: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 00:23:05,294 - DEBUG - Set local path in self.paths["embedding_model"] = /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/embedding_model.ckpt
+2026-02-12 00:23:05,294 - INFO - Fetch mean_var_norm_emb.ckpt: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 00:23:05,312 - DEBUG - Set local path in self.paths["mean_var_norm_emb"] = /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/mean_var_norm_emb.ckpt
+2026-02-12 00:23:05,312 - INFO - Fetch classifier.ckpt: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 00:23:05,325 - DEBUG - Set local path in self.paths["classifier"] = /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/classifier.ckpt
+2026-02-12 00:23:05,325 - INFO - Fetch label_encoder.txt: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 00:23:05,341 - DEBUG - Set local path in self.paths["label_encoder"] = /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/label_encoder.txt
+2026-02-12 00:23:05,341 - INFO - Loading pretrained files for: embedding_model, mean_var_norm_emb, classifier, label_encoder
+2026-02-12 00:23:05,341 - DEBUG - Redirecting (loading from local path): embedding_model -> /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/embedding_model.ckpt
+2026-02-12 00:23:05,341 - DEBUG - Redirecting (loading from local path): mean_var_norm_emb -> /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/mean_var_norm_emb.ckpt
+2026-02-12 00:23:05,341 - DEBUG - Redirecting (loading from local path): classifier -> /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/classifier.ckpt
+2026-02-12 00:23:05,341 - DEBUG - Redirecting (loading from local path): label_encoder -> /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/label_encoder.txt
+2026-02-12 00:23:05,466 - DEBUG - Loaded categorical encoding from /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/label_encoder.txt
+[NeMo W 2026-02-12 00:23:08 megatron_init:62] Megatron num_microbatches_calculator not found, using Apex version.
+2026-02-12 00:23:08,371 - WARNING - OneLogger: Setting error_handling_strategy to DISABLE_QUIETLY_AND_REPORT_METRIC_ERROR for rank (rank=0) with OneLogger disabled. To override: explicitly set error_handling_strategy parameter.
+2026-02-12 00:23:08,379 - INFO - Final configuration contains 0 exporter(s)
+2026-02-12 00:23:08,379 - WARNING - No exporters were provided. This means that no telemetry data will be collected.
+[NeMo W 2026-02-12 00:23:09 modelPT:188] If you intend to do training or fine-tuning, please call the ModelPT.setup_training_data() method and provide a valid configuration file to setup the train data loader.
+    Train config : 
+    manifest_filepath: /manifests/combined_fisher_swbd_voxceleb12_librispeech/train.json
+    sample_rate: 16000
+    labels: null
+    batch_size: 64
+    shuffle: true
+    is_tarred: false
+    tarred_audio_filepaths: null
+    tarred_shard_strategy: scatter
+    augmentor:
+      noise:
+        manifest_path: /manifests/noise/rir_noise_manifest.json
+        prob: 0.5
+        min_snr_db: 0
+        max_snr_db: 15
+      speed:
+        prob: 0.5
+        sr: 16000
+        resample_type: kaiser_fast
+        min_speed_rate: 0.95
+        max_speed_rate: 1.05
+    num_workers: 15
+    pin_memory: true
+    
+[NeMo W 2026-02-12 00:23:09 modelPT:195] If you intend to do validation, please call the ModelPT.setup_validation_data() or ModelPT.setup_multiple_validation_data() method and provide a valid configuration file to setup the validation data loader(s). 
+    Validation config : 
+    manifest_filepath: /manifests/combined_fisher_swbd_voxceleb12_librispeech/dev.json
+    sample_rate: 16000
+    labels: null
+    batch_size: 128
+    shuffle: false
+    num_workers: 15
+    pin_memory: true
+    
+[NeMo I 2026-02-12 00:23:09 features:306] PADDING: 16
+[NeMo I 2026-02-12 00:23:10 save_restore_connector:284] Model EncDecSpeakerLabelModel was successfully restored from /home/ubuntu/.cache/huggingface/hub/models--nvidia--speakerverification_en_titanet_large/snapshots/0dc382f40121a5fbd34db10a2bb04d826c2be6a8/speakerverification_en_titanet_large.nemo.
+2026-02-12 00:23:10,814 - WARNING - [titanet] embed failed clip=-POaWp9_UaM_call000 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:10,815 - WARNING - [titanet] embed failed clip=-POaWp9_UaM_call000 spk=C: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:10,902 - WARNING - [titanet] embed failed clip=-POaWp9_UaM_call002 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:10,902 - WARNING - [titanet] embed failed clip=-POaWp9_UaM_call002 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,002 - WARNING - [titanet] embed failed clip=-POaWp9_UaM_call003 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,002 - WARNING - [titanet] embed failed clip=-POaWp9_UaM_call003 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,117 - WARNING - [titanet] embed failed clip=CfMJ01KP_ns_call001 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,118 - WARNING - [titanet] embed failed clip=CfMJ01KP_ns_call001 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,246 - WARNING - [titanet] embed failed clip=CfMJ01KP_ns_call004 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,246 - WARNING - [titanet] embed failed clip=CfMJ01KP_ns_call004 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,392 - WARNING - [titanet] embed failed clip=CfMJ01KP_ns_call005 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,393 - WARNING - [titanet] embed failed clip=CfMJ01KP_ns_call005 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,393 - WARNING - [titanet] embed failed clip=CfMJ01KP_ns_call005 spk=C: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,485 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call001 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,485 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call001 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,562 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call002 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,563 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call002 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,619 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call004 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,619 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call004 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,679 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call006 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,680 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call006 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,680 - INFO - Processed 10/35 clips
+2026-02-12 00:23:11,760 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call007 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,761 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call007 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,831 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call008 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,832 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call008 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,946 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call010 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,947 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call010 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:11,947 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call010 spk=C: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,027 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call014 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,027 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call014 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,105 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call016 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,105 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call016 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,223 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call018 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,224 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call018 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,224 - WARNING - [titanet] embed failed clip=D4uiHjHW4AU_call018 spk=C: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,311 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call001 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,311 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call001 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,311 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call001 spk=C: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,391 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call002 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,391 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call002 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,465 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call004 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,465 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call004 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,546 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call005 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,547 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call005 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,547 - INFO - Processed 20/35 clips
+2026-02-12 00:23:12,634 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call006 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,634 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call006 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,755 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call007 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,755 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call007 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,755 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call007 spk=C: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,862 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call008 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,863 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call008 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,863 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call008 spk=C: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,974 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call010 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,975 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call010 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:12,975 - WARNING - [titanet] embed failed clip=DEt3IRqqUVs_call010 spk=C: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,035 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call000 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,036 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call000 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,142 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call002 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,143 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call002 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,143 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call002 spk=C: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,201 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call010 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,279 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call011 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,279 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call011 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,348 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call012 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,348 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call012 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,426 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call013 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,426 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call013 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,427 - INFO - Processed 30/35 clips
+2026-02-12 00:23:13,502 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call016 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,502 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call016 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,562 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call021 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,563 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call021 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,637 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call022 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,637 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call022 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,712 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call023 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,712 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call023 spk=B: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,812 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call025 spk=A: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,812 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call025 spk=C: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,812 - WARNING - [titanet] embed failed clip=Qa-ppZFUp0g_call025 spk=D: TypeError: EncDecSpeakerLabelModel.get_embedding() takes 2 positional arguments but 3 were given
+2026-02-12 00:23:13,813 - INFO - Processed 35/35 clips
+2026-02-12 00:23:13,817 - INFO - Wrote reports/diarization_pilot/pilot_5videos_20260211_234315/qa_report.json
+2026-02-12 00:23:13,817 - INFO - Wrote reports/diarization_pilot/pilot_5videos_20260211_234315/qa_report.md

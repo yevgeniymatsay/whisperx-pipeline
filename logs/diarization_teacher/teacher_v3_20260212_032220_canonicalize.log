@@ -1,0 +1,50 @@
+2026-02-12 04:18:50,186 - DEBUG - Registered checkpoint save hook for _speechbrain_save
+2026-02-12 04:18:50,186 - DEBUG - Registered checkpoint load hook for _speechbrain_load
+2026-02-12 04:18:50,186 - DEBUG - Registered checkpoint save hook for save
+2026-02-12 04:18:50,186 - DEBUG - Registered checkpoint load hook for load
+2026-02-12 04:18:50,334 - INFO - Applied quirks (see `speechbrain.utils.quirks`): [disable_jit_profiling, allow_tf32]
+2026-02-12 04:18:50,335 - INFO - Excluded quirks specified by the `SB_DISABLE_QUIRKS` environment (comma-separated list): []
+2026-02-12 04:18:50,335 - DEBUG - Registered checkpoint save hook for _save
+2026-02-12 04:18:50,335 - DEBUG - Registered checkpoint load hook for _recover
+2026-02-12 04:18:50,358 - INFO - Fetch hyperparams.yaml: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 04:18:50,459 - INFO - Fetch custom.py: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 04:18:50,520 - DEBUG - Registered checkpoint save hook for _save
+2026-02-12 04:18:50,520 - DEBUG - Registered checkpoint load hook for _load
+2026-02-12 04:18:50,520 - DEBUG - Registered parameter transfer hook for _load
+/home/ubuntu/venvs/diarization-pilot/lib/python3.10/site-packages/speechbrain/utils/autocast.py:188: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  wrapped_fwd = torch.cuda.amp.custom_fwd(fwd, cast_inputs=cast_inputs)
+2026-02-12 04:18:50,659 - DEBUG - Registered checkpoint save hook for save
+2026-02-12 04:18:50,659 - DEBUG - Registered checkpoint load hook for load_if_possible
+2026-02-12 04:18:50,660 - DEBUG - Fetching files for pretraining (no collection directory set)
+2026-02-12 04:18:50,660 - INFO - Fetch embedding_model.ckpt: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 04:18:50,678 - DEBUG - Set local path in self.paths["embedding_model"] = /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/embedding_model.ckpt
+2026-02-12 04:18:50,678 - INFO - Fetch mean_var_norm_emb.ckpt: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 04:18:50,695 - DEBUG - Set local path in self.paths["mean_var_norm_emb"] = /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/mean_var_norm_emb.ckpt
+2026-02-12 04:18:50,695 - INFO - Fetch classifier.ckpt: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 04:18:50,707 - DEBUG - Set local path in self.paths["classifier"] = /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/classifier.ckpt
+2026-02-12 04:18:50,707 - INFO - Fetch label_encoder.txt: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 04:18:50,729 - DEBUG - Set local path in self.paths["label_encoder"] = /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/label_encoder.txt
+2026-02-12 04:18:50,729 - INFO - Loading pretrained files for: embedding_model, mean_var_norm_emb, classifier, label_encoder
+2026-02-12 04:18:50,729 - DEBUG - Redirecting (loading from local path): embedding_model -> /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/embedding_model.ckpt
+2026-02-12 04:18:50,729 - DEBUG - Redirecting (loading from local path): mean_var_norm_emb -> /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/mean_var_norm_emb.ckpt
+2026-02-12 04:18:50,729 - DEBUG - Redirecting (loading from local path): classifier -> /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/classifier.ckpt
+2026-02-12 04:18:50,729 - DEBUG - Redirecting (loading from local path): label_encoder -> /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/label_encoder.txt
+2026-02-12 04:18:51,113 - DEBUG - Loaded categorical encoding from /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/label_encoder.txt
+2026-02-12 04:19:05,776 - INFO - Processed 10/160 clips
+2026-02-12 04:19:16,621 - INFO - Processed 20/160 clips
+2026-02-12 04:19:26,293 - INFO - Processed 30/160 clips
+2026-02-12 04:19:31,342 - INFO - Processed 40/160 clips
+2026-02-12 04:19:41,726 - INFO - Processed 50/160 clips
+2026-02-12 04:19:52,669 - INFO - Processed 60/160 clips
+2026-02-12 04:19:58,170 - INFO - Processed 70/160 clips
+2026-02-12 04:20:10,163 - INFO - Processed 80/160 clips
+2026-02-12 04:20:15,364 - INFO - Processed 90/160 clips
+2026-02-12 04:20:20,542 - INFO - Processed 100/160 clips
+2026-02-12 04:20:29,698 - INFO - Processed 110/160 clips
+2026-02-12 04:20:38,748 - INFO - Processed 120/160 clips
+2026-02-12 04:20:46,932 - INFO - Processed 130/160 clips
+2026-02-12 04:20:55,005 - INFO - Processed 140/160 clips
+2026-02-12 04:21:07,344 - INFO - Processed 150/160 clips
+2026-02-12 04:21:18,802 - INFO - Processed 160/160 clips
+2026-02-12 04:21:18,811 - INFO - Wrote reports/diarization_pilot/teacher_v3_20260212_032220/qa_report.json
+2026-02-12 04:21:18,811 - INFO - Wrote reports/diarization_pilot/teacher_v3_20260212_032220/qa_report.md

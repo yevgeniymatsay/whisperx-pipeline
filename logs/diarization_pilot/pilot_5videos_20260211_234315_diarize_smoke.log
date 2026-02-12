@@ -1,0 +1,4 @@
+2026-02-12 00:01:10,232 - INFO - Processing 1 clips -> artifacts/diarization_pilot/pilot_5videos_20260211_234315/diarized
+2026-02-12 00:01:42,982 - INFO - HTTP Request: POST https://ai-yevgeniy3095ai279509032740.cognitiveservices.azure.com/openai/deployments/gpt-4o-transcribe-diarize/audio/transcriptions?api-version=2025-03-01-preview "HTTP/1.1 200 OK"
+2026-02-12 00:01:42,989 - INFO - Diarized 1/1 clips (skipped=0)
+2026-02-12 00:01:42,989 - INFO - Done. diarized=1 skipped=0 out_dir=artifacts/diarization_pilot/pilot_5videos_20260211_234315/diarized
