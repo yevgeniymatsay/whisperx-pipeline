@@ -33,6 +33,11 @@
   - Why: v1 goal is to evaluate Gemini raw output quality before introducing parsing logic.
   - Non-comparable note: `n/a`
   - Version bumps: `n/a`
+- 2026-02-12: added Rich console UX for pilot runs
+  - What changed: runner now prints upload/generate/delete progress + raw model output via `rich` panels.
+  - Why: make local pilot runs auditable/readable without changing the raw-output-first contract.
+  - Non-comparable note: `n/a`
+  - Version bumps: `n/a`
 
 ## Checklist
 - [x] History-first (`git log -n 20 -- <paths>` + summarize relevant failures)
@@ -40,7 +45,7 @@
 - [x] Research gate complete (Gemini API docs + python-genai SDK)
 - [x] Implement (one atomic change)
 - [x] Local checks run (unit tests / static checks only)
-- [ ] Commit + push (working tree clean)
+- [x] Commit + push (working tree clean)
 - [x] Run Review recorded (required before next cycle)
 
 ## Cycle discipline (required)
@@ -48,6 +53,12 @@ This cycle is exploratory and does not produce GT comparability metrics.
 
 ## Run Review (required after metrics-producing cycle)
 - `n/a` for this implementation-only cycle (no training/decode/eval metrics produced).
+
+## Manual Smoke (Local)
+- 2026-02-12: ran pilot on `/private/tmp/DEt3IRqqUVs.mp3` (local file)
+  - Run artifacts: `artifacts/gemini_pilot/run_20260212_054610/`
+  - Models: `gemini-3-flash-preview`, `gemini-2.0-flash`
+  - Cloud cleanup: uploaded Gemini Files API objects were deleted after each model run (HTTP 200).
 
 ## Checks Run
 - `python -m py_compile /Users/yevgeniymatsay/whisperx-pipeline/gemini_pilot/*.py /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py`
