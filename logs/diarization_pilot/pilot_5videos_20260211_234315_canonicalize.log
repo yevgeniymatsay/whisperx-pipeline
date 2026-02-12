@@ -1,0 +1,79 @@
+2026-02-12 00:27:11,929 - DEBUG - Registered checkpoint save hook for _speechbrain_save
+2026-02-12 00:27:11,929 - DEBUG - Registered checkpoint load hook for _speechbrain_load
+2026-02-12 00:27:11,929 - DEBUG - Registered checkpoint save hook for save
+2026-02-12 00:27:11,929 - DEBUG - Registered checkpoint load hook for load
+2026-02-12 00:27:11,946 - INFO - Applied quirks (see `speechbrain.utils.quirks`): [disable_jit_profiling, allow_tf32]
+2026-02-12 00:27:11,946 - INFO - Excluded quirks specified by the `SB_DISABLE_QUIRKS` environment (comma-separated list): []
+2026-02-12 00:27:11,946 - DEBUG - Registered checkpoint save hook for _save
+2026-02-12 00:27:11,946 - DEBUG - Registered checkpoint load hook for _recover
+2026-02-12 00:27:11,954 - INFO - Fetch hyperparams.yaml: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 00:27:11,971 - INFO - Fetch custom.py: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 00:27:12,015 - DEBUG - Registered checkpoint save hook for _save
+2026-02-12 00:27:12,015 - DEBUG - Registered checkpoint load hook for _load
+2026-02-12 00:27:12,015 - DEBUG - Registered parameter transfer hook for _load
+/home/ubuntu/venvs/diarization-pilot/lib/python3.10/site-packages/speechbrain/utils/autocast.py:188: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  wrapped_fwd = torch.cuda.amp.custom_fwd(fwd, cast_inputs=cast_inputs)
+2026-02-12 00:27:12,146 - DEBUG - Registered checkpoint save hook for save
+2026-02-12 00:27:12,146 - DEBUG - Registered checkpoint load hook for load_if_possible
+2026-02-12 00:27:12,146 - DEBUG - Fetching files for pretraining (no collection directory set)
+2026-02-12 00:27:12,147 - INFO - Fetch embedding_model.ckpt: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 00:27:12,160 - DEBUG - Set local path in self.paths["embedding_model"] = /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/embedding_model.ckpt
+2026-02-12 00:27:12,160 - INFO - Fetch mean_var_norm_emb.ckpt: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 00:27:12,177 - DEBUG - Set local path in self.paths["mean_var_norm_emb"] = /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/mean_var_norm_emb.ckpt
+2026-02-12 00:27:12,177 - INFO - Fetch classifier.ckpt: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 00:27:12,191 - DEBUG - Set local path in self.paths["classifier"] = /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/classifier.ckpt
+2026-02-12 00:27:12,191 - INFO - Fetch label_encoder.txt: Fetching from HuggingFace Hub 'speechbrain/spkrec-ecapa-voxceleb' if not cached
+2026-02-12 00:27:12,207 - DEBUG - Set local path in self.paths["label_encoder"] = /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/label_encoder.txt
+2026-02-12 00:27:12,207 - INFO - Loading pretrained files for: embedding_model, mean_var_norm_emb, classifier, label_encoder
+2026-02-12 00:27:12,208 - DEBUG - Redirecting (loading from local path): embedding_model -> /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/embedding_model.ckpt
+2026-02-12 00:27:12,208 - DEBUG - Redirecting (loading from local path): mean_var_norm_emb -> /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/mean_var_norm_emb.ckpt
+2026-02-12 00:27:12,208 - DEBUG - Redirecting (loading from local path): classifier -> /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/classifier.ckpt
+2026-02-12 00:27:12,208 - DEBUG - Redirecting (loading from local path): label_encoder -> /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/label_encoder.txt
+2026-02-12 00:27:12,330 - DEBUG - Loaded categorical encoding from /home/ubuntu/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286/label_encoder.txt
+[NeMo W 2026-02-12 00:27:14 megatron_init:62] Megatron num_microbatches_calculator not found, using Apex version.
+2026-02-12 00:27:15,230 - WARNING - OneLogger: Setting error_handling_strategy to DISABLE_QUIETLY_AND_REPORT_METRIC_ERROR for rank (rank=0) with OneLogger disabled. To override: explicitly set error_handling_strategy parameter.
+2026-02-12 00:27:15,238 - INFO - Final configuration contains 0 exporter(s)
+2026-02-12 00:27:15,238 - WARNING - No exporters were provided. This means that no telemetry data will be collected.
+[NeMo W 2026-02-12 00:27:16 modelPT:188] If you intend to do training or fine-tuning, please call the ModelPT.setup_training_data() method and provide a valid configuration file to setup the train data loader.
+    Train config : 
+    manifest_filepath: /manifests/combined_fisher_swbd_voxceleb12_librispeech/train.json
+    sample_rate: 16000
+    labels: null
+    batch_size: 64
+    shuffle: true
+    is_tarred: false
+    tarred_audio_filepaths: null
+    tarred_shard_strategy: scatter
+    augmentor:
+      noise:
+        manifest_path: /manifests/noise/rir_noise_manifest.json
+        prob: 0.5
+        min_snr_db: 0
+        max_snr_db: 15
+      speed:
+        prob: 0.5
+        sr: 16000
+        resample_type: kaiser_fast
+        min_speed_rate: 0.95
+        max_speed_rate: 1.05
+    num_workers: 15
+    pin_memory: true
+    
+[NeMo W 2026-02-12 00:27:16 modelPT:195] If you intend to do validation, please call the ModelPT.setup_validation_data() or ModelPT.setup_multiple_validation_data() method and provide a valid configuration file to setup the validation data loader(s). 
+    Validation config : 
+    manifest_filepath: /manifests/combined_fisher_swbd_voxceleb12_librispeech/dev.json
+    sample_rate: 16000
+    labels: null
+    batch_size: 128
+    shuffle: false
+    num_workers: 15
+    pin_memory: true
+    
+[NeMo I 2026-02-12 00:27:16 features:306] PADDING: 16
+[NeMo I 2026-02-12 00:27:16 save_restore_connector:284] Model EncDecSpeakerLabelModel was successfully restored from /home/ubuntu/.cache/huggingface/hub/models--nvidia--speakerverification_en_titanet_large/snapshots/0dc382f40121a5fbd34db10a2bb04d826c2be6a8/speakerverification_en_titanet_large.nemo.
+2026-02-12 00:27:19,041 - INFO - Processed 10/35 clips
+2026-02-12 00:27:20,520 - INFO - Processed 20/35 clips
+2026-02-12 00:27:21,991 - INFO - Processed 30/35 clips
+2026-02-12 00:27:22,632 - INFO - Processed 35/35 clips
+2026-02-12 00:27:22,638 - INFO - Wrote reports/diarization_pilot/pilot_5videos_20260211_234315/qa_report.json
+2026-02-12 00:27:22,638 - INFO - Wrote reports/diarization_pilot/pilot_5videos_20260211_234315/qa_report.md

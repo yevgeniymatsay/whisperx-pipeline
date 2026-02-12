@@ -1,0 +1,3397 @@
+{
+  "summary": {
+    "pilot_dir": "artifacts/diarization_pilot/pilot_5videos_20260211_234315",
+    "clip_count": 35,
+    "embedders": [
+      "case",
+      "ecapa",
+      "titanet"
+    ],
+    "tiny_second_s_threshold_s": 3.0,
+    "switch_rate_per_min_p50": {
+      "case": 10.604453870625662,
+      "ecapa": 10.604453870625662,
+      "titanet": 10.604453870625662
+    },
+    "switch_rate_per_min_p90": {
+      "case": 20.634270523483053,
+      "ecapa": 20.634270523483053,
+      "titanet": 20.634270523483053
+    },
+    "k1_count": {
+      "case": 0,
+      "ecapa": 1,
+      "titanet": 1
+    },
+    "tiny_second_count": {
+      "case": 4,
+      "ecapa": 3,
+      "titanet": 3
+    }
+  },
+  "clips": [
+    {
+      "clip_id": "-POaWp9_UaM_call000",
+      "video_id": "-POaWp9_UaM",
+      "call_index": 0,
+      "offset_s": 68.72408041150472,
+      "clip_duration_s": 145.92602899999935,
+      "diarized_duration_s": 143.932,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 77.0499999999999,
+            "B": 0.6000000000000014,
+            "C": 28.00000000000005
+          },
+          "raw_speaker_used_s": {
+            "A": 29.999999999999996,
+            "B": 0.6,
+            "C": 28.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 77.0499999999999,
+            "S1": 28.60000000000005
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 9.170997415446184
+        },
+        "ecapa": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 77.0499999999999,
+            "B": 0.6000000000000014,
+            "C": 28.00000000000005
+          },
+          "raw_speaker_used_s": {
+            "A": 29.999999999999996,
+            "B": 0.6,
+            "C": 28.0
+          },
+          "raw_speaker_too_short": [
+            "B"
+          ],
+          "canonical_mapping": {
+            "A": "S0",
+            "C": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 77.64999999999989,
+            "S1": 28.00000000000005
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 8.33727037767835
+        },
+        "titanet": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 77.0499999999999,
+            "B": 0.6000000000000014,
+            "C": 28.00000000000005
+          },
+          "raw_speaker_used_s": {
+            "A": 29.999999999999996,
+            "B": 0.6,
+            "C": 28.0
+          },
+          "raw_speaker_too_short": [
+            "B"
+          ],
+          "canonical_mapping": {
+            "A": "S0",
+            "C": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 77.64999999999989,
+            "S1": 28.00000000000005
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 8.33727037767835
+        }
+      }
+    },
+    {
+      "clip_id": "-POaWp9_UaM_call002",
+      "video_id": "-POaWp9_UaM",
+      "call_index": 2,
+      "offset_s": 352.591943,
+      "clip_duration_s": 52.35006299999998,
+      "diarized_duration_s": 51.538,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 25.09999999999999,
+            "B": 15.250000000000009
+          },
+          "raw_speaker_used_s": {
+            "A": 25.099999999999998,
+            "B": 15.250000000000002
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 25.09999999999999,
+            "S1": 15.250000000000009
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 11.64189530055493
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 25.09999999999999,
+            "B": 15.250000000000009
+          },
+          "raw_speaker_used_s": {
+            "A": 25.099999999999998,
+            "B": 15.250000000000002
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 25.09999999999999,
+            "S1": 15.250000000000009
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 11.64189530055493
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 25.09999999999999,
+            "B": 15.250000000000009
+          },
+          "raw_speaker_used_s": {
+            "A": 25.099999999999998,
+            "B": 15.250000000000002
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 25.09999999999999,
+            "S1": 15.250000000000009
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 11.64189530055493
+        }
+      }
+    },
+    {
+      "clip_id": "-POaWp9_UaM_call003",
+      "video_id": "-POaWp9_UaM",
+      "call_index": 3,
+      "offset_s": 406.141671,
+      "clip_duration_s": 277.2291660000001,
+      "diarized_duration_s": 276.988,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 19.099999999999945,
+            "B": 157.3000000000001
+          },
+          "raw_speaker_used_s": {
+            "A": 19.099999999999998,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 19.099999999999945,
+            "S0": 157.3000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 3.6824699987003044
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 19.099999999999945,
+            "B": 157.3000000000001
+          },
+          "raw_speaker_used_s": {
+            "A": 19.099999999999998,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 19.099999999999945,
+            "S0": 157.3000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 3.6824699987003044
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 19.099999999999945,
+            "B": 157.3000000000001
+          },
+          "raw_speaker_used_s": {
+            "A": 19.099999999999998,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 19.099999999999945,
+            "S0": 157.3000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 3.6824699987003044
+        }
+      }
+    },
+    {
+      "clip_id": "CfMJ01KP_ns_call001",
+      "video_id": "CfMJ01KP_ns",
+      "call_index": 1,
+      "offset_s": 198.93083,
+      "clip_duration_s": 436.42743299999995,
+      "diarized_duration_s": 435.254,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 177.60000000000008,
+            "B": 199.09999999999974
+          },
+          "raw_speaker_used_s": {
+            "A": 30.000000000000004,
+            "B": 30.000000000000004
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 177.60000000000008,
+            "S0": 199.09999999999974
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 13.233652074420913
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 177.60000000000008,
+            "B": 199.09999999999974
+          },
+          "raw_speaker_used_s": {
+            "A": 30.000000000000004,
+            "B": 30.000000000000004
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 177.60000000000008,
+            "S0": 199.09999999999974
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 13.233652074420913
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 177.60000000000008,
+            "B": 199.09999999999974
+          },
+          "raw_speaker_used_s": {
+            "A": 30.000000000000004,
+            "B": 30.000000000000004
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 177.60000000000008,
+            "S0": 199.09999999999974
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 13.233652074420913
+        }
+      }
+    },
+    {
+      "clip_id": "CfMJ01KP_ns_call004",
+      "video_id": "CfMJ01KP_ns",
+      "call_index": 4,
+      "offset_s": 1539.347802,
+      "clip_duration_s": 692.5620630000001,
+      "diarized_duration_s": 691.7679999999999,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 240.35000000000065,
+            "B": 357.1000000000001
+          },
+          "raw_speaker_used_s": {
+            "A": 29.999999999999993,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 240.35000000000065,
+            "S0": 357.1000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 7.112211030287611
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 240.35000000000065,
+            "B": 357.1000000000001
+          },
+          "raw_speaker_used_s": {
+            "A": 29.999999999999993,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 240.35000000000065,
+            "S0": 357.1000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 7.112211030287611
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 240.35000000000065,
+            "B": 357.1000000000001
+          },
+          "raw_speaker_used_s": {
+            "A": 29.999999999999993,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 240.35000000000065,
+            "S0": 357.1000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 7.112211030287611
+        }
+      }
+    },
+    {
+      "clip_id": "CfMJ01KP_ns_call005",
+      "video_id": "CfMJ01KP_ns",
+      "call_index": 5,
+      "offset_s": 2232.687191,
+      "clip_duration_s": 421.5761950000001,
+      "diarized_duration_s": 419.20799999999997,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 2.4499999999999984,
+            "B": 212.25,
+            "C": 116.90000000000002
+          },
+          "raw_speaker_used_s": {
+            "A": 2.45,
+            "B": 30.000000000000004,
+            "C": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 119.35000000000002,
+            "S0": 212.25
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 10.448273887902904
+        },
+        "ecapa": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 2.4499999999999984,
+            "B": 212.25,
+            "C": 116.90000000000002
+          },
+          "raw_speaker_used_s": {
+            "A": 2.45,
+            "B": 30.000000000000004,
+            "C": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 119.35000000000002,
+            "S0": 212.25
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 10.448273887902904
+        },
+        "titanet": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 2.4499999999999984,
+            "B": 212.25,
+            "C": 116.90000000000002
+          },
+          "raw_speaker_used_s": {
+            "A": 2.45,
+            "B": 30.000000000000004,
+            "C": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 119.35000000000002,
+            "S0": 212.25
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 10.448273887902904
+        }
+      }
+    },
+    {
+      "clip_id": "D4uiHjHW4AU_call001",
+      "video_id": "D4uiHjHW4AU",
+      "call_index": 1,
+      "offset_s": 449.234371,
+      "clip_duration_s": 161.99961499999995,
+      "diarized_duration_s": 161.478,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 89.15000000000005,
+            "B": 21.700000000000003
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 21.7
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 89.15000000000005,
+            "S1": 21.700000000000003
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 6.688217590012262
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 89.15000000000005,
+            "B": 21.700000000000003
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 21.7
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 89.15000000000005,
+            "S1": 21.700000000000003
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 6.688217590012262
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 89.15000000000005,
+            "B": 21.700000000000003
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 21.7
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 89.15000000000005,
+            "S1": 21.700000000000003
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 6.688217590012262
+        }
+      }
+    },
+    {
+      "clip_id": "D4uiHjHW4AU_call002",
+      "video_id": "D4uiHjHW4AU",
+      "call_index": 2,
+      "offset_s": 718.609824,
+      "clip_duration_s": 30.42092500000001,
+      "diarized_duration_s": 29.305999999999997,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 18.15,
+            "B": 3.099999999999999
+          },
+          "raw_speaker_used_s": {
+            "A": 18.150000000000002,
+            "B": 3.0999999999999996
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 18.15,
+            "S1": 3.099999999999999
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 8.189449259537296
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 18.15,
+            "B": 3.099999999999999
+          },
+          "raw_speaker_used_s": {
+            "A": 18.150000000000002,
+            "B": 3.0999999999999996
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 18.15,
+            "S1": 3.099999999999999
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 8.189449259537296
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 18.15,
+            "B": 3.099999999999999
+          },
+          "raw_speaker_used_s": {
+            "A": 18.150000000000002,
+            "B": 3.0999999999999996
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 18.15,
+            "S1": 3.099999999999999
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 8.189449259537296
+        }
+      }
+    },
+    {
+      "clip_id": "D4uiHjHW4AU_call004",
+      "video_id": "D4uiHjHW4AU",
+      "call_index": 4,
+      "offset_s": 827.465032,
+      "clip_duration_s": 145.71989100000008,
+      "diarized_duration_s": 144.1,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 53.54999999999998,
+            "B": 63.79999999999997
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 53.54999999999998,
+            "S0": 63.79999999999997
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 7.911172796668981
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 53.54999999999998,
+            "B": 63.79999999999997
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 53.54999999999998,
+            "S0": 63.79999999999997
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 7.911172796668981
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 53.54999999999998,
+            "B": 63.79999999999997
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 53.54999999999998,
+            "S0": 63.79999999999997
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 7.911172796668981
+        }
+      }
+    },
+    {
+      "clip_id": "D4uiHjHW4AU_call006",
+      "video_id": "D4uiHjHW4AU",
+      "call_index": 6,
+      "offset_s": 1067.031715,
+      "clip_duration_s": 195.64909599999987,
+      "diarized_duration_s": 195.588,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 47.750000000000036,
+            "B": 104.9
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 30.000000000000004
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 47.750000000000036,
+            "S0": 104.9
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 7.055647585741457
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 47.750000000000036,
+            "B": 104.9
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 30.000000000000004
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 47.750000000000036,
+            "S0": 104.9
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 7.055647585741457
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 47.750000000000036,
+            "B": 104.9
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 30.000000000000004
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 47.750000000000036,
+            "S0": 104.9
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 7.055647585741457
+        }
+      }
+    },
+    {
+      "clip_id": "D4uiHjHW4AU_call007",
+      "video_id": "D4uiHjHW4AU",
+      "call_index": 7,
+      "offset_s": 1266.523768,
+      "clip_duration_s": 501.38983299999995,
+      "diarized_duration_s": 501.08,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 115.90000000000009,
+            "B": 232.89999999999995
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 115.90000000000009,
+            "S0": 232.89999999999995
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 4.669912987946037
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 115.90000000000009,
+            "B": 232.89999999999995
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 115.90000000000009,
+            "S0": 232.89999999999995
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 4.669912987946037
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 115.90000000000009,
+            "B": 232.89999999999995
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 115.90000000000009,
+            "S0": 232.89999999999995
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 4.669912987946037
+        }
+      }
+    },
+    {
+      "clip_id": "D4uiHjHW4AU_call008",
+      "video_id": "D4uiHjHW4AU",
+      "call_index": 8,
+      "offset_s": 1862.660431,
+      "clip_duration_s": 111.35622599999988,
+      "diarized_duration_s": 111.13,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 16.800000000000008,
+            "B": 49.55000000000001
+          },
+          "raw_speaker_used_s": {
+            "A": 16.8,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 16.800000000000008,
+            "S0": 49.55000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 8.098623234050212
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 16.800000000000008,
+            "B": 49.55000000000001
+          },
+          "raw_speaker_used_s": {
+            "A": 16.8,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 16.800000000000008,
+            "S0": 49.55000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 8.098623234050212
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 16.800000000000008,
+            "B": 49.55000000000001
+          },
+          "raw_speaker_used_s": {
+            "A": 16.8,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 16.800000000000008,
+            "S0": 49.55000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 8.098623234050212
+        }
+      }
+    },
+    {
+      "clip_id": "D4uiHjHW4AU_call010",
+      "video_id": "D4uiHjHW4AU",
+      "call_index": 10,
+      "offset_s": 2066.759325,
+      "clip_duration_s": 262.457042,
+      "diarized_duration_s": 261.912,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 3.899999999999999,
+            "B": 134.2,
+            "C": 24.549999999999955
+          },
+          "raw_speaker_used_s": {
+            "A": 3.9000000000000004,
+            "B": 30.0,
+            "C": 24.55
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 28.449999999999953,
+            "S0": 134.2
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 2.9780995143406948
+        },
+        "ecapa": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 3.899999999999999,
+            "B": 134.2,
+            "C": 24.549999999999955
+          },
+          "raw_speaker_used_s": {
+            "A": 3.9000000000000004,
+            "B": 30.0,
+            "C": 24.55
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 28.449999999999953,
+            "S0": 134.2
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 2.9780995143406948
+        },
+        "titanet": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 3.899999999999999,
+            "B": 134.2,
+            "C": 24.549999999999955
+          },
+          "raw_speaker_used_s": {
+            "A": 3.9000000000000004,
+            "B": 30.0,
+            "C": 24.55
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 28.449999999999953,
+            "S0": 134.2
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 2.9780995143406948
+        }
+      }
+    },
+    {
+      "clip_id": "D4uiHjHW4AU_call014",
+      "video_id": "D4uiHjHW4AU",
+      "call_index": 14,
+      "offset_s": 2633.427392,
+      "clip_duration_s": 38.32138099999975,
+      "diarized_duration_s": 37.832,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 13.50000000000001,
+            "B": 14.399999999999999
+          },
+          "raw_speaker_used_s": {
+            "A": 13.5,
+            "B": 14.4
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 13.50000000000001,
+            "S0": 14.399999999999999
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 6.343835906111228
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 13.50000000000001,
+            "B": 14.399999999999999
+          },
+          "raw_speaker_used_s": {
+            "A": 13.5,
+            "B": 14.4
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 13.50000000000001,
+            "S0": 14.399999999999999
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 6.343835906111228
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 13.50000000000001,
+            "B": 14.399999999999999
+          },
+          "raw_speaker_used_s": {
+            "A": 13.5,
+            "B": 14.4
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 13.50000000000001,
+            "S0": 14.399999999999999
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 6.343835906111228
+        }
+      }
+    },
+    {
+      "clip_id": "D4uiHjHW4AU_call016",
+      "video_id": "D4uiHjHW4AU",
+      "call_index": 16,
+      "offset_s": 2790.308434,
+      "clip_duration_s": 27.61658299999999,
+      "diarized_duration_s": 26.55000000000001,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 5.600000000000004,
+            "B": 11.6
+          },
+          "raw_speaker_used_s": {
+            "A": 5.6,
+            "B": 11.600000000000001
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 5.600000000000004,
+            "S0": 11.6
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 24.858757062146882
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 5.600000000000004,
+            "B": 11.6
+          },
+          "raw_speaker_used_s": {
+            "A": 5.6,
+            "B": 11.600000000000001
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 5.600000000000004,
+            "S0": 11.6
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 24.858757062146882
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 5.600000000000004,
+            "B": 11.6
+          },
+          "raw_speaker_used_s": {
+            "A": 5.6,
+            "B": 11.600000000000001
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 5.600000000000004,
+            "S0": 11.6
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 24.858757062146882
+        }
+      }
+    },
+    {
+      "clip_id": "D4uiHjHW4AU_call018",
+      "video_id": "D4uiHjHW4AU",
+      "call_index": 18,
+      "offset_s": 2884.538967,
+      "clip_duration_s": 92.35205399999995,
+      "diarized_duration_s": 91.12200000000001,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 21.04999999999999,
+            "B": 15.900000000000002,
+            "C": 2.25
+          },
+          "raw_speaker_used_s": {
+            "A": 21.05,
+            "B": 15.9,
+            "C": 2.25
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 21.04999999999999,
+            "S1": 18.150000000000002
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 14.48607361559228
+        },
+        "ecapa": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 21.04999999999999,
+            "B": 15.900000000000002,
+            "C": 2.25
+          },
+          "raw_speaker_used_s": {
+            "A": 21.05,
+            "B": 15.9,
+            "C": 2.25
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 21.04999999999999,
+            "S1": 18.150000000000002
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 14.48607361559228
+        },
+        "titanet": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 21.04999999999999,
+            "B": 15.900000000000002,
+            "C": 2.25
+          },
+          "raw_speaker_used_s": {
+            "A": 21.05,
+            "B": 15.9,
+            "C": 2.25
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 21.04999999999999,
+            "S1": 18.150000000000002
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 14.48607361559228
+        }
+      }
+    },
+    {
+      "clip_id": "DEt3IRqqUVs_call001",
+      "video_id": "DEt3IRqqUVs",
+      "call_index": 1,
+      "offset_s": 48.254066,
+      "clip_duration_s": 77.525507,
+      "diarized_duration_s": 77.184,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 35.45000000000002,
+            "B": 1.6499999999999995,
+            "C": 32.54999999999999
+          },
+          "raw_speaker_used_s": {
+            "A": 29.999999999999993,
+            "B": 1.65,
+            "C": 30.000000000000004
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 35.45000000000002,
+            "S1": 34.19999999999999
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 16.324626865671643
+        },
+        "ecapa": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 35.45000000000002,
+            "B": 1.6499999999999995,
+            "C": 32.54999999999999
+          },
+          "raw_speaker_used_s": {
+            "A": 29.999999999999993,
+            "B": 1.65,
+            "C": 30.000000000000004
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 35.45000000000002,
+            "S1": 34.19999999999999
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 16.324626865671643
+        },
+        "titanet": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 35.45000000000002,
+            "B": 1.6499999999999995,
+            "C": 32.54999999999999
+          },
+          "raw_speaker_used_s": {
+            "A": 29.999999999999993,
+            "B": 1.65,
+            "C": 30.000000000000004
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 35.45000000000002,
+            "S1": 34.19999999999999
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 16.324626865671643
+        }
+      }
+    },
+    {
+      "clip_id": "DEt3IRqqUVs_call002",
+      "video_id": "DEt3IRqqUVs",
+      "call_index": 2,
+      "offset_s": 125.779573,
+      "clip_duration_s": 46.529117000000014,
+      "diarized_duration_s": 45.264,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 7.8,
+            "B": 17.550000000000004
+          },
+          "raw_speaker_used_s": {
+            "A": 7.800000000000001,
+            "B": 17.55
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 7.8,
+            "S0": 17.550000000000004
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 10.604453870625662
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 7.8,
+            "B": 17.550000000000004
+          },
+          "raw_speaker_used_s": {
+            "A": 7.800000000000001,
+            "B": 17.55
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 7.8,
+            "S0": 17.550000000000004
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 10.604453870625662
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 7.8,
+            "B": 17.550000000000004
+          },
+          "raw_speaker_used_s": {
+            "A": 7.800000000000001,
+            "B": 17.55
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 7.8,
+            "S0": 17.550000000000004
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 10.604453870625662
+        }
+      }
+    },
+    {
+      "clip_id": "DEt3IRqqUVs_call004",
+      "video_id": "DEt3IRqqUVs",
+      "call_index": 4,
+      "offset_s": 186.376347,
+      "clip_duration_s": 8.171654999999987,
+      "diarized_duration_s": 7.8999999999999995,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 6.6,
+            "B": 0.9999999999999998
+          },
+          "raw_speaker_used_s": {
+            "A": 6.6,
+            "B": 1.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 6.6,
+            "S1": 0.9999999999999998
+          },
+          "tiny_second_speaker": true,
+          "switch_rate_per_min": 15.18987341772152
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 6.6,
+            "B": 0.9999999999999998
+          },
+          "raw_speaker_used_s": {
+            "A": 6.6,
+            "B": 1.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 6.6,
+            "S1": 0.9999999999999998
+          },
+          "tiny_second_speaker": true,
+          "switch_rate_per_min": 15.18987341772152
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 6.6,
+            "B": 0.9999999999999998
+          },
+          "raw_speaker_used_s": {
+            "A": 6.6,
+            "B": 1.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 6.6,
+            "S1": 0.9999999999999998
+          },
+          "tiny_second_speaker": true,
+          "switch_rate_per_min": 15.18987341772152
+        }
+      }
+    },
+    {
+      "clip_id": "DEt3IRqqUVs_call005",
+      "video_id": "DEt3IRqqUVs",
+      "call_index": 5,
+      "offset_s": 199.845601,
+      "clip_duration_s": 42.382249,
+      "diarized_duration_s": 42.220000000000006,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 11.750000000000004,
+            "B": 29.25
+          },
+          "raw_speaker_used_s": {
+            "A": 11.750000000000002,
+            "B": 29.25
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 11.750000000000004,
+            "S0": 29.25
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 12.7901468498342
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 11.750000000000004,
+            "B": 29.25
+          },
+          "raw_speaker_used_s": {
+            "A": 11.750000000000002,
+            "B": 29.25
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 11.750000000000004,
+            "S0": 29.25
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 12.7901468498342
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 11.750000000000004,
+            "B": 29.25
+          },
+          "raw_speaker_used_s": {
+            "A": 11.750000000000002,
+            "B": 29.25
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 11.750000000000004,
+            "S0": 29.25
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 12.7901468498342
+        }
+      }
+    },
+    {
+      "clip_id": "DEt3IRqqUVs_call006",
+      "video_id": "DEt3IRqqUVs",
+      "call_index": 6,
+      "offset_s": 252.229475,
+      "clip_duration_s": 80.43613300000001,
+      "diarized_duration_s": 80.116,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 31.45000000000003,
+            "B": 30.649999999999977
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 29.999999999999996
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 31.45000000000003,
+            "S1": 30.649999999999977
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 24.714164461530782
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 31.45000000000003,
+            "B": 30.649999999999977
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 29.999999999999996
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 31.45000000000003,
+            "S1": 30.649999999999977
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 24.714164461530782
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 31.45000000000003,
+            "B": 30.649999999999977
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 29.999999999999996
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 31.45000000000003,
+            "S1": 30.649999999999977
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 24.714164461530782
+        }
+      }
+    },
+    {
+      "clip_id": "DEt3IRqqUVs_call007",
+      "video_id": "DEt3IRqqUVs",
+      "call_index": 7,
+      "offset_s": 335.175209,
+      "clip_duration_s": 99.46063200000003,
+      "diarized_duration_s": 98.978,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 61.64999999999999,
+            "B": 2.599999999999999,
+            "C": 25.300000000000004
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 2.6,
+            "C": 25.3
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 61.64999999999999,
+            "S1": 27.900000000000002
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 7.274343793570289
+        },
+        "ecapa": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 61.64999999999999,
+            "B": 2.599999999999999,
+            "C": 25.300000000000004
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 2.6,
+            "C": 25.3
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 61.64999999999999,
+            "S1": 27.900000000000002
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 7.274343793570289
+        },
+        "titanet": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 61.64999999999999,
+            "B": 2.599999999999999,
+            "C": 25.300000000000004
+          },
+          "raw_speaker_used_s": {
+            "A": 30.0,
+            "B": 2.6,
+            "C": 25.3
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 61.64999999999999,
+            "S1": 27.900000000000002
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 7.274343793570289
+        }
+      }
+    },
+    {
+      "clip_id": "DEt3IRqqUVs_call008",
+      "video_id": "DEt3IRqqUVs",
+      "call_index": 8,
+      "offset_s": 437.732687,
+      "clip_duration_s": 136.04712,
+      "diarized_duration_s": 134.374,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 1.4500000000000008,
+            "B": 58.15000000000002,
+            "C": 49.750000000000014
+          },
+          "raw_speaker_used_s": {
+            "A": 1.4500000000000002,
+            "B": 30.0,
+            "C": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 51.20000000000001,
+            "S0": 58.15000000000002
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 11.162873770223406
+        },
+        "ecapa": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 1.4500000000000008,
+            "B": 58.15000000000002,
+            "C": 49.750000000000014
+          },
+          "raw_speaker_used_s": {
+            "A": 1.4500000000000002,
+            "B": 30.0,
+            "C": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 51.20000000000001,
+            "S0": 58.15000000000002
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 11.162873770223406
+        },
+        "titanet": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 1.4500000000000008,
+            "B": 58.15000000000002,
+            "C": 49.750000000000014
+          },
+          "raw_speaker_used_s": {
+            "A": 1.4500000000000002,
+            "B": 30.0,
+            "C": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 51.20000000000001,
+            "S0": 58.15000000000002
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 11.162873770223406
+        }
+      }
+    },
+    {
+      "clip_id": "DEt3IRqqUVs_call010",
+      "video_id": "DEt3IRqqUVs",
+      "call_index": 10,
+      "offset_s": 602.403604,
+      "clip_duration_s": 205.59624500000007,
+      "diarized_duration_s": 205.262,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 1.6499999999999997,
+            "B": 148.29999999999998,
+            "C": 26.749999999999986
+          },
+          "raw_speaker_used_s": {
+            "A": 1.65,
+            "B": 29.999999999999996,
+            "C": 26.75
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 28.399999999999984,
+            "S0": 148.29999999999998
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 3.800021436018357
+        },
+        "ecapa": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 1.6499999999999997,
+            "B": 148.29999999999998,
+            "C": 26.749999999999986
+          },
+          "raw_speaker_used_s": {
+            "A": 1.65,
+            "B": 29.999999999999996,
+            "C": 26.75
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 28.399999999999984,
+            "S0": 148.29999999999998
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 3.800021436018357
+        },
+        "titanet": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C"
+          ],
+          "raw_speaker_total_s": {
+            "A": 1.6499999999999997,
+            "B": 148.29999999999998,
+            "C": 26.749999999999986
+          },
+          "raw_speaker_used_s": {
+            "A": 1.65,
+            "B": 29.999999999999996,
+            "C": 26.75
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "C": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 28.399999999999984,
+            "S0": 148.29999999999998
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 3.800021436018357
+        }
+      }
+    },
+    {
+      "clip_id": "Qa-ppZFUp0g_call000",
+      "video_id": "Qa-ppZFUp0g",
+      "call_index": 0,
+      "offset_s": 62.001113,
+      "clip_duration_s": 38.013112,
+      "diarized_duration_s": 37.954,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 5.600000000000001,
+            "B": 30.950000000000003
+          },
+          "raw_speaker_used_s": {
+            "A": 5.6,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 5.600000000000001,
+            "S0": 30.950000000000003
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 20.551193550086946
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 5.600000000000001,
+            "B": 30.950000000000003
+          },
+          "raw_speaker_used_s": {
+            "A": 5.6,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 5.600000000000001,
+            "S0": 30.950000000000003
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 20.551193550086946
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 5.600000000000001,
+            "B": 30.950000000000003
+          },
+          "raw_speaker_used_s": {
+            "A": 5.6,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 5.600000000000001,
+            "S0": 30.950000000000003
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 20.551193550086946
+        }
+      }
+    },
+    {
+      "clip_id": "Qa-ppZFUp0g_call002",
+      "video_id": "Qa-ppZFUp0g",
+      "call_index": 2,
+      "offset_s": 219.621669,
+      "clip_duration_s": 100.301356,
+      "diarized_duration_s": 100.28,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 4,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "raw_speaker_total_s": {
+            "A": 1.9499999999999993,
+            "B": 88.75,
+            "C": 3.1499999999999844,
+            "D": 0.8500000000000085
+          },
+          "raw_speaker_used_s": {
+            "A": 1.9500000000000002,
+            "B": 30.0,
+            "C": 3.1500000000000004,
+            "D": 0.8500000000000001
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "C": "S1",
+            "D": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 5.949999999999992,
+            "S0": 88.75
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 7.778220981252493
+        },
+        "ecapa": {
+          "raw_speaker_count": 4,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "raw_speaker_total_s": {
+            "A": 1.9499999999999993,
+            "B": 88.75,
+            "C": 3.1499999999999844,
+            "D": 0.8500000000000085
+          },
+          "raw_speaker_used_s": {
+            "A": 1.9500000000000002,
+            "B": 30.0,
+            "C": 3.1500000000000004,
+            "D": 0.8500000000000001
+          },
+          "raw_speaker_too_short": [
+            "D"
+          ],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "C": "S1",
+            "D": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 5.099999999999984,
+            "S0": 89.60000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 7.778220981252493
+        },
+        "titanet": {
+          "raw_speaker_count": 4,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "raw_speaker_total_s": {
+            "A": 1.9499999999999993,
+            "B": 88.75,
+            "C": 3.1499999999999844,
+            "D": 0.8500000000000085
+          },
+          "raw_speaker_used_s": {
+            "A": 1.9500000000000002,
+            "B": 30.0,
+            "C": 3.1500000000000004,
+            "D": 0.8500000000000001
+          },
+          "raw_speaker_too_short": [
+            "D"
+          ],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "C": "S1",
+            "D": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 5.099999999999984,
+            "S0": 89.60000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 7.778220981252493
+        }
+      }
+    },
+    {
+      "clip_id": "Qa-ppZFUp0g_call010",
+      "video_id": "Qa-ppZFUp0g",
+      "call_index": 10,
+      "offset_s": 871.636031,
+      "clip_duration_s": 12.382476999999994,
+      "diarized_duration_s": 12.3,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 10.75,
+            "B": 0.75
+          },
+          "raw_speaker_used_s": {
+            "A": 10.75,
+            "B": 0.75
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 10.75,
+            "S1": 0.75
+          },
+          "tiny_second_speaker": true,
+          "switch_rate_per_min": 9.75609756097561
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 10.75,
+            "B": 0.75
+          },
+          "raw_speaker_used_s": {
+            "A": 10.75,
+            "B": 0.75
+          },
+          "raw_speaker_too_short": [
+            "B"
+          ],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 1,
+          "canonical_speaker_total_s": {
+            "S0": 11.5
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 0.0
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 10.75,
+            "B": 0.75
+          },
+          "raw_speaker_used_s": {
+            "A": 10.75,
+            "B": 0.75
+          },
+          "raw_speaker_too_short": [
+            "B"
+          ],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 1,
+          "canonical_speaker_total_s": {
+            "S0": 11.5
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 0.0
+        }
+      }
+    },
+    {
+      "clip_id": "Qa-ppZFUp0g_call011",
+      "video_id": "Qa-ppZFUp0g",
+      "call_index": 11,
+      "offset_s": 884.309478,
+      "clip_duration_s": 28.29134399999998,
+      "diarized_duration_s": 28.55,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "@",
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "@": 0.1999999999999993,
+            "A": 10.2,
+            "B": 13.500000000000002
+          },
+          "raw_speaker_used_s": {
+            "@": 0.0,
+            "A": 10.2,
+            "B": 13.441374999999999
+          },
+          "raw_speaker_too_short": [
+            "@"
+          ],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "@": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 10.2,
+            "S0": 13.700000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 18.914185639229423
+        },
+        "ecapa": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "@",
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "@": 0.1999999999999993,
+            "A": 10.2,
+            "B": 13.500000000000002
+          },
+          "raw_speaker_used_s": {
+            "@": 0.0,
+            "A": 10.2,
+            "B": 13.441374999999999
+          },
+          "raw_speaker_too_short": [
+            "@"
+          ],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "@": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 10.2,
+            "S0": 13.700000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 18.914185639229423
+        },
+        "titanet": {
+          "raw_speaker_count": 3,
+          "raw_speakers": [
+            "@",
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "@": 0.1999999999999993,
+            "A": 10.2,
+            "B": 13.500000000000002
+          },
+          "raw_speaker_used_s": {
+            "@": 0.0,
+            "A": 10.2,
+            "B": 13.441374999999999
+          },
+          "raw_speaker_too_short": [
+            "@"
+          ],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0",
+            "@": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 10.2,
+            "S0": 13.700000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 18.914185639229423
+        }
+      }
+    },
+    {
+      "clip_id": "Qa-ppZFUp0g_call012",
+      "video_id": "Qa-ppZFUp0g",
+      "call_index": 12,
+      "offset_s": 916.406679,
+      "clip_duration_s": 96.36285199999998,
+      "diarized_duration_s": 96.25999999999999,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 15.149999999999991,
+            "B": 70.44999999999999
+          },
+          "raw_speaker_used_s": {
+            "A": 15.15,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 15.149999999999991,
+            "S0": 70.44999999999999
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 9.349677955537087
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 15.149999999999991,
+            "B": 70.44999999999999
+          },
+          "raw_speaker_used_s": {
+            "A": 15.15,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 15.149999999999991,
+            "S0": 70.44999999999999
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 9.349677955537087
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 15.149999999999991,
+            "B": 70.44999999999999
+          },
+          "raw_speaker_used_s": {
+            "A": 15.15,
+            "B": 30.0
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 15.149999999999991,
+            "S0": 70.44999999999999
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 9.349677955537087
+        }
+      }
+    },
+    {
+      "clip_id": "Qa-ppZFUp0g_call013",
+      "video_id": "Qa-ppZFUp0g",
+      "call_index": 13,
+      "offset_s": 1033.229936,
+      "clip_duration_s": 28.847834000000148,
+      "diarized_duration_s": 27.95,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 20.049999999999997,
+            "B": 5.1
+          },
+          "raw_speaker_used_s": {
+            "A": 20.05,
+            "B": 5.1000000000000005
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 20.049999999999997,
+            "S1": 5.1
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 17.173524150268335
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 20.049999999999997,
+            "B": 5.1
+          },
+          "raw_speaker_used_s": {
+            "A": 20.05,
+            "B": 5.1000000000000005
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 20.049999999999997,
+            "S1": 5.1
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 17.173524150268335
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 20.049999999999997,
+            "B": 5.1
+          },
+          "raw_speaker_used_s": {
+            "A": 20.05,
+            "B": 5.1000000000000005
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 20.049999999999997,
+            "S1": 5.1
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 17.173524150268335
+        }
+      }
+    },
+    {
+      "clip_id": "Qa-ppZFUp0g_call016",
+      "video_id": "Qa-ppZFUp0g",
+      "call_index": 16,
+      "offset_s": 1272.536299,
+      "clip_duration_s": 14.67509999999993,
+      "diarized_duration_s": 14.500000000000002,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 6.15,
+            "B": 5.050000000000001
+          },
+          "raw_speaker_used_s": {
+            "A": 6.15,
+            "B": 5.05
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 6.15,
+            "S1": 5.050000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 20.68965517241379
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 6.15,
+            "B": 5.050000000000001
+          },
+          "raw_speaker_used_s": {
+            "A": 6.15,
+            "B": 5.05
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 6.15,
+            "S1": 5.050000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 20.68965517241379
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 6.15,
+            "B": 5.050000000000001
+          },
+          "raw_speaker_used_s": {
+            "A": 6.15,
+            "B": 5.05
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 6.15,
+            "S1": 5.050000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 20.68965517241379
+        }
+      }
+    },
+    {
+      "clip_id": "Qa-ppZFUp0g_call021",
+      "video_id": "Qa-ppZFUp0g",
+      "call_index": 21,
+      "offset_s": 1424.611568,
+      "clip_duration_s": 36.48071699999991,
+      "diarized_duration_s": 36.374,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 15.149999999999999,
+            "B": 19.95000000000001
+          },
+          "raw_speaker_used_s": {
+            "A": 15.149999999999999,
+            "B": 19.950000000000003
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 15.149999999999999,
+            "S0": 19.95000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 18.14482872381371
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 15.149999999999999,
+            "B": 19.95000000000001
+          },
+          "raw_speaker_used_s": {
+            "A": 15.149999999999999,
+            "B": 19.950000000000003
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 15.149999999999999,
+            "S0": 19.95000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 18.14482872381371
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 15.149999999999999,
+            "B": 19.95000000000001
+          },
+          "raw_speaker_used_s": {
+            "A": 15.149999999999999,
+            "B": 19.950000000000003
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 15.149999999999999,
+            "S0": 19.95000000000001
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 18.14482872381371
+        }
+      }
+    },
+    {
+      "clip_id": "Qa-ppZFUp0g_call022",
+      "video_id": "Qa-ppZFUp0g",
+      "call_index": 22,
+      "offset_s": 1461.280584,
+      "clip_duration_s": 10.235269000000017,
+      "diarized_duration_s": 10.1,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 8.9,
+            "B": 1.0999999999999996
+          },
+          "raw_speaker_used_s": {
+            "A": 8.9,
+            "B": 1.1
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 8.9,
+            "S1": 1.0999999999999996
+          },
+          "tiny_second_speaker": true,
+          "switch_rate_per_min": 23.762376237623762
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 8.9,
+            "B": 1.0999999999999996
+          },
+          "raw_speaker_used_s": {
+            "A": 8.9,
+            "B": 1.1
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 8.9,
+            "S1": 1.0999999999999996
+          },
+          "tiny_second_speaker": true,
+          "switch_rate_per_min": 23.762376237623762
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 8.9,
+            "B": 1.0999999999999996
+          },
+          "raw_speaker_used_s": {
+            "A": 8.9,
+            "B": 1.1
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S0",
+            "B": "S1"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 8.9,
+            "S1": 1.0999999999999996
+          },
+          "tiny_second_speaker": true,
+          "switch_rate_per_min": 23.762376237623762
+        }
+      }
+    },
+    {
+      "clip_id": "Qa-ppZFUp0g_call023",
+      "video_id": "Qa-ppZFUp0g",
+      "call_index": 23,
+      "offset_s": 1471.628836,
+      "clip_duration_s": 13.430766999999832,
+      "diarized_duration_s": 13.150000000000002,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 1.4000000000000001,
+            "B": 11.100000000000003
+          },
+          "raw_speaker_used_s": {
+            "A": 1.4,
+            "B": 11.100000000000001
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 1.4000000000000001,
+            "S0": 11.100000000000003
+          },
+          "tiny_second_speaker": true,
+          "switch_rate_per_min": 13.688212927756652
+        },
+        "ecapa": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 1.4000000000000001,
+            "B": 11.100000000000003
+          },
+          "raw_speaker_used_s": {
+            "A": 1.4,
+            "B": 11.100000000000001
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 1.4000000000000001,
+            "S0": 11.100000000000003
+          },
+          "tiny_second_speaker": true,
+          "switch_rate_per_min": 13.688212927756652
+        },
+        "titanet": {
+          "raw_speaker_count": 2,
+          "raw_speakers": [
+            "A",
+            "B"
+          ],
+          "raw_speaker_total_s": {
+            "A": 1.4000000000000001,
+            "B": 11.100000000000003
+          },
+          "raw_speaker_used_s": {
+            "A": 1.4,
+            "B": 11.100000000000001
+          },
+          "raw_speaker_too_short": [],
+          "canonical_mapping": {
+            "A": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S1": 1.4000000000000001,
+            "S0": 11.100000000000003
+          },
+          "tiny_second_speaker": true,
+          "switch_rate_per_min": 13.688212927756652
+        }
+      }
+    },
+    {
+      "clip_id": "Qa-ppZFUp0g_call025",
+      "video_id": "Qa-ppZFUp0g",
+      "call_index": 25,
+      "offset_s": 1706.06206,
+      "clip_duration_s": 64.62865299999999,
+      "diarized_duration_s": 64.58,
+      "per_model": {
+        "case": {
+          "raw_speaker_count": 4,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "raw_speaker_total_s": {
+            "A": 1.2499999999999998,
+            "B": 0.2999999999999998,
+            "C": 44.7,
+            "D": 11.949999999999994
+          },
+          "raw_speaker_used_s": {
+            "A": 1.25,
+            "B": 0.3,
+            "C": 30.0,
+            "D": 11.95
+          },
+          "raw_speaker_too_short": [
+            "B"
+          ],
+          "canonical_mapping": {
+            "A": "S0",
+            "C": "S0",
+            "D": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 46.25,
+            "S1": 11.949999999999994
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 13.007122948281202
+        },
+        "ecapa": {
+          "raw_speaker_count": 4,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "raw_speaker_total_s": {
+            "A": 1.2499999999999998,
+            "B": 0.2999999999999998,
+            "C": 44.7,
+            "D": 11.949999999999994
+          },
+          "raw_speaker_used_s": {
+            "A": 1.25,
+            "B": 0.3,
+            "C": 30.0,
+            "D": 11.95
+          },
+          "raw_speaker_too_short": [
+            "B"
+          ],
+          "canonical_mapping": {
+            "A": "S0",
+            "C": "S0",
+            "D": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 46.25,
+            "S1": 11.949999999999994
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 13.007122948281202
+        },
+        "titanet": {
+          "raw_speaker_count": 4,
+          "raw_speakers": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "raw_speaker_total_s": {
+            "A": 1.2499999999999998,
+            "B": 0.2999999999999998,
+            "C": 44.7,
+            "D": 11.949999999999994
+          },
+          "raw_speaker_used_s": {
+            "A": 1.25,
+            "B": 0.3,
+            "C": 30.0,
+            "D": 11.95
+          },
+          "raw_speaker_too_short": [
+            "B"
+          ],
+          "canonical_mapping": {
+            "A": "S0",
+            "C": "S0",
+            "D": "S1",
+            "B": "S0"
+          },
+          "canonical_speaker_count": 2,
+          "canonical_speaker_total_s": {
+            "S0": 46.25,
+            "S1": 11.949999999999994
+          },
+          "tiny_second_speaker": false,
+          "switch_rate_per_min": 13.007122948281202
+        }
+      }
+    }
+  ]
+}
