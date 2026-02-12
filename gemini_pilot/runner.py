@@ -123,8 +123,15 @@ def _resolve_audio_inputs(
 
 
 def _make_gemini_client(*, api_key: str, timeout_s: float):
-    from google import genai
-    from google.genai import types
+    try:
+        from google import genai
+        from google.genai import types
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            "Missing `google-genai` in the current Python interpreter. "
+            "Install dependencies with `pip install -r requirements.txt` in the same interpreter/venv "
+            "you use to run this script."
+        ) from exc
 
     timeout_ms = max(1000, int(round(float(timeout_s) * 1000.0)))
     return genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=timeout_ms))
