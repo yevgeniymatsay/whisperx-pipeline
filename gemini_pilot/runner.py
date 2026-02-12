@@ -168,24 +168,11 @@ def _get_thread_gemini_client(*, api_key: str, timeout_s: float):
     return cached
 
 
-def _to_jsonable(obj: Any) -> Any:
-    if obj is None:
-        return None
-    if hasattr(obj, "model_dump"):
-        try:
-            return obj.model_dump(exclude_none=True)  # type: ignore[no-any-return]
-        except Exception:
-            return {"repr": repr(obj)}
-    if isinstance(obj, (dict, list, str, int, float, bool)):
-        return obj
-    return {"repr": repr(obj)}
-
-
 def _extract_response_text(response: Any) -> str:
     text = ""
     try:
         maybe = response.text
-        text = maybe.strip() if isinstance(maybe, str) else ""
+        text = maybe if isinstance(maybe, str) else ""
     except Exception:
         text = ""
     if text:
@@ -196,9 +183,9 @@ def _extract_response_text(response: Any) -> str:
         content = getattr(cand, "content", None)
         for part in getattr(content, "parts", []) or []:
             part_text = getattr(part, "text", None)
-            if isinstance(part_text, str) and part_text.strip():
-                parts.append(part_text.strip())
-    return "\n".join(parts).strip()
+            if isinstance(part_text, str) and part_text:
+                parts.append(part_text)
+    return "\n".join(parts)
 
 
 def _file_state_name(file_obj: Any) -> str | None:
@@ -244,7 +231,7 @@ def _run_single_model(
     max_retries: int,
     retry_backoff_s: float,
     console: Any,
-) -> tuple[str, dict[str, Any]]:
+) -> tuple[str, dict[str, str | None]]:
     last_err: BaseException | None = None
     for attempt in range(max_retries + 1):
         try:
@@ -283,20 +270,9 @@ def _run_single_model(
             response_meta = {
                 "response_id": getattr(response, "response_id", None),
                 "model_version": getattr(response, "model_version", None),
-                # Full server response for debugging/auditing (kept alongside raw text).
-                "response": _to_jsonable(response),
-                "usage_metadata": _to_jsonable(getattr(response, "usage_metadata", None)),
-                "prompt_feedback": _to_jsonable(getattr(response, "prompt_feedback", None)),
-                "request_config": {
-                    "temperature": _STRUCTURED_OUTPUT_TEMPERATURE,
-                    "response_mime_type": _STRUCTURED_OUTPUT_MIME_TYPE,
-                    "schema_version": SCHEMA_VERSION,
-                },
-                "upload_file": {
-                    "name": getattr(uploaded_file, "name", None),
-                    "uri": getattr(uploaded_file, "uri", None),
-                    "mime_type": getattr(uploaded_file, "mime_type", None),
-                },
+                "upload_file_name": getattr(uploaded_file, "name", None),
+                "upload_file_uri": getattr(uploaded_file, "uri", None),
+                "upload_file_mime_type": getattr(uploaded_file, "mime_type", None),
             }
             return response_text, response_meta
         except Exception as exc:  # noqa: BLE001
@@ -353,7 +329,7 @@ def run_pilot(args: argparse.Namespace) -> int:
                         f"cache_dir: {cache_dir}",
                     ]
                 ),
-                title="Gemini Pilot (Raw Output)",
+                title="Gemini Pilot (Responses)",
             )
         )
 
@@ -497,7 +473,6 @@ def run_pilot(args: argparse.Namespace) -> int:
                 for model in models:
                     done += 1
                     model_slug = sanitize_token(model, fallback="model")
-                    raw_path = input_dir / f"{model_slug}.raw.txt"
                     json_path = input_dir / f"{model_slug}.result.json"
                     err_path = input_dir / f"{model_slug}.error.json"
                     try:
@@ -511,7 +486,6 @@ def run_pilot(args: argparse.Namespace) -> int:
                             retry_backoff_s=float(args.retry_backoff_s),
                             console=console,
                         )
-                        raw_path.write_text((response_text or "") + "\n", encoding="utf-8")
                         payload = {
                             "status": "ok",
                             "source_id": audio_input.source_id,
@@ -520,8 +494,12 @@ def run_pilot(args: argparse.Namespace) -> int:
                             "local_path": str(audio_input.local_path),
                             "mime_type": audio_input.mime_type,
                             "model": model,
-                            "raw_text_path": str(raw_path),
-                            "response_meta": response_meta,
+                            "response_text": response_text,
+                            "response_id": response_meta.get("response_id"),
+                            "model_version": response_meta.get("model_version"),
+                            "upload_file_name": response_meta.get("upload_file_name"),
+                            "upload_file_uri": response_meta.get("upload_file_uri"),
+                            "upload_file_mime_type": response_meta.get("upload_file_mime_type"),
                         }
                         _write_json(json_path, payload)
                         results.append(
@@ -533,7 +511,7 @@ def run_pilot(args: argparse.Namespace) -> int:
                             }
                         )
                         logger.info(
-                            "OK %d/%d input=%s model=%s raw_chars=%d",
+                            "OK %d/%d input=%s model=%s response_chars=%d",
                             done,
                             total,
                             audio_input.source_id,
@@ -546,12 +524,12 @@ def run_pilot(args: argparse.Namespace) -> int:
                             if print_max_chars > 0 and len(text) > print_max_chars:
                                 truncated = (
                                     f"\n\n[dim]... truncated to {print_max_chars} chars "
-                                    f"(full output in {raw_path})[/dim]"
+                                    f"(full output in {json_path}:response_text)[/dim]"
                                 )
                                 text = text[:print_max_chars]
                             if Panel is not None:
                                 console.print(
-                                    Panel(text + truncated, title=f"Gemini Output ({model})", subtitle=str(raw_path))
+                                    Panel(text + truncated, title=f"Gemini Output ({model})", subtitle=str(json_path))
                                 )
                             else:
                                 console.print(text + truncated)
@@ -597,7 +575,7 @@ def run_pilot(args: argparse.Namespace) -> int:
                         f"models={len(models)} concurrency={max_workers}"
                     )
 
-                def _call(model: str) -> tuple[str, dict[str, Any]]:
+                def _call(model: str) -> tuple[str, dict[str, str | None]]:
                     thread_client = _get_thread_gemini_client(api_key=api_key, timeout_s=float(args.timeout_s))
                     return _run_single_model(
                         client=thread_client,
@@ -616,12 +594,10 @@ def run_pilot(args: argparse.Namespace) -> int:
                         model = future_to_model[fut]
                         done += 1
                         model_slug = sanitize_token(model, fallback="model")
-                        raw_path = input_dir / f"{model_slug}.raw.txt"
                         json_path = input_dir / f"{model_slug}.result.json"
                         err_path = input_dir / f"{model_slug}.error.json"
                         try:
                             response_text, response_meta = fut.result()
-                            raw_path.write_text((response_text or "") + "\n", encoding="utf-8")
                             payload = {
                                 "status": "ok",
                                 "source_id": audio_input.source_id,
@@ -630,8 +606,12 @@ def run_pilot(args: argparse.Namespace) -> int:
                                 "local_path": str(audio_input.local_path),
                                 "mime_type": audio_input.mime_type,
                                 "model": model,
-                                "raw_text_path": str(raw_path),
-                                "response_meta": response_meta,
+                                "response_text": response_text,
+                                "response_id": response_meta.get("response_id"),
+                                "model_version": response_meta.get("model_version"),
+                                "upload_file_name": response_meta.get("upload_file_name"),
+                                "upload_file_uri": response_meta.get("upload_file_uri"),
+                                "upload_file_mime_type": response_meta.get("upload_file_mime_type"),
                             }
                             _write_json(json_path, payload)
                             results.append(
@@ -643,7 +623,7 @@ def run_pilot(args: argparse.Namespace) -> int:
                                 }
                             )
                             logger.info(
-                                "OK %d/%d input=%s model=%s raw_chars=%d",
+                                "OK %d/%d input=%s model=%s response_chars=%d",
                                 done,
                                 total,
                                 audio_input.source_id,
@@ -656,12 +636,12 @@ def run_pilot(args: argparse.Namespace) -> int:
                                 if print_max_chars > 0 and len(text) > print_max_chars:
                                     truncated = (
                                         f"\n\n[dim]... truncated to {print_max_chars} chars "
-                                        f"(full output in {raw_path})[/dim]"
+                                        f"(full output in {json_path}:response_text)[/dim]"
                                     )
                                     text = text[:print_max_chars]
                                 if Panel is not None:
                                     console.print(
-                                        Panel(text + truncated, title=f"Gemini Output ({model})", subtitle=str(raw_path))
+                                        Panel(text + truncated, title=f"Gemini Output ({model})", subtitle=str(json_path))
                                     )
                                 else:
                                     console.print(text + truncated)
@@ -822,7 +802,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=_DEFAULT_PRINT_MAX_CHARS,
         help=(
             "Max chars of each model response to print to terminal (default: 12000). "
-            "Use 0 for no truncation. Raw output is always saved to disk."
+            "Use 0 for no truncation. Full response text is always saved to .result.json."
         ),
     )
     parser.add_argument(

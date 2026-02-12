@@ -9,8 +9,8 @@ This pilot is intentionally separate from the WavLM call extractor and does not 
 - Accepts local audio files and/or `s3://bucket/key` audio URIs.
 - Runs Gemini per input across one or more models.
 - Saves:
-  - raw model text response (JSON text),
-  - minimal request/response metadata (no parsing in v1).
+  - full model response text in `outputs/<source_id>/<model>.result.json` under `response_text`,
+  - minimal primitive metadata needed for auditing/debugging (no parsing in v1).
 
 This pilot uses the Gemini Files API (`files.upload`) and then references the uploaded file in `generate_content`.
 
@@ -106,6 +106,6 @@ Key files:
 
 - `run_manifest.json`
 - `run_summary.json`
-- `outputs/<source_id>/<model>.raw.txt`
-- `outputs/<source_id>/<model>.result.json`
+- `outputs/<source_id>/<model>.result.json` (canonical; includes full `response_text`)
+- `outputs/<source_id>/<model>.raw.txt` (legacy compatibility for older runs)
 - `outputs/<source_id>/<model>.error.json` (only on failures)

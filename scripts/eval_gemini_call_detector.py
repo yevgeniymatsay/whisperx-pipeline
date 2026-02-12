@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Evaluate Gemini call-detector predictions against human-labeled ground truth.
 
-This script reads Gemini pilot run artifacts (raw JSON text per model) and
-produces two eval artifacts:
+This script reads Gemini pilot run artifacts (`*.result.json` with
+`response_text`) and produces two eval artifacts:
 - gemini_pilot/eval/<run_id>_eval.json
 - gemini_pilot/eval/<run_id>_eval.md
 
@@ -323,6 +323,27 @@ def _recover_truncated_segments(path: Path) -> dict | None:
     return {"segments": segments}
 
 
+def _resolve_result_json_path(run_dir: Path, result: dict, source_id: str, model: str) -> Path | None:
+    candidates: list[Path] = []
+    from_summary = result.get("result_json")
+    if isinstance(from_summary, str) and from_summary:
+        p = Path(from_summary)
+        candidates.append(p)
+        if not p.is_absolute():
+            candidates.append(run_dir / p)
+    candidates.append(run_dir / "outputs" / source_id / f"{model}.result.json")
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def load_predictions(run_dir: Path) -> dict[str, dict[str, list[Segment]]]:
     summary_path = run_dir / "run_summary.json"
     if not summary_path.exists():
@@ -342,23 +363,43 @@ def load_predictions(run_dir: Path) -> dict[str, dict[str, list[Segment]]]:
             logger.warning("Cannot extract video_id from source_id=%s", source_id)
             continue
 
-        raw_path = run_dir / "outputs" / source_id / f"{model}.raw.txt"
-        if not raw_path.exists():
-            logger.warning("Missing raw file: %s", raw_path)
-            continue
+        raw_data: dict | None = None
+        result_json_path = _resolve_result_json_path(run_dir, result, source_id, model)
+        if result_json_path is not None:
+            try:
+                result_payload = json.loads(result_json_path.read_text())
+            except json.JSONDecodeError:
+                logger.warning("Malformed result JSON in %s", result_json_path)
+                result_payload = None
+            if result_payload is not None:
+                response_text = result_payload.get("response_text")
+                if isinstance(response_text, str):
+                    try:
+                        raw_data = json.loads(response_text)
+                    except json.JSONDecodeError:
+                        logger.warning("Malformed response_text JSON in %s", result_json_path)
+                elif "response_text" in result_payload:
+                    logger.warning("Non-string response_text in %s", result_json_path)
 
-        try:
-            raw_data = json.loads(raw_path.read_text())
-        except json.JSONDecodeError:
-            raw_data = _recover_truncated_segments(raw_path)
-            if raw_data is None:
-                logger.warning("Malformed JSON (unrecoverable) in %s", raw_path)
+        # Backward compatibility for older runs that only wrote .raw.txt.
+        if raw_data is None:
+            raw_path = run_dir / "outputs" / source_id / f"{model}.raw.txt"
+            if not raw_path.exists():
+                logger.warning("Missing result_json response_text and legacy raw file for %s/%s", source_id, model)
                 continue
-            logger.info(
-                "Recovered %d segments from truncated output in %s",
-                len(raw_data.get("segments", [])),
-                raw_path,
-            )
+
+            try:
+                raw_data = json.loads(raw_path.read_text())
+            except json.JSONDecodeError:
+                raw_data = _recover_truncated_segments(raw_path)
+                if raw_data is None:
+                    logger.warning("Malformed JSON (unrecoverable) in %s", raw_path)
+                    continue
+                logger.info(
+                    "Recovered %d segments from truncated output in %s",
+                    len(raw_data.get("segments", [])),
+                    raw_path,
+                )
 
         segments_raw = raw_data.get("segments", [])
         segments = _detect_and_parse_timestamps(segments_raw)
@@ -805,4 +846,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
