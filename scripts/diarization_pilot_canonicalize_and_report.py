@@ -178,19 +178,23 @@ class NeMoTitaNet(Embedder):
         self._model.eval()
 
     def embed(self, audio_f32: np.ndarray, sr: int) -> np.ndarray:
-        # NeMo expects 16kHz mono waveform.
-        audio = self._torch.from_numpy(np.asarray(audio_f32, dtype=np.float32)).to(self._device).unsqueeze(0)
-        length = self._torch.tensor([audio.shape[1]], device=self._device, dtype=self._torch.long)
-        with self._torch.no_grad():
-            if hasattr(self._model, "get_embedding"):
-                emb = self._model.get_embedding(audio, length).squeeze(0).detach().cpu().numpy()
-            else:
-                # Fallback: forward() returns (logits, embeddings) on some versions.
-                out = self._model.forward(input_signal=audio, input_signal_length=length)
-                if isinstance(out, (tuple, list)) and len(out) >= 2:
-                    emb = out[1].squeeze(0).detach().cpu().numpy()
-                else:  # pragma: no cover
-                    raise RuntimeError("Unexpected NeMo model output; cannot extract embedding")
+        # NeMo's `EncDecSpeakerLabelModel.get_embedding()` expects a *wav file path*.
+        # Writing a short temp wav is OK for this pilot (small scale).
+        import tempfile
+
+        import soundfile as sf
+
+        if int(sr) != 16000:
+            raise ValueError(f"NeMo TitaNet expects 16kHz audio (got sr={sr})")
+
+        with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
+            sf.write(tmp.name, np.asarray(audio_f32, dtype=np.float32), int(sr), subtype="PCM_16")
+            with self._torch.no_grad():
+                emb = self._model.get_embedding(tmp.name)
+
+        if hasattr(emb, "detach"):
+            emb = emb.detach().cpu().numpy()
+        emb = np.asarray(emb, dtype=np.float32).squeeze()
         return _l2_normalize(np.asarray(emb, dtype=np.float32))
 
 
