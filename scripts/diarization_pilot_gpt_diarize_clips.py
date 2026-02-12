@@ -219,6 +219,8 @@ def main() -> int:
         default=True,
         help="Continue processing other clips after an error (default: true)",
     )
+    parser.add_argument("--shard-count", type=int, default=1, help="Process only 1/N clips (default: 1)")
+    parser.add_argument("--shard-index", type=int, default=0, help="Which shard [0..N-1] to process (default: 0)")
     parser.add_argument("--limit", type=int, default=None, help="Optional max number of clips to process")
     args = parser.parse_args()
 
@@ -235,7 +237,15 @@ def main() -> int:
     rows = _read_metadata_jsonl(meta_path)
     if args.limit is not None:
         rows = rows[: int(args.limit)]
-    logger.info(f"Processing {len(rows)} clips -> {diarized_dir}")
+    shard_count = int(args.shard_count)
+    shard_index = int(args.shard_index)
+    if shard_count < 1:
+        raise SystemExit(f"--shard-count must be >=1 (got {shard_count})")
+    if not (0 <= shard_index < shard_count):
+        raise SystemExit(f"--shard-index must be in [0..{shard_count-1}] (got {shard_index})")
+    if shard_count > 1:
+        rows = [row for i, row in enumerate(rows) if (i % shard_count) == shard_index]
+    logger.info(f"Processing {len(rows)} clips -> {diarized_dir} (shard {shard_index}/{shard_count})")
 
     done = 0
     skipped = 0
