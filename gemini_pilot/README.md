@@ -81,7 +81,7 @@ If you want to limit terminal printing, use:
 
 `--print-max-chars 6000`
 
-## Local-dir sweep + eval (10 files × 5 models)
+## Local-dir sweep (10 files × 5 models)
 
 If you have exactly 10 `.m4a` files already downloaded locally:
 
