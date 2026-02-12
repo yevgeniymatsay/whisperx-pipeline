@@ -22,7 +22,7 @@ from .config import (
     utc_now_compact,
 )
 from .prompts import CALL_TIMESTAMP_PROMPT_V1
-from .timestamps import TimestampParseResult, parse_timestamp_response
+from .timestamps import parse_timestamp_response
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +171,7 @@ def _run_single_model(
     prompt: str,
     max_retries: int,
     retry_backoff_s: float,
-) -> tuple[str, TimestampParseResult, dict[str, Any]]:
+) -> tuple[str, dict[str, Any]]:
     uploaded_file = None
     last_err: BaseException | None = None
     for attempt in range(max_retries + 1):
@@ -185,7 +185,6 @@ def _run_single_model(
                 contents=[prompt, uploaded_file],
             )
             response_text = _extract_response_text(response)
-            parse_result = parse_timestamp_response(response_text)
             response_meta = {
                 "response_id": getattr(response, "response_id", None),
                 "model_version": getattr(response, "model_version", None),
@@ -197,7 +196,7 @@ def _run_single_model(
                     "mime_type": getattr(uploaded_file, "mime_type", None),
                 },
             }
-            return response_text, parse_result, response_meta
+            return response_text, response_meta
         except Exception as exc:  # noqa: BLE001
             last_err = exc
             if attempt >= max_retries:
@@ -315,7 +314,7 @@ def run_pilot(args: argparse.Namespace) -> int:
             json_path = input_dir / f"{model_slug}.result.json"
             err_path = input_dir / f"{model_slug}.error.json"
             try:
-                response_text, parsed, response_meta = _run_single_model(
+                response_text, response_meta = _run_single_model(
                     client=client,
                     audio_input=audio_input,
                     model=model,
@@ -324,6 +323,22 @@ def run_pilot(args: argparse.Namespace) -> int:
                     retry_backoff_s=float(args.retry_backoff_s),
                 )
                 raw_path.write_text((response_text or "") + "\n", encoding="utf-8")
+                parse_payload: dict[str, Any]
+                if args.parse_timestamps:
+                    parsed = parse_timestamp_response(response_text)
+                    parse_payload = {
+                        "enabled": True,
+                        "ambiguous": bool(parsed.ambiguous),
+                        "no_call_segments": bool(parsed.no_call_segments),
+                        "warnings": list(parsed.warnings),
+                        "segments": [asdict(seg) for seg in parsed.segments],
+                        "dropped_due_to_ambiguity": bool(parsed.ambiguous),
+                    }
+                else:
+                    parse_payload = {
+                        "enabled": False,
+                        "reason": "raw_output_first_mode",
+                    }
                 payload = {
                     "status": "ok",
                     "source_id": audio_input.source_id,
@@ -333,13 +348,7 @@ def run_pilot(args: argparse.Namespace) -> int:
                     "mime_type": audio_input.mime_type,
                     "model": model,
                     "raw_text_path": str(raw_path),
-                    "parse": {
-                        "ambiguous": bool(parsed.ambiguous),
-                        "no_call_segments": bool(parsed.no_call_segments),
-                        "warnings": list(parsed.warnings),
-                        "segments": [asdict(seg) for seg in parsed.segments],
-                        "dropped_due_to_ambiguity": bool(parsed.ambiguous),
-                    },
+                    "parse": parse_payload,
                     "response_meta": response_meta,
                 }
                 _write_json(json_path, payload)
@@ -357,8 +366,8 @@ def run_pilot(args: argparse.Namespace) -> int:
                     total,
                     audio_input.source_id,
                     model,
-                    len(parsed.segments),
-                    parsed.ambiguous,
+                    (len(parse_payload.get("segments", [])) if parse_payload.get("enabled") else -1),
+                    (parse_payload.get("ambiguous") if parse_payload.get("enabled") else "n/a"),
                 )
             except Exception as exc:  # noqa: BLE001
                 errors += 1
@@ -484,6 +493,12 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Resolve inputs/models/output paths without calling Gemini (default: false).",
+    )
+    parser.add_argument(
+        "--parse-timestamps",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Parse CALL_SEGMENT lines from model text. Default false for raw-output-first evaluation.",
     )
     return parser
 

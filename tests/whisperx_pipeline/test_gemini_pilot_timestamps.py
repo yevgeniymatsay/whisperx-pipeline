@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from gemini_pilot.runner import run_cli
 from gemini_pilot.timestamps import parse_timestamp_response, timestamp_to_seconds
 
@@ -97,6 +99,14 @@ def test_cli_dry_run_with_local_and_s3_inputs(tmp_path) -> None:
     assert manifest["dry_run"] is True
     assert summary["dry_run"] is True
     assert summary["planned_requests"] == 4  # 2 inputs x 2 default models
+
+
+def test_cli_help_includes_parse_toggle(capsys) -> None:
+    with pytest.raises(SystemExit) as exc:
+        run_cli(["--help"])
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "--parse-timestamps" in out
 
 
 def test_cli_missing_api_key_returns_clean_error(tmp_path, monkeypatch, caplog) -> None:

@@ -10,10 +10,9 @@ This pilot is intentionally separate from the WavLM call extractor and does not 
 - Runs Gemini per input across one or more models.
 - Saves:
   - raw model text response,
-  - parsed candidate call segments (`start_s`, `end_s`),
-  - parse warnings and ambiguity flags.
+  - optional parsed candidate call segments (`start_s`, `end_s`) if enabled.
 
-If parsing is ambiguous, parsed segments are dropped conservatively.
+Default mode is raw-output-first (`--no-parse-timestamps`), so you can evaluate Gemini quality before relying on parser logic.
 
 ## Environment
 
@@ -49,6 +48,14 @@ python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call
   --audio-path /absolute/path/to/sample.mp3
 ```
 
+Live run with optional timestamp parsing enabled:
+
+```bash
+python /Users/yevgeniymatsay/whisperx-pipeline/scripts/gemini_pilot_extract_call_timestamps.py \
+  --audio-path /absolute/path/to/sample.mp3 \
+  --parse-timestamps
+```
+
 Live run (S3 audio + explicit model set):
 
 ```bash
@@ -71,4 +78,3 @@ Key files:
 - `outputs/<source_id>/<model>.raw.txt`
 - `outputs/<source_id>/<model>.result.json`
 - `outputs/<source_id>/<model>.error.json` (only on failures)
-
