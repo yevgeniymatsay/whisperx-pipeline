@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Run a 5-model Gemini sweep on a local audio directory (no GT eval).
+"""Run a 5-model Gemini sweep on a local audio directory, then emit eval JSON+MD.
 
 This is intentionally a standalone "one command" runner that:
 - Uses local audio files (fast; avoids S3 downloads for audio)
-- Writes run artifacts under gemini_pilot/eval/ for manual review.
+- Writes run artifacts under artifacts/gemini_pilot/run_<utc>/
+- Writes eval artifacts under gemini_pilot/eval/<run_id>_eval.(json|md)
 
 Prompt + schema are defined in gemini_pilot/ and are not modified by this script.
 """
@@ -11,10 +12,10 @@ Prompt + schema are defined in gemini_pilot/ and are not modified by this script
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+import subprocess
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
@@ -23,6 +24,7 @@ from gemini_pilot.runner import run_cli as run_gemini_pilot_cli  # noqa: E402
 
 
 DEFAULT_AUDIO_DIR = Path("/Volumes/Yevgeniy's Drive/tmp_gemini_audio")
+DEFAULT_GT_S3_PREFIX = "s3://rezora-whisperx-us-east-1-864981718771/labeling/corrected_boundaries/v1/"
 SUPPORTED_EXTS = {".m4a", ".mp3", ".wav", ".flac", ".aac", ".aiff", ".ogg"}
 
 
@@ -53,6 +55,12 @@ def main() -> int:
         help=f"Directory containing exactly 10 audio files (default: {DEFAULT_AUDIO_DIR})",
     )
     parser.add_argument(
+        "--gt-s3-prefix",
+        type=str,
+        default=DEFAULT_GT_S3_PREFIX,
+        help="S3 prefix for GT label JSONs (default: corrected_boundaries v1).",
+    )
+    parser.add_argument(
         "--model-concurrency",
         type=int,
         default=5,
@@ -81,7 +89,7 @@ def main() -> int:
             f"First files:\n{listing}"
         )
 
-    out_dir = REPO_ROOT / "gemini_pilot" / "eval" / f"local_batch_{_utc_compact()}"
+    out_dir = REPO_ROOT / "artifacts" / "gemini_pilot" / f"run_{_utc_compact()}"
 
     # 1) Run Gemini pilot sweep
     pilot_argv: list[str] = ["--out-dir", str(out_dir)]
@@ -110,11 +118,30 @@ def main() -> int:
         print(f"  run_summary.json: {out_dir / 'run_summary.json'}")
         return pilot_rc
 
+    # 2) Run eval (JSON + Markdown under gemini_pilot/eval/)
+    eval_script = REPO_ROOT / "scripts" / "eval_gemini_call_detector.py"
+    eval_cmd = [
+        sys.executable,
+        str(eval_script),
+        "--run-dir",
+        str(out_dir),
+        "--gt-s3-prefix",
+        str(args.gt_s3_prefix),
+        "--no-print-details",
+    ]
+    print("")
+    print("Running eval:")
+    print("  " + " ".join(eval_cmd))
+    eval_proc = subprocess.run(eval_cmd, check=False)
+    eval_rc = int(eval_proc.returncode or 0)
+
     print("")
     print("Run artifacts:")
     print(f"  run_dir: {out_dir}")
     print(f"  run_summary.json: {out_dir / 'run_summary.json'}")
-    return pilot_rc
+    print(f"  eval.json: {REPO_ROOT / 'gemini_pilot' / 'eval' / f'{out_dir.name}_eval.json'}")
+    print(f"  eval.md: {REPO_ROOT / 'gemini_pilot' / 'eval' / f'{out_dir.name}_eval.md'}")
+    return pilot_rc if pilot_rc != 0 else eval_rc
 
 
 if __name__ == "__main__":

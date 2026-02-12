@@ -7,10 +7,12 @@
 - Scope (files/symbols):
   - `scripts/run_gemini_local_dir_sweep_and_eval.py` (new)
   - `scripts/_run_eval_batch.py` (cache safety; no destructive cleanup)
+  - `scripts/eval_gemini_call_detector.py` (GT-based eval report generator)
   - `gemini_pilot/runner.py`:
     - optional parallel per-audio model requests (`--model-concurrency`)
     - store full response metadata for later auditing (no prompt/schema changes)
-  - `gemini_pilot/eval/` (local run outputs; gitignored)
+  - `tests/whisperx_pipeline/test_eval_gemini_call_detector.py` (unit tests)
+  - `gemini_pilot/eval/` (eval reports; gitignored)
 
 ## Frozen comparability key (must match for comparisons)
 - metrics_version: `n/a (Gemini pilot eval; not WavLM gate metrics)`
@@ -26,6 +28,7 @@
 - Models: 5-model sweep as implemented in `gemini_pilot/config.py` (no changes in this cycle).
 - Prompt + schema: frozen; **no changes** in this cycle.
 - Pilot concurrency: per-audio model requests may run in parallel (default remains sequential; batch runner enables concurrency=5).
+- Eval outputs (JSON + Markdown) are written under `gemini_pilot/eval/` for manual review.
 
 ## Plan-change log (required if anything above changes)
 - 2026-02-12: add per-audio parallel model calls in the pilot runner
@@ -36,6 +39,11 @@
 - 2026-02-12: remove GT-based eval script/parser from the pilot sweep flow
   - What changed: removed `scripts/eval_gemini_call_detector.py` and associated unit tests; local-dir runner no longer runs eval.
   - Why: for this cycle we only want raw model outputs saved for manual inspection.
+  - Non-comparable note: `n/a`
+  - Version bumps: `n/a`
+- 2026-02-12: re-add GT-based eval report generator under `gemini_pilot/eval/`
+  - What changed: restored `scripts/eval_gemini_call_detector.py` + unit tests; local-dir runner runs eval after the sweep to produce `<run_id>_eval.(json|md)`.
+  - Why: keep the exact eval artifact style you already used (`gemini_pilot/eval/run_..._eval.json` + `.md`) while keeping raw model outputs intact.
   - Non-comparable note: `n/a`
   - Version bumps: `n/a`
 

@@ -90,6 +90,12 @@ python /Users/yevgeniymatsay/whisperx-pipeline/scripts/run_gemini_local_dir_swee
   --audio-dir "/Volumes/Yevgeniy's Drive/tmp_gemini_audio"
 ```
 
+This will:
+- run the Gemini pilot (artifacts under `artifacts/gemini_pilot/run_<UTC_TS>/`), and
+- write an eval JSON + Markdown report under `gemini_pilot/eval/`:
+  - `gemini_pilot/eval/<run_id>_eval.json`
+  - `gemini_pilot/eval/<run_id>_eval.md`
+
 ## Output layout
 
 Default output root:
